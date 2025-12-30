@@ -6,6 +6,9 @@
               pluginManufacturerCode="Gera" pluginCode="PL26" bundleIdentifier="com.gerardjonson.PLANET2026">
   <MAINGROUP id="KRDVCI" name="PLANET2026">
     <GROUP id="{98A0DDF2-A42D-8D42-FE29-B09DFF176340}" name="Source">
+      <FILE id="YZGw52" name="PLANETMainGui.cpp" compile="1" resource="0"
+            file="Source/PLANETMainGui.cpp"/>
+      <FILE id="WqQax7" name="PLANETMainGui.h" compile="0" resource="0" file="Source/PLANETMainGui.h"/>
       <FILE id="eNPXy8" name="PLANETDataStructures.h" compile="0" resource="0"
             file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETDataStructures.h"/>
       <FILE id="fyq916" name="PLANETEffects.cpp" compile="1" resource="0"
