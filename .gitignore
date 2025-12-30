@@ -1,0 +1,33 @@
+# JUCE / Visual Studio build artifacts
+/Builds/
+/JuceLibraryCode/
+
+# Visual Studio
+*.sdf
+*.opensdf
+*.suo
+*.user
+*.ncb
+*.aps
+ipch/
+.vs/
+
+# Build outputs
+*.dll
+*.vst3
+*.exe
+*.pdb
+*.obj
+*.lib
+*.exp
+*.ilk
+*.iobj
+*.ipdb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*~

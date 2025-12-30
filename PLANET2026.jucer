@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="eDTqr9" name="PLANET2026" projectType="audioplug" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn"
+              pluginName="PLANET2026" pluginDesc="HPD Synth" pluginManufacturer="Gerard Johnson"
+              pluginManufacturerCode="Gera" pluginCode="PL26" bundleIdentifier="com.gerardjonson.PLANET2026">
+  <MAINGROUP id="KRDVCI" name="PLANET2026">
+    <GROUP id="{98A0DDF2-A42D-8D42-FE29-B09DFF176340}" name="Source">
+      <FILE id="eNPXy8" name="PLANETDataStructures.h" compile="0" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETDataStructures.h"/>
+      <FILE id="fyq916" name="PLANETEffects.cpp" compile="1" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETEffects.cpp"/>
+      <FILE id="XIgbfr" name="PLANETEffects.h" compile="0" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETEffects.h"/>
+      <FILE id="dQ89Dj" name="PLANETVoice.cpp" compile="1" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoice.cpp"/>
+      <FILE id="FMuLx6" name="PLANETVoice.h" compile="0" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoice.h"/>
+      <FILE id="sDvCbh" name="PLANETVoiceManager.cpp" compile="1" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoiceManager.cpp"/>
+      <FILE id="E48LZr" name="PLANETVoiceManager.h" compile="0" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoiceManager.h"/>
+      <FILE id="QarK4j" name="PluginEditor.cpp" compile="1" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginEditor.cpp"/>
+      <FILE id="efN4ar" name="PluginEditor.h" compile="0" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginEditor.h"/>
+      <FILE id="yCKsmD" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginProcessor.cpp"/>
+      <FILE id="MhipqZ" name="PluginProcessor.h" compile="0" resource="0"
+            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginProcessor.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_animation" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="PLANET2026"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="PLANET2026" enablePluginBinaryCopyStep="0"
+                       vst3BinaryLocation_x64="C:\Program Files\Common Files\VST3\PLANET2026.vst3"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_animation" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_basics" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="C:/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="C:/JUCE/modules"/>
+      </MODULEPATHS>
+    </VS2022>
+  </EXPORTFORMATS>
+</JUCERPROJECT>
