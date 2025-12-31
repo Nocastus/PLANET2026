@@ -84,5 +84,28 @@ private:
     juce::Label velBrillLabel, velAttackLabel, envCurveLabel, vintageLabel;
     juce::Label velBrillValue, velAttackValue, envCurveValue, vintageValue;
 
+    // ======================== RIGHT COLUMN CONTROLS ========================
+    
+    // Waveform display (placeholder for now)
+    // Will be implemented as custom painting + circular buffer later
+    
+    // Vibrato section
+    juce::Slider vibratoRateKnob, vibratoDepthKnob, vibratoFadeKnob;
+    juce::Label vibratoRateLabel, vibratoDepthLabel, vibratoFadeLabel;
+    
+    // Pitch section
+    juce::Slider pitchDistKnob, pitchTimeKnob;
+    juce::Label pitchDistLabel, pitchTimeLabel;
+    
+    // Brilliance section
+    juce::Slider brillianceKnob;
+    juce::Label brillianceMainLabel;
+    
+    // Effects section
+    juce::Slider detuneAmountKnob, detuneMixKnob;
+    juce::Slider reverbTimeKnob, reverbMixKnob;
+    juce::Label detuneAmountLabel, detuneMixLabel;
+    juce::Label reverbTimeLabel, reverbMixLabel;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };

@@ -236,6 +236,42 @@ PLANETMainGui::PLANETMainGui()
     vintageValue.setEditable(true);
     addAndMakeVisible(vintageValue);
 
+    // ======================== RIGHT COLUMN CONTROLS ========================
+    
+    // Helper lambda for setting up knobs consistently
+    auto setupKnob = [this](juce::Slider& knob, juce::Label& label, const juce::String& name,
+                            double min, double max, double defaultVal) {
+        knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob.setRange(min, max, 0.01);
+        knob.setValue(defaultVal);
+        knob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        knob.setDoubleClickReturnValue(true, defaultVal);
+        addAndMakeVisible(knob);
+        
+        label.setText(name, juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(label);
+    };
+    
+    // Vibrato knobs
+    setupKnob(vibratoRateKnob, vibratoRateLabel, "Rate", 0.5, 12.0, 5.0);
+    setupKnob(vibratoDepthKnob, vibratoDepthLabel, "Depth", 0.0, 2.0, 0.0);
+    setupKnob(vibratoFadeKnob, vibratoFadeLabel, "Fade", 0.0, 10.0, 2.0);
+    
+    // Pitch knobs
+    setupKnob(pitchDistKnob, pitchDistLabel, "Distance", -12.0, 12.0, 0.0);
+    setupKnob(pitchTimeKnob, pitchTimeLabel, "Time", 0.01, 5.0, 0.5);
+    
+    // Brilliance knob
+    setupKnob(brillianceKnob, brillianceMainLabel, "Brilliance", 0.0, 1.0, 0.5);
+    
+    // Effects knobs
+    setupKnob(detuneAmountKnob, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
+    setupKnob(detuneMixKnob, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
+    setupKnob(reverbTimeKnob, reverbTimeLabel, "Reverb", 0.0, 1.0, 0.3);
+    setupKnob(reverbMixKnob, reverbMixLabel, "Rev Mix", 0.0, 1.0, 0.0);
+
     setSize(1400, 800);
 }
 
@@ -381,6 +417,15 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setColour(backgroundGlobal);
     g.fillRect(leftWidth, 0, rightWidth, mainHeight);
 
+    // Waveform display area (placeholder)
+    g.setColour(juce::Colours::black);
+    g.fillRoundedRectangle((float)leftWidth + 10, 10.0f, 
+                           (float)rightWidth - 20, (float)drawbarSectionHeight - 20, 5.0f);
+    g.setColour(accentColour.withAlpha(0.3f));
+    g.drawHorizontalLine(drawbarSectionHeight / 2, (float)leftWidth + 15, (float)bounds.getWidth() - 15);
+    g.setColour(juce::Colours::white.withAlpha(0.5f));
+    g.drawText("WAVEFORM", leftWidth + 10, 15, rightWidth - 20, 20, juce::Justification::left);
+
     // ======================== PATCH BAR ========================
     
     g.setColour(backgroundLight.darker(0.3f));
@@ -399,16 +444,19 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawText("AMPLITUDE (global)", 0, drawbarSectionHeight + harmonicHeight, leftWidth, ampHeight, 
                juce::Justification::centred);
     
-    // Right side labels
+    // Right side labels (adjusted for waveform at top)
     int rightX = leftWidth;
-    int sectionHeight = mainHeight / 5;
-    g.drawText("VIBRATO", rightX, 0, rightWidth, sectionHeight, 
+    int rightContentHeight = mainHeight - drawbarSectionHeight;  // Below waveform
+    int rightSectionHeight = rightContentHeight / 4;  // 4 sections below waveform
+    int rightSectionY = drawbarSectionHeight;  // Start below waveform
+    
+    g.drawText("VIBRATO", rightX, rightSectionY, rightWidth, rightSectionHeight, 
                juce::Justification::centred);
-    g.drawText("PITCH", rightX, sectionHeight, rightWidth, sectionHeight, 
+    g.drawText("PITCH", rightX, rightSectionY + rightSectionHeight, rightWidth, rightSectionHeight, 
                juce::Justification::centred);
-    g.drawText("BRILLIANCE / ENV LAW", rightX, sectionHeight * 2, rightWidth, sectionHeight, 
+    g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 2, rightWidth, rightSectionHeight, 
                juce::Justification::centred);
-    g.drawText("EFFECTS", rightX, sectionHeight * 3, rightWidth, sectionHeight * 2, 
+    g.drawText("EFFECTS", rightX, rightSectionY + rightSectionHeight * 3, rightWidth, rightSectionHeight, 
                juce::Justification::centred);
     
     // Patch bar label
@@ -426,9 +474,10 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawHorizontalLine(drawbarSectionHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight + harmonicHeight, 0, (float)leftWidth);
     
-    // Horizontal dividers on right
+    // Horizontal dividers on right (below waveform)
+    g.drawHorizontalLine(drawbarSectionHeight, (float)leftWidth, (float)bounds.getWidth());  // Below waveform
     for (int i = 1; i < 4; ++i)
-        g.drawHorizontalLine(sectionHeight * i, (float)leftWidth, (float)bounds.getWidth());
+        g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i, (float)leftWidth, (float)bounds.getWidth());
     
     // Patch bar divider
     g.drawHorizontalLine(mainHeight, 0, (float)bounds.getWidth());
@@ -557,6 +606,72 @@ void PLANETMainGui::resized()
     vintageLabel.setBounds(ampKnobStartX + ampKnobColWidth, row2Y, ampKnobSize, 18);
     vintageKnob.setBounds(ampKnobStartX + ampKnobColWidth, row2Y + 18, ampKnobSize, ampKnobSize);
     vintageValue.setBounds(ampKnobStartX + ampKnobColWidth, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+
+    // ======================== RIGHT COLUMN LAYOUT ========================
+    int rightX = leftWidth + 10;
+    int rightContentWidth = bounds.getWidth() - leftWidth - 20;
+    int rightKnobSize = 50;
+    
+    // Calculate section heights for right column (below waveform)
+    int waveformHeight = drawbarSectionHeight;
+    int remainingHeight = mainHeight - waveformHeight;
+    int rightSectionHeight = remainingHeight / 4;  // 4 sections: Vibrato, Pitch, Brilliance, Effects
+    
+    // Vibrato section (3 knobs)
+    int vibratoY = waveformHeight + 15;
+    int vibratoKnobSpacing = rightContentWidth / 3;
+    
+    int vkx0 = rightX + (vibratoKnobSpacing - rightKnobSize) / 2;
+    vibratoRateLabel.setBounds(vkx0, vibratoY, rightKnobSize, 16);
+    vibratoRateKnob.setBounds(vkx0, vibratoY + 16, rightKnobSize, rightKnobSize);
+    
+    int vkx1 = rightX + vibratoKnobSpacing + (vibratoKnobSpacing - rightKnobSize) / 2;
+    vibratoDepthLabel.setBounds(vkx1, vibratoY, rightKnobSize, 16);
+    vibratoDepthKnob.setBounds(vkx1, vibratoY + 16, rightKnobSize, rightKnobSize);
+    
+    int vkx2 = rightX + vibratoKnobSpacing * 2 + (vibratoKnobSpacing - rightKnobSize) / 2;
+    vibratoFadeLabel.setBounds(vkx2, vibratoY, rightKnobSize, 16);
+    vibratoFadeKnob.setBounds(vkx2, vibratoY + 16, rightKnobSize, rightKnobSize);
+    
+    // Pitch section (2 knobs)
+    int pitchY = waveformHeight + rightSectionHeight + 15;
+    int pitchKnobSpacing = rightContentWidth / 2;
+    
+    int pkx0 = rightX + (pitchKnobSpacing - rightKnobSize) / 2;
+    pitchDistLabel.setBounds(pkx0, pitchY, rightKnobSize, 16);
+    pitchDistKnob.setBounds(pkx0, pitchY + 16, rightKnobSize, rightKnobSize);
+    
+    int pkx1 = rightX + pitchKnobSpacing + (pitchKnobSpacing - rightKnobSize) / 2;
+    pitchTimeLabel.setBounds(pkx1, pitchY, rightKnobSize, 16);
+    pitchTimeKnob.setBounds(pkx1, pitchY + 16, rightKnobSize, rightKnobSize);
+    
+    // Brilliance section (1 knob, centred)
+    int brillianceY = waveformHeight + rightSectionHeight * 2 + 15;
+    int bkx = rightX + (rightContentWidth - rightKnobSize) / 2;
+    brillianceMainLabel.setBounds(bkx, brillianceY, rightKnobSize, 16);
+    brillianceKnob.setBounds(bkx, brillianceY + 16, rightKnobSize, rightKnobSize);
+    
+    // Effects section (4 knobs in 2x2 grid)
+    int effectsY = waveformHeight + rightSectionHeight * 3 + 10;
+    int effectsKnobSpacing = rightContentWidth / 2;
+    int effectsRowHeight = (rightSectionHeight - 20) / 2;
+    
+    // Row 1: Detune Amount, Detune Mix
+    int ekx0 = rightX + (effectsKnobSpacing - rightKnobSize) / 2;
+    detuneAmountLabel.setBounds(ekx0, effectsY, rightKnobSize, 14);
+    detuneAmountKnob.setBounds(ekx0, effectsY + 14, rightKnobSize, rightKnobSize);
+    
+    int ekx1 = rightX + effectsKnobSpacing + (effectsKnobSpacing - rightKnobSize) / 2;
+    detuneMixLabel.setBounds(ekx1, effectsY, rightKnobSize, 14);
+    detuneMixKnob.setBounds(ekx1, effectsY + 14, rightKnobSize, rightKnobSize);
+    
+    // Row 2: Reverb Time, Reverb Mix
+    int effectsRow2Y = effectsY + effectsRowHeight;
+    reverbTimeLabel.setBounds(ekx0, effectsRow2Y, rightKnobSize, 14);
+    reverbTimeKnob.setBounds(ekx0, effectsRow2Y + 14, rightKnobSize, rightKnobSize);
+    
+    reverbMixLabel.setBounds(ekx1, effectsRow2Y, rightKnobSize, 14);
+    reverbMixKnob.setBounds(ekx1, effectsRow2Y + 14, rightKnobSize, rightKnobSize);
 }
 
 void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
