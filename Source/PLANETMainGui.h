@@ -19,7 +19,23 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
     void updateAdsrDisplay();  // Update ADSR fields for selected drawbar
+
+    // Envelope drag state
+    enum class DragTarget { None, HarmonicAttack, HarmonicDecaySustain, HarmonicRelease,
+                            AmpAttack, AmpDecaySustain, AmpRelease };
+    DragTarget currentDragTarget = DragTarget::None;
+    
+    // Envelope graph bounds (calculated in resized, used in mouse handling)
+    juce::Rectangle<int> harmonicEnvBounds;
+    juce::Rectangle<int> ampEnvBounds;
+    
+    // Helper methods for envelope interaction
+    juce::Point<float> getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
+                                         float attack, float decay, float sustain, float release);
+    void updateAdsrFromDrag(const juce::MouseEvent& event);
 
 private:
     // Colour scheme

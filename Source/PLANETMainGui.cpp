@@ -382,6 +382,19 @@ void PLANETMainGui::paint(juce::Graphics& g)
 
         g.setColour(drawbarColours[selectedDrawbar]);
         g.strokePath(envPath, juce::PathStrokeType(2.5f));
+
+        // Draw draggable handles
+        float handleRadius = 6.0f;
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);           // Attack peak
+        g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);       // Decay/Sustain
+        g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);             // Release end
+        
+        // Handle outlines
+        g.setColour(drawbarColours[selectedDrawbar]);
+        g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+        g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+        g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
     }
     
     // Amplitude section (global - tinted background)
@@ -433,6 +446,19 @@ void PLANETMainGui::paint(juce::Graphics& g)
 
         g.setColour(juce::Colours::white);
         g.strokePath(envPath, juce::PathStrokeType(2.5f));
+
+        // Draw draggable handles
+        float handleRadius = 6.0f;
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);           // Attack peak
+        g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);       // Decay/Sustain
+        g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);             // Release end
+        
+        // Handle outlines
+        g.setColour(accentColour);
+        g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+        g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+        g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
     }
 
     // ======================== RIGHT SIDE ========================
@@ -536,10 +562,14 @@ void PLANETMainGui::resized()
     int adsrZoneWidth = (int)(leftWidth * 0.65f);
     int adsrGraphHeight = harmonicHeight - 80;
     int adsrGraphY = drawbarSectionHeight + 10;
+    int adsrGraphWidth = adsrZoneWidth - 40;
     int adsrLabelY = drawbarSectionHeight + adsrGraphHeight + 20;
     int adsrFieldWidth = 50;
     int adsrFieldHeight = 25;
     int adsrSpacing = (adsrZoneWidth - 40) / 4;
+
+    // Store harmonic envelope bounds for mouse interaction
+    harmonicEnvBounds = juce::Rectangle<int>(20, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
 
     for (int i = 0; i < 4; ++i)
     {
@@ -590,6 +620,9 @@ void PLANETMainGui::resized()
     int ampAdsrGraphHeight = ampHeight - 80;
     int ampAdsrGraphY = drawbarSectionHeight + harmonicHeight + 10;
     int ampAdsrLabelY = ampAdsrGraphY + ampAdsrGraphHeight + 5;
+
+    // Store amplitude envelope bounds for mouse interaction
+    ampEnvBounds = juce::Rectangle<int>(20, ampAdsrGraphY, adsrGraphWidth, ampAdsrGraphHeight);
 
     for (int i = 0; i < 4; ++i)
     {
@@ -712,6 +745,74 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
     }
     
+    // Check for envelope handle clicks
+    float handleRadius = 10.0f;  // Slightly larger hit area than visual
+    
+    // Check harmonic envelope handles
+    if (harmonicEnvBounds.contains(event.x, event.y) || 
+        (event.x >= harmonicEnvBounds.getX() - handleRadius && 
+         event.x <= harmonicEnvBounds.getRight() + handleRadius &&
+         event.y >= harmonicEnvBounds.getY() - handleRadius && 
+         event.y <= harmonicEnvBounds.getBottom() + handleRadius))
+    {
+        auto attackPt = getEnvelopePoint(1, harmonicEnvBounds, 
+            adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+        auto decaySustainPt = getEnvelopePoint(2, harmonicEnvBounds,
+            adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+        auto releasePt = getEnvelopePoint(4, harmonicEnvBounds,
+            adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+        
+        if (attackPt.getDistanceFrom(event.position) < handleRadius)
+        {
+            currentDragTarget = DragTarget::HarmonicAttack;
+            return;
+        }
+        if (decaySustainPt.getDistanceFrom(event.position) < handleRadius)
+        {
+            currentDragTarget = DragTarget::HarmonicDecaySustain;
+            return;
+        }
+        if (releasePt.getDistanceFrom(event.position) < handleRadius)
+        {
+            currentDragTarget = DragTarget::HarmonicRelease;
+            return;
+        }
+    }
+    
+    // Check amplitude envelope handles
+    if (ampEnvBounds.contains(event.x, event.y) ||
+        (event.x >= ampEnvBounds.getX() - handleRadius && 
+         event.x <= ampEnvBounds.getRight() + handleRadius &&
+         event.y >= ampEnvBounds.getY() - handleRadius && 
+         event.y <= ampEnvBounds.getBottom() + handleRadius))
+    {
+        auto attackPt = getEnvelopePoint(1, ampEnvBounds,
+            ampAdsrValues[0], ampAdsrValues[1], ampAdsrValues[2], ampAdsrValues[3]);
+        auto decaySustainPt = getEnvelopePoint(2, ampEnvBounds,
+            ampAdsrValues[0], ampAdsrValues[1], ampAdsrValues[2], ampAdsrValues[3]);
+        auto releasePt = getEnvelopePoint(4, ampEnvBounds,
+            ampAdsrValues[0], ampAdsrValues[1], ampAdsrValues[2], ampAdsrValues[3]);
+        
+        if (attackPt.getDistanceFrom(event.position) < handleRadius)
+        {
+            currentDragTarget = DragTarget::AmpAttack;
+            return;
+        }
+        if (decaySustainPt.getDistanceFrom(event.position) < handleRadius)
+        {
+            currentDragTarget = DragTarget::AmpDecaySustain;
+            return;
+        }
+        if (releasePt.getDistanceFrom(event.position) < handleRadius)
+        {
+            currentDragTarget = DragTarget::AmpRelease;
+            return;
+        }
+    }
+    
     // Otherwise check if click is in the drawbar background area
     auto bounds = getLocalBounds();
     int leftWidth = (int)(bounds.getWidth() * leftWidthRatio);
@@ -729,6 +830,130 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
             updateAdsrDisplay();
             repaint();
         }
+    }
+}
+
+void PLANETMainGui::mouseDrag(const juce::MouseEvent& event)
+{
+    if (currentDragTarget == DragTarget::None)
+        return;
+    
+    updateAdsrFromDrag(event);
+    repaint();
+}
+
+void PLANETMainGui::mouseUp(const juce::MouseEvent& event)
+{
+    currentDragTarget = DragTarget::None;
+}
+
+juce::Point<float> PLANETMainGui::getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
+                                                    float attack, float decay, float sustain, float release)
+{
+    float totalTime = attack + decay + 0.3f + release;
+    if (totalTime < 0.1f) totalTime = 0.1f;
+    float timeScale = (float)bounds.getWidth() / totalTime;
+    
+    float x0 = (float)bounds.getX();
+    float y0 = (float)bounds.getBottom();  // Bottom (zero level)
+    float yTop = (float)bounds.getY() + 10;  // Top (full level)
+    float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
+    
+    float x1 = x0 + attack * timeScale;      // Attack peak
+    float x2 = x1 + decay * timeScale;       // Decay/Sustain point
+    float x3 = x2 + 0.3f * timeScale;        // End of sustain hold
+    float x4 = x3 + release * timeScale;     // Release end
+    
+    switch (pointIndex)
+    {
+        case 0: return { x0, y0 };           // Start
+        case 1: return { x1, yTop };         // Attack peak
+        case 2: return { x2, ySustain };     // Decay/Sustain
+        case 3: return { x3, ySustain };     // End of sustain hold
+        case 4: return { x4, y0 };           // Release end
+        default: return { x0, y0 };
+    }
+}
+
+void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
+{
+    bool isHarmonic = (currentDragTarget == DragTarget::HarmonicAttack ||
+                       currentDragTarget == DragTarget::HarmonicDecaySustain ||
+                       currentDragTarget == DragTarget::HarmonicRelease);
+    
+    auto& bounds = isHarmonic ? harmonicEnvBounds : ampEnvBounds;
+    float* values = isHarmonic ? adsrValues[selectedDrawbar] : ampAdsrValues;
+    
+    float attack = values[0];
+    float decay = values[1];
+    float sustain = values[2];
+    float release = values[3];
+    
+    float totalTime = attack + decay + 0.3f + release;
+    if (totalTime < 0.1f) totalTime = 0.1f;
+    float timeScale = (float)bounds.getWidth() / totalTime;
+    
+    float x0 = (float)bounds.getX();
+    float y0 = (float)bounds.getBottom();
+    float yTop = (float)bounds.getY() + 10;
+    float yRange = y0 - yTop - 10;
+    
+    // Calculate x position of attack peak for reference
+    float x1 = x0 + attack * timeScale;
+    
+    switch (currentDragTarget)
+    {
+        case DragTarget::HarmonicAttack:
+        case DragTarget::AmpAttack:
+        {
+            // Horizontal drag changes attack time
+            float newX = juce::jlimit(x0, (float)bounds.getRight(), (float)event.x);
+            float newAttack = (newX - x0) / timeScale;
+            values[0] = juce::jlimit(0.001f, 10.0f, newAttack);
+            break;
+        }
+        
+        case DragTarget::HarmonicDecaySustain:
+        case DragTarget::AmpDecaySustain:
+        {
+            // Horizontal drag changes decay time (relative to attack peak)
+            float currentX1 = x0 + values[0] * timeScale;
+            float newX = juce::jlimit(currentX1, (float)bounds.getRight(), (float)event.x);
+            float newDecay = (newX - currentX1) / timeScale;
+            values[1] = juce::jlimit(0.001f, 10.0f, newDecay);
+            
+            // Vertical drag changes sustain level
+            float newY = juce::jlimit(yTop, y0 - 10, (float)event.y);
+            float newSustain = 1.0f - (newY - yTop) / yRange;
+            values[2] = juce::jlimit(0.0f, 1.0f, newSustain);
+            break;
+        }
+        
+        case DragTarget::HarmonicRelease:
+        case DragTarget::AmpRelease:
+        {
+            // Horizontal drag changes release time (relative to sustain end)
+            float currentX3 = x0 + (values[0] + values[1] + 0.3f) * timeScale;
+            float newX = juce::jlimit(currentX3, (float)bounds.getRight() + 50, (float)event.x);
+            float newRelease = (newX - currentX3) / timeScale;
+            values[3] = juce::jlimit(0.001f, 10.0f, newRelease);
+            break;
+        }
+        
+        default:
+            break;
+    }
+    
+    // Update text displays
+    if (isHarmonic)
+    {
+        for (int i = 0; i < 4; ++i)
+            adsrValueEditors[i].setText(juce::String(values[i], 2), juce::dontSendNotification);
+    }
+    else
+    {
+        for (int i = 0; i < 4; ++i)
+            ampAdsrValueEditors[i].setText(juce::String(values[i], 2), juce::dontSendNotification);
     }
 }
 
