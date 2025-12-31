@@ -97,13 +97,13 @@ private:
     juce::Slider pitchDistKnob, pitchTimeKnob;
     juce::Label pitchDistLabel, pitchTimeLabel;
     
-    // Brilliance section
-    juce::Slider brillianceKnob;
+    // Brilliance section (horizontal slider)
+    juce::Slider brillianceSlider;
     juce::Label brillianceMainLabel;
     
-    // Effects section
-    juce::Slider detuneAmountKnob, detuneMixKnob;
-    juce::Slider reverbTimeKnob, reverbMixKnob;
+    // Effects section (vertical sliders)
+    juce::Slider detuneAmountSlider, detuneMixSlider;
+    juce::Slider reverbTimeSlider, reverbMixSlider;
     juce::Label detuneAmountLabel, detuneMixLabel;
     juce::Label reverbTimeLabel, reverbMixLabel;
 

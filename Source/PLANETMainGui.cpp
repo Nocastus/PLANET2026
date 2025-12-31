@@ -263,14 +263,38 @@ PLANETMainGui::PLANETMainGui()
     setupKnob(pitchDistKnob, pitchDistLabel, "Distance", -12.0, 12.0, 0.0);
     setupKnob(pitchTimeKnob, pitchTimeLabel, "Time", 0.01, 5.0, 0.5);
     
-    // Brilliance knob
-    setupKnob(brillianceKnob, brillianceMainLabel, "Brilliance", 0.0, 1.0, 0.5);
+    // Brilliance horizontal slider
+    brillianceSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    brillianceSlider.setRange(0.0, 1.0, 0.01);
+    brillianceSlider.setValue(0.5);
+    brillianceSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    brillianceSlider.setDoubleClickReturnValue(true, 0.5);
+    addAndMakeVisible(brillianceSlider);
+    brillianceMainLabel.setText("Brilliance", juce::dontSendNotification);
+    brillianceMainLabel.setJustificationType(juce::Justification::centred);
+    brillianceMainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(brillianceMainLabel);
     
-    // Effects knobs
-    setupKnob(detuneAmountKnob, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
-    setupKnob(detuneMixKnob, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
-    setupKnob(reverbTimeKnob, reverbTimeLabel, "Reverb", 0.0, 1.0, 0.3);
-    setupKnob(reverbMixKnob, reverbMixLabel, "Rev Mix", 0.0, 1.0, 0.0);
+    // Effects vertical sliders
+    auto setupVerticalSlider = [this](juce::Slider& slider, juce::Label& label, const juce::String& name,
+                                      double min, double max, double defaultVal) {
+        slider.setSliderStyle(juce::Slider::LinearVertical);
+        slider.setRange(min, max, 0.01);
+        slider.setValue(defaultVal);
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setDoubleClickReturnValue(true, defaultVal);
+        addAndMakeVisible(slider);
+        
+        label.setText(name, juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(label);
+    };
+    
+    setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
+    setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
+    setupVerticalSlider(reverbTimeSlider, reverbTimeLabel, "Reverb", 0.0, 1.0, 0.3);
+    setupVerticalSlider(reverbMixSlider, reverbMixLabel, "Rev Mix", 0.0, 1.0, 0.0);
 
     setSize(1400, 800);
 }
@@ -579,38 +603,35 @@ void PLANETMainGui::resized()
     velAmpLabel.setBounds(envDepthX - 10, ampAdsrGraphY + ampAdsrGraphHeight + 5, envDepthSliderWidth + 20, 18);
     velAmpValue.setBounds(envDepthX, ampAdsrGraphY + ampAdsrGraphHeight + 25, envDepthSliderWidth, 22);
 
-    // 2x2 knob grid in Amplitude zone (below LFO knobs position)
+    // 2x2 knob grid in Amplitude zone - aligned with LFO knobs above
     int ampKnobSize = 60;
     int ampKnobValueHeight = 20;
-    int ampKnobSpacing = 10;
-    int ampKnobStartX = lfoZoneX + 10;
     int ampKnobStartY = drawbarSectionHeight + harmonicHeight + 10;
-    int ampKnobColWidth = ampKnobSize + ampKnobSpacing;
     int ampKnobRowHeight = 18 + ampKnobSize + ampKnobValueHeight + 10;  // label + knob + value + gap
 
-    // Row 1: Vel Brill, Vel Attack
-    velBrillLabel.setBounds(ampKnobStartX, ampKnobStartY, ampKnobSize, 18);
-    velBrillKnob.setBounds(ampKnobStartX, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
-    velBrillValue.setBounds(ampKnobStartX, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    // Row 1: Vel Brill (under LFO Speed), Vel Attack (under LFO Depth)
+    velBrillLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 18);
+    velBrillKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
+    velBrillValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    velAttackLabel.setBounds(ampKnobStartX + ampKnobColWidth, ampKnobStartY, ampKnobSize, 18);
-    velAttackKnob.setBounds(ampKnobStartX + ampKnobColWidth, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
-    velAttackValue.setBounds(ampKnobStartX + ampKnobColWidth, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    velAttackLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 18);
+    velAttackKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
+    velAttackValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    // Row 2: Env Curve, Vintage
+    // Row 2: Env Curve (under Vel Brill), Vintage (under Vel Attack)
     int row2Y = ampKnobStartY + ampKnobRowHeight;
-    envCurveLabel.setBounds(ampKnobStartX, row2Y, ampKnobSize, 18);
-    envCurveKnob.setBounds(ampKnobStartX, row2Y + 18, ampKnobSize, ampKnobSize);
-    envCurveValue.setBounds(ampKnobStartX, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    envCurveLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 18);
+    envCurveKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 18, ampKnobSize, ampKnobSize);
+    envCurveValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    vintageLabel.setBounds(ampKnobStartX + ampKnobColWidth, row2Y, ampKnobSize, 18);
-    vintageKnob.setBounds(ampKnobStartX + ampKnobColWidth, row2Y + 18, ampKnobSize, ampKnobSize);
-    vintageValue.setBounds(ampKnobStartX + ampKnobColWidth, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    vintageLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 18);
+    vintageKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 18, ampKnobSize, ampKnobSize);
+    vintageValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
     int rightContentWidth = bounds.getWidth() - leftWidth - 20;
-    int rightKnobSize = 50;
+    int rightKnobSize = 80;  // Match LFO knob size
     
     // Calculate section heights for right column (below waveform)
     int waveformHeight = drawbarSectionHeight;
@@ -618,7 +639,7 @@ void PLANETMainGui::resized()
     int rightSectionHeight = remainingHeight / 4;  // 4 sections: Vibrato, Pitch, Brilliance, Effects
     
     // Vibrato section (3 knobs)
-    int vibratoY = waveformHeight + 15;
+    int vibratoY = waveformHeight + 5;
     int vibratoKnobSpacing = rightContentWidth / 3;
     
     int vkx0 = rightX + (vibratoKnobSpacing - rightKnobSize) / 2;
@@ -634,7 +655,7 @@ void PLANETMainGui::resized()
     vibratoFadeKnob.setBounds(vkx2, vibratoY + 16, rightKnobSize, rightKnobSize);
     
     // Pitch section (2 knobs)
-    int pitchY = waveformHeight + rightSectionHeight + 15;
+    int pitchY = waveformHeight + rightSectionHeight + 5;
     int pitchKnobSpacing = rightContentWidth / 2;
     
     int pkx0 = rightX + (pitchKnobSpacing - rightKnobSize) / 2;
@@ -645,33 +666,33 @@ void PLANETMainGui::resized()
     pitchTimeLabel.setBounds(pkx1, pitchY, rightKnobSize, 16);
     pitchTimeKnob.setBounds(pkx1, pitchY + 16, rightKnobSize, rightKnobSize);
     
-    // Brilliance section (1 knob, centred)
-    int brillianceY = waveformHeight + rightSectionHeight * 2 + 15;
-    int bkx = rightX + (rightContentWidth - rightKnobSize) / 2;
-    brillianceMainLabel.setBounds(bkx, brillianceY, rightKnobSize, 16);
-    brillianceKnob.setBounds(bkx, brillianceY + 16, rightKnobSize, rightKnobSize);
+    // Brilliance section (horizontal slider filling width)
+    int brillianceY = waveformHeight + rightSectionHeight * 2 + 10;
+    int sliderMargin = 20;
+    brillianceMainLabel.setBounds(rightX, brillianceY, rightContentWidth, 18);
+    brillianceSlider.setBounds(rightX + sliderMargin, brillianceY + 22, rightContentWidth - sliderMargin * 2, 40);
     
-    // Effects section (4 knobs in 2x2 grid)
-    int effectsY = waveformHeight + rightSectionHeight * 3 + 10;
-    int effectsKnobSpacing = rightContentWidth / 2;
-    int effectsRowHeight = (rightSectionHeight - 20) / 2;
+    // Effects section (4 vertical sliders evenly spaced)
+    int effectsY = waveformHeight + rightSectionHeight * 3 + 5;
+    int effectsSliderWidth = 40;
+    int effectsSliderHeight = rightSectionHeight - 40;
+    int effectsSliderSpacing = rightContentWidth / 4;
     
-    // Row 1: Detune Amount, Detune Mix
-    int ekx0 = rightX + (effectsKnobSpacing - rightKnobSize) / 2;
-    detuneAmountLabel.setBounds(ekx0, effectsY, rightKnobSize, 14);
-    detuneAmountKnob.setBounds(ekx0, effectsY + 14, rightKnobSize, rightKnobSize);
+    int esx0 = rightX + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    detuneAmountLabel.setBounds(esx0, effectsY, effectsSliderWidth, 14);
+    detuneAmountSlider.setBounds(esx0, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
     
-    int ekx1 = rightX + effectsKnobSpacing + (effectsKnobSpacing - rightKnobSize) / 2;
-    detuneMixLabel.setBounds(ekx1, effectsY, rightKnobSize, 14);
-    detuneMixKnob.setBounds(ekx1, effectsY + 14, rightKnobSize, rightKnobSize);
+    int esx1 = rightX + effectsSliderSpacing + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    detuneMixLabel.setBounds(esx1, effectsY, effectsSliderWidth, 14);
+    detuneMixSlider.setBounds(esx1, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
     
-    // Row 2: Reverb Time, Reverb Mix
-    int effectsRow2Y = effectsY + effectsRowHeight;
-    reverbTimeLabel.setBounds(ekx0, effectsRow2Y, rightKnobSize, 14);
-    reverbTimeKnob.setBounds(ekx0, effectsRow2Y + 14, rightKnobSize, rightKnobSize);
+    int esx2 = rightX + effectsSliderSpacing * 2 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    reverbTimeLabel.setBounds(esx2, effectsY, effectsSliderWidth, 14);
+    reverbTimeSlider.setBounds(esx2, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
     
-    reverbMixLabel.setBounds(ekx1, effectsRow2Y, rightKnobSize, 14);
-    reverbMixKnob.setBounds(ekx1, effectsRow2Y + 14, rightKnobSize, rightKnobSize);
+    int esx3 = rightX + effectsSliderSpacing * 3 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    reverbMixLabel.setBounds(esx3, effectsY, effectsSliderWidth, 14);
+    reverbMixSlider.setBounds(esx3, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
 }
 
 void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
