@@ -206,6 +206,7 @@ PLANETMainGui::PLANETMainGui()
     envCurveKnob.setValue(0.5);
     envCurveKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     envCurveKnob.setDoubleClickReturnValue(true, 0.5);
+    envCurveKnob.onValueChange = [this]() { repaint(); };  // Repaint envelopes when curve changes
     addAndMakeVisible(envCurveKnob);
     envCurveLabel.setText("Env Curve", juce::dontSendNotification);
     envCurveLabel.setJustificationType(juce::Justification::centred);
@@ -355,13 +356,17 @@ void PLANETMainGui::paint(juce::Graphics& g)
         float decay = adsrValues[selectedDrawbar][1];
         float sustain = adsrValues[selectedDrawbar][2];
         float release = adsrValues[selectedDrawbar][3];
+        
+        // Get curve amount from the Env Curve knob (0-1)
+        float curveAmount = (float)envCurveKnob.getValue();
+        float curveFactor = 1.0f + curveAmount * 6.0f;
 
         // Normalise times for display
         float totalTime = attack + decay + 0.3f + release;  // 0.3 for sustain hold
         if (totalTime < 0.1f) totalTime = 0.1f;
         float timeScale = (float)adsrGraphWidth / totalTime;
 
-        // Calculate points
+        // Calculate key points
         float x0 = (float)adsrMargin;
         float y0 = (float)(adsrGraphY + adsrGraphHeight);  // Bottom (zero level)
         float yTop = (float)(adsrGraphY + 10);              // Top (full level)
@@ -372,13 +377,61 @@ void PLANETMainGui::paint(juce::Graphics& g)
         float x3 = x2 + 0.3f * timeScale;                   // End of sustain hold
         float x4 = x3 + release * timeScale;                // End of release
 
-        // Draw envelope line
+        // Draw envelope with curves
         juce::Path envPath;
         envPath.startNewSubPath(x0, y0);           // Start at zero
-        envPath.lineTo(x1, yTop);                  // Attack to peak
-        envPath.lineTo(x2, ySustain);              // Decay to sustain
-        envPath.lineTo(x3, ySustain);              // Sustain hold
-        envPath.lineTo(x4, y0);                    // Release to zero
+        
+        const int numSegments = 20;
+        
+        // Attack phase (convex curve: 1 - exp(-curveFactor * t))
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedT = 1.0f - std::exp(-curveFactor * t);
+                // Normalise curvedT since exp curve doesn't quite reach 1
+                float maxCurve = 1.0f - std::exp(-curveFactor);
+                curvedT /= maxCurve;
+                float x = x0 + (x1 - x0) * t;
+                float y = y0 + (yTop - y0) * curvedT;
+                envPath.lineTo(x, y);
+            }
+        } else {
+            envPath.lineTo(x1, yTop);  // Linear fallback
+        }
+        
+        // Decay phase (concave curve: exp(-curveFactor * t))
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedProgress = std::exp(-curveFactor * t);
+                // Normalise
+                float minCurve = std::exp(-curveFactor);
+                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
+                float x = x1 + (x2 - x1) * t;
+                float y = yTop + (ySustain - yTop) * (1.0f - curvedProgress);
+                envPath.lineTo(x, y);
+            }
+        } else {
+            envPath.lineTo(x2, ySustain);  // Linear fallback
+        }
+        
+        envPath.lineTo(x3, ySustain);              // Sustain hold (always linear)
+        
+        // Release phase (concave curve: exp(-curveFactor * t))
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedProgress = std::exp(-curveFactor * t);
+                // Normalise
+                float minCurve = std::exp(-curveFactor);
+                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
+                float x = x3 + (x4 - x3) * t;
+                float y = ySustain + (y0 - ySustain) * (1.0f - curvedProgress);
+                envPath.lineTo(x, y);
+            }
+        } else {
+            envPath.lineTo(x4, y0);  // Linear fallback
+        }
 
         g.setColour(drawbarColours[selectedDrawbar]);
         g.strokePath(envPath, juce::PathStrokeType(2.5f));
@@ -419,13 +472,17 @@ void PLANETMainGui::paint(juce::Graphics& g)
         float decay = ampAdsrValues[1];
         float sustain = ampAdsrValues[2];
         float release = ampAdsrValues[3];
+        
+        // Get curve amount from the Env Curve knob (0-1)
+        float curveAmount = (float)envCurveKnob.getValue();
+        float curveFactor = 1.0f + curveAmount * 6.0f;
 
         // Normalise times for display
         float totalTime = attack + decay + 0.3f + release;
         if (totalTime < 0.1f) totalTime = 0.1f;
         float timeScale = (float)adsrGraphWidth / totalTime;
 
-        // Calculate points
+        // Calculate key points
         float x0 = (float)adsrMargin;
         float y0 = (float)(adsrGraphY + adsrGraphHeight);
         float yTop = (float)(adsrGraphY + 10);
@@ -436,13 +493,58 @@ void PLANETMainGui::paint(juce::Graphics& g)
         float x3 = x2 + 0.3f * timeScale;
         float x4 = x3 + release * timeScale;
 
-        // Draw envelope line in white for global section
+        // Draw envelope with curves
         juce::Path envPath;
         envPath.startNewSubPath(x0, y0);
-        envPath.lineTo(x1, yTop);
-        envPath.lineTo(x2, ySustain);
-        envPath.lineTo(x3, ySustain);
-        envPath.lineTo(x4, y0);
+        
+        const int numSegments = 20;
+        
+        // Attack phase (convex curve)
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedT = 1.0f - std::exp(-curveFactor * t);
+                float maxCurve = 1.0f - std::exp(-curveFactor);
+                curvedT /= maxCurve;
+                float x = x0 + (x1 - x0) * t;
+                float y = y0 + (yTop - y0) * curvedT;
+                envPath.lineTo(x, y);
+            }
+        } else {
+            envPath.lineTo(x1, yTop);
+        }
+        
+        // Decay phase (concave curve)
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedProgress = std::exp(-curveFactor * t);
+                float minCurve = std::exp(-curveFactor);
+                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
+                float x = x1 + (x2 - x1) * t;
+                float y = yTop + (ySustain - yTop) * (1.0f - curvedProgress);
+                envPath.lineTo(x, y);
+            }
+        } else {
+            envPath.lineTo(x2, ySustain);
+        }
+        
+        envPath.lineTo(x3, ySustain);  // Sustain hold
+        
+        // Release phase (concave curve)
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedProgress = std::exp(-curveFactor * t);
+                float minCurve = std::exp(-curveFactor);
+                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
+                float x = x3 + (x4 - x3) * t;
+                float y = ySustain + (y0 - ySustain) * (1.0f - curvedProgress);
+                envPath.lineTo(x, y);
+            }
+        } else {
+            envPath.lineTo(x4, y0);
+        }
 
         g.setColour(juce::Colours::white);
         g.strokePath(envPath, juce::PathStrokeType(2.5f));
