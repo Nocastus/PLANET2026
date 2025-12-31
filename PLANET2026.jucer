@@ -6,27 +6,27 @@
               pluginManufacturerCode="Gera" pluginCode="PL26" bundleIdentifier="com.gerardjonson.PLANET2026">
   <MAINGROUP id="KRDVCI" name="PLANET2026">
     <GROUP id="{98A0DDF2-A42D-8D42-FE29-B09DFF176340}" name="Source">
+      <FILE id="sQdFF3" name="PluginEditor.cpp" compile="1" resource="0"
+            file="Source/PluginEditor.cpp"/>
+      <FILE id="vBYMlL" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="ptDZ8V" name="PLANETEffects.h" compile="0" resource="0" file="Source/PLANETEffects.h"/>
+      <FILE id="de77EL" name="PLANETEffects.cpp" compile="1" resource="0"
+            file="Source/PLANETEffects.cpp"/>
+      <FILE id="kgEuh0" name="PLANETVoice.h" compile="0" resource="0" file="Source/PLANETVoice.h"/>
+      <FILE id="CZQtIE" name="PLANETVoice.cpp" compile="1" resource="0" file="Source/PLANETVoice.cpp"/>
+      <FILE id="WagMMP" name="PluginProcessor.h" compile="0" resource="0"
+            file="Source/PluginProcessor.h"/>
+      <FILE id="kjqWC9" name="PLANETVoiceManager.cpp" compile="1" resource="0"
+            file="Source/PLANETVoiceManager.cpp"/>
+      <FILE id="J0VNAF" name="PLANETVoiceManager.h" compile="0" resource="0"
+            file="Source/PLANETVoiceManager.h"/>
+      <FILE id="NpoaZX" name="PLANETDataStructures.h" compile="0" resource="0"
+            file="Source/PLANETDataStructures.h"/>
+      <FILE id="JPRRtL" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
       <FILE id="YZGw52" name="PLANETMainGui.cpp" compile="1" resource="0"
             file="Source/PLANETMainGui.cpp"/>
       <FILE id="WqQax7" name="PLANETMainGui.h" compile="0" resource="0" file="Source/PLANETMainGui.h"/>
-      <FILE id="eNPXy8" name="PLANETDataStructures.h" compile="0" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETDataStructures.h"/>
-      <FILE id="fyq916" name="PLANETEffects.cpp" compile="1" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETEffects.cpp"/>
-      <FILE id="XIgbfr" name="PLANETEffects.h" compile="0" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETEffects.h"/>
-      <FILE id="dQ89Dj" name="PLANETVoice.cpp" compile="1" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoice.cpp"/>
-      <FILE id="FMuLx6" name="PLANETVoice.h" compile="0" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoice.h"/>
-      <FILE id="sDvCbh" name="PLANETVoiceManager.cpp" compile="1" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoiceManager.cpp"/>
-      <FILE id="E48LZr" name="PLANETVoiceManager.h" compile="0" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PLANETVoiceManager.h"/>
-      <FILE id="QarK4j" name="PluginEditor.cpp" compile="1" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginEditor.cpp"/>
-      <FILE id="efN4ar" name="PluginEditor.h" compile="0" resource="0" file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginEditor.h"/>
-      <FILE id="yCKsmD" name="PluginProcessor.cpp" compile="1" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginProcessor.cpp"/>
-      <FILE id="MhipqZ" name="PluginProcessor.h" compile="0" resource="0"
-            file="C:/Users/Gerard Johnson/Documents/Planet Synth Test/PLANET 4/PLANET test6/Source/PluginProcessor.h"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>

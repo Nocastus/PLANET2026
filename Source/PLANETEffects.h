@@ -1,0 +1,83 @@
+/*
+  ==============================================================================
+    PLANETEffects.h - Modular Effects Processing
+    Template-based design for consistent two-parameter effect modules
+  ==============================================================================
+*/
+
+#pragma once
+#include <JuceHeader.h>
+
+//==============================================================================
+// MODULAR EFFECTS PROCESSOR
+//==============================================================================
+
+class PLANETEffects {
+public:
+    PLANETEffects();
+
+    // Setup
+    void prepareToPlay(double sampleRate, int samplesPerBlock);
+
+    // Main processing - converts mono input to stereo output with effects
+    std::pair<float, float> processStereoSample(float monoInput);
+
+    // Parameter updates (call once per audio block for efficiency)
+    void updateDetuneParams(float amount, float mix);
+    void updateReverbParams(float roomSize, float damping, float width, float mix);
+
+private:
+    //==========================================================================
+    // DUAL DETUNE EFFECT
+    //==========================================================================
+    struct DetuneProcessor {
+        static constexpr int BUFFER_SIZE = 1024;  // Much smaller buffer (~23ms at 44.1kHz)
+        static constexpr float MAX_DETUNE_CENTS = 50.0f;  // More obvious effect
+        static constexpr float BASE_DELAY_SAMPLES = 64.0f;  // Small fixed delay (~1.5ms)
+
+        std::array<float, BUFFER_SIZE> buffer;
+        int writeIndex = 0;
+
+        // Read positions track write position with rate offsets
+        float leftReadOffset = BASE_DELAY_SAMPLES;
+        float rightReadOffset = BASE_DELAY_SAMPLES;
+
+        float leftPlaybackRate = 1.0f;
+        float rightPlaybackRate = 1.0f;
+        float mix = 0.0f;
+
+        // Simple smoothing for buffer wrap artifacts
+        float leftPrevSample = 0.0f;
+        float rightPrevSample = 0.0f;
+        static constexpr float SMOOTHING_FACTOR = 0.95f; // Gentle smoothing
+
+        void updateParameters(float amount, float mixAmount, double sampleRate);
+        std::pair<float, float> process(float input);
+
+    private:
+        float interpolatedRead(float readPosition);
+        float centsToRatio(float cents);
+    };
+    //==========================================================================
+    // JUCE REVERB EFFECT
+    //==========================================================================
+    struct ReverbProcessor {
+        juce::Reverb reverb;
+        juce::Reverb::Parameters reverbParams;
+
+        void updateParameters(float roomSize, float damping, float width, float mix);  // Updated to 4 parameters
+        std::pair<float, float> process(float leftInput, float rightInput);
+        void prepareToPlay(double sampleRate);
+    };
+
+    //==========================================================================
+    // EFFECT INSTANCES
+    //==========================================================================
+    DetuneProcessor detuneProcessor;
+    ReverbProcessor reverbProcessor;  // Add this line
+
+    // Audio properties
+    double currentSampleRate = 44100.0;
+
+
+};
