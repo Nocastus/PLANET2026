@@ -381,7 +381,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
                 juce::Colours::darkgrey,
                 juce::DocumentWindow::allButtons);
             
-            guiPreviewWindow->setContentOwned(new PLANETMainGui(), true);
+            guiPreviewWindow->setContentOwned(new PLANETMainGui(audioProcessor.parameters), true);
             guiPreviewWindow->setResizable(true, true);
             guiPreviewWindow->centreWithSize(1400, 800);
             guiPreviewWindow->setVisible(true);
@@ -393,7 +393,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     };
 
     // Version label
-    versionLabel.setText("PLANET v0.1.0 - 30 Dec 2025", juce::dontSendNotification);
+    versionLabel.setText("PLANET v0.1.1 - 01 Jan 2026", juce::dontSendNotification);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(versionLabel);

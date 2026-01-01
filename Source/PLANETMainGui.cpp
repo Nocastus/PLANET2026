@@ -1,13 +1,14 @@
 /*
   ==============================================================================
     PLANETMainGui.cpp - User-Friendly GUI for PLANET Synthesizer
-    Mockup Phase - No parameter binding yet
+    With parameter binding to audio engine
   ==============================================================================
 */
 
 #include "PLANETMainGui.h"
 
-PLANETMainGui::PLANETMainGui()
+PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
+    : apvts(apvtsRef)
 {
     // Set up drawbar sliders
     for (int i = 0; i < 10; ++i)
@@ -297,11 +298,147 @@ PLANETMainGui::PLANETMainGui()
     setupVerticalSlider(reverbTimeSlider, reverbTimeLabel, "Reverb", 0.0, 1.0, 0.3);
     setupVerticalSlider(reverbMixSlider, reverbMixLabel, "Rev Mix", 0.0, 1.0, 0.0);
 
+    // ======================== CREATE SLIDER ATTACHMENTS ========================
+    
+    // K1-K10 drawbar attachments
+    const char* kParamNames[] = { "k1", "k2", "k3", "k4", "k5", "k6", "k7", "k8", "k9", "k10" };
+    for (int i = 0; i < 10; ++i)
+    {
+        drawbarAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            apvts, kParamNames[i], drawbarSliders[i]);
+    }
+    
+    // Right column attachments (simple 1:1 bindings)
+    vibratoRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "vibratoRate", vibratoRateKnob);
+    vibratoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "vibratoDepth", vibratoDepthKnob);
+    vibratoFadeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "vibratoFadeIn", vibratoFadeKnob);
+    pitchDistAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "pitchEnvDistance", pitchDistKnob);
+    pitchTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "pitchEnvTime", pitchTimeKnob);
+    brillianceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "brilliance", brillianceSlider);
+    detuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "detuneAmount", detuneAmountSlider);
+    detuneMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "detuneMix", detuneMixSlider);
+    reverbTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "reverbLength", reverbTimeSlider);
+    reverbMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "reverbMix", reverbMixSlider);
+    
+    // Amplitude section attachments
+    velAmpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "velToAmplitude", velAmpSlider);
+    velBrillAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "velToBrilliance", velBrillKnob);
+    velAttackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "velToAttackTime", velAttackKnob);
+    envCurveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "exponentialControl", envCurveKnob);
+    vintageAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "vintageAmount", vintageKnob);
+    
+    // Initial binding to selected drawbar (K1)
+    bindToSelectedDrawbar();
+    
+    // Load initial ADSR values from parameters
+    for (int d = 0; d < 10; ++d)
+    {
+        juce::String prefix = "k" + juce::String(d + 1);
+        if (auto* param = apvts.getParameter(prefix + "AttackTime"))
+            adsrValues[d][0] = param->convertFrom0to1(param->getValue());
+        if (auto* param = apvts.getParameter(prefix + "DecayTime"))
+            adsrValues[d][1] = param->convertFrom0to1(param->getValue());
+        if (auto* param = apvts.getParameter(prefix + "SustainLevel"))
+            adsrValues[d][2] = param->convertFrom0to1(param->getValue());
+        if (auto* param = apvts.getParameter(prefix + "ReleaseTime"))
+            adsrValues[d][3] = param->convertFrom0to1(param->getValue());
+    }
+    
+    // Load amplitude envelope values
+    if (auto* param = apvts.getParameter("ampEnvAttackTime"))
+        ampAdsrValues[0] = param->convertFrom0to1(param->getValue());
+    if (auto* param = apvts.getParameter("ampEnvDecayTime"))
+        ampAdsrValues[1] = param->convertFrom0to1(param->getValue());
+    if (auto* param = apvts.getParameter("ampEnvSustainLevel"))
+        ampAdsrValues[2] = param->convertFrom0to1(param->getValue());
+    if (auto* param = apvts.getParameter("ampEnvReleaseTime"))
+        ampAdsrValues[3] = param->convertFrom0to1(param->getValue());
+    
+    // Load F values from parameters
+    for (int i = 0; i < 10; ++i)
+    {
+        if (auto* param = apvts.getParameter("input_f" + juce::String(i + 1)))
+        {
+            float fVal = param->convertFrom0to1(param->getValue());
+            fValueLabels[i].setText(juce::String(fVal, 1), juce::dontSendNotification);
+        }
+    }
+    
+    // Wire up F value label editing to write back to APVTS
+    for (int i = 0; i < 10; ++i)
+    {
+        fValueLabels[i].onTextChange = [this, i]() {
+            float newVal = fValueLabels[i].getText().getFloatValue();
+            newVal = std::round(newVal * 2.0f) / 2.0f;  // Round to nearest 0.5
+            newVal = juce::jlimit(0.5f, 30.0f, newVal);
+            if (auto* param = apvts.getParameter("input_f" + juce::String(i + 1)))
+                param->setValueNotifyingHost(param->convertTo0to1(newVal));
+            fValueLabels[i].setText(juce::String(newVal, 1), juce::dontSendNotification);
+        };
+    }
+    
+    // Wire up harmonic ADSR value editing
+    const char* adsrSuffixes[] = { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime" };
+    for (int i = 0; i < 4; ++i)
+    {
+        adsrValueEditors[i].onTextChange = [this, i, adsrSuffixes]() {
+            float newVal = adsrValueEditors[i].getText().getFloatValue();
+            juce::String paramID = "k" + juce::String(selectedDrawbar + 1) + adsrSuffixes[i];
+            if (auto* param = apvts.getParameter(paramID))
+            {
+                param->setValueNotifyingHost(param->convertTo0to1(newVal));
+                adsrValues[selectedDrawbar][i] = param->convertFrom0to1(param->getValue());
+            }
+            repaint();
+        };
+    }
+    
+    // Wire up amplitude ADSR value editing
+    const char* ampParamNames[] = { "ampEnvAttackTime", "ampEnvDecayTime", "ampEnvSustainLevel", "ampEnvReleaseTime" };
+    for (int i = 0; i < 4; ++i)
+    {
+        ampAdsrValueEditors[i].onTextChange = [this, i, ampParamNames]() {
+            float newVal = ampAdsrValueEditors[i].getText().getFloatValue();
+            if (auto* param = apvts.getParameter(ampParamNames[i]))
+            {
+                param->setValueNotifyingHost(param->convertTo0to1(newVal));
+                ampAdsrValues[i] = param->convertFrom0to1(param->getValue());
+            }
+            repaint();
+        };
+    }
+    
+    // Register as listener for amplitude envelope parameters (for automation sync)
+    apvts.addParameterListener("ampEnvAttackTime", this);
+    apvts.addParameterListener("ampEnvDecayTime", this);
+    apvts.addParameterListener("ampEnvSustainLevel", this);
+    apvts.addParameterListener("ampEnvReleaseTime", this);
+
     setSize(1400, 800);
 }
 
 PLANETMainGui::~PLANETMainGui()
 {
+    // Remove parameter listeners to prevent dangling callbacks
+    apvts.removeParameterListener("ampEnvAttackTime", this);
+    apvts.removeParameterListener("ampEnvDecayTime", this);
+    apvts.removeParameterListener("ampEnvSustainLevel", this);
+    apvts.removeParameterListener("ampEnvReleaseTime", this);
 }
 
 void PLANETMainGui::paint(juce::Graphics& g)
@@ -1046,16 +1183,27 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
             break;
     }
     
-    // Update text displays
+    // Update text displays and write to APVTS
     if (isHarmonic)
     {
+        const char* suffixes[] = { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime" };
+        juce::String prefix = "k" + juce::String(selectedDrawbar + 1);
         for (int i = 0; i < 4; ++i)
+        {
             adsrValueEditors[i].setText(juce::String(values[i], 2), juce::dontSendNotification);
+            if (auto* param = apvts.getParameter(prefix + suffixes[i]))
+                param->setValueNotifyingHost(param->convertTo0to1(values[i]));
+        }
     }
     else
     {
+        const char* ampParams[] = { "ampEnvAttackTime", "ampEnvDecayTime", "ampEnvSustainLevel", "ampEnvReleaseTime" };
         for (int i = 0; i < 4; ++i)
+        {
             ampAdsrValueEditors[i].setText(juce::String(values[i], 2), juce::dontSendNotification);
+            if (auto* param = apvts.getParameter(ampParams[i]))
+                param->setValueNotifyingHost(param->convertTo0to1(values[i]));
+        }
     }
 }
 
@@ -1071,4 +1219,110 @@ void PLANETMainGui::updateAdsrDisplay()
     selectedFDisplay.setText("F" + fValueLabels[selectedDrawbar].getText(), 
                               juce::dontSendNotification);
     selectedFDisplay.setColour(juce::Label::textColourId, drawbarColours[selectedDrawbar]);
+    
+    // Rebind context-sensitive controls to new drawbar
+    bindToSelectedDrawbar();
+}
+
+void PLANETMainGui::bindToSelectedDrawbar()
+{
+    // Build parameter ID prefix for current drawbar (k1, k2, ... k10)
+    juce::String prefix = "k" + juce::String(selectedDrawbar + 1);
+    
+    // Store current parameter IDs for reference
+    currentHarmonicParamIDs[0] = prefix + "AttackTime";
+    currentHarmonicParamIDs[1] = prefix + "DecayTime";
+    currentHarmonicParamIDs[2] = prefix + "SustainLevel";
+    currentHarmonicParamIDs[3] = prefix + "ReleaseTime";
+    
+    // Destroy old attachments first (must be done before creating new ones)
+    lfoSpeedAttachment.reset();
+    lfoDepthAttachment.reset();
+    lfoShapeAttachment.reset();
+    envDepthAttachment.reset();
+    
+    // Create new attachments for the selected drawbar's LFO parameters
+    lfoSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, prefix + "LFORate", lfoSpeedKnob);
+    lfoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, prefix + "LFOAmount", lfoDepthKnob);
+    lfoShapeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvts, prefix + "LFOShape", lfoShapeCombo);
+    envDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, prefix + "EnvelopeAmount", envDepthKnob);
+    
+    // Update ADSR display values from parameters
+    if (auto* param = apvts.getParameter(currentHarmonicParamIDs[0]))
+        adsrValues[selectedDrawbar][0] = param->convertFrom0to1(param->getValue());
+    if (auto* param = apvts.getParameter(currentHarmonicParamIDs[1]))
+        adsrValues[selectedDrawbar][1] = param->convertFrom0to1(param->getValue());
+    if (auto* param = apvts.getParameter(currentHarmonicParamIDs[2]))
+        adsrValues[selectedDrawbar][2] = param->convertFrom0to1(param->getValue());
+    if (auto* param = apvts.getParameter(currentHarmonicParamIDs[3]))
+        adsrValues[selectedDrawbar][3] = param->convertFrom0to1(param->getValue());
+    
+    // Update ADSR text displays
+    for (int i = 0; i < 4; ++i)
+        adsrValueEditors[i].setText(juce::String(adsrValues[selectedDrawbar][i], 2), juce::dontSendNotification);
+    
+    // Update envelope depth display
+    if (auto* param = apvts.getParameter(prefix + "EnvelopeAmount"))
+        envDepthValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+}
+
+void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newValue)
+{
+    // This callback fires when parameters change from automation or other sources
+    // We use it to keep the GUI in sync with parameter values
+    
+    // Check if it's one of the amplitude envelope parameters
+    if (parameterID == "ampEnvAttackTime")
+    {
+        ampAdsrValues[0] = newValue;
+        ampAdsrValueEditors[0].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    else if (parameterID == "ampEnvDecayTime")
+    {
+        ampAdsrValues[1] = newValue;
+        ampAdsrValueEditors[1].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    else if (parameterID == "ampEnvSustainLevel")
+    {
+        ampAdsrValues[2] = newValue;
+        ampAdsrValueEditors[2].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    else if (parameterID == "ampEnvReleaseTime")
+    {
+        ampAdsrValues[3] = newValue;
+        ampAdsrValueEditors[3].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    // Check if it's one of the currently selected harmonic's ADSR parameters
+    else if (parameterID == currentHarmonicParamIDs[0])
+    {
+        adsrValues[selectedDrawbar][0] = newValue;
+        adsrValueEditors[0].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    else if (parameterID == currentHarmonicParamIDs[1])
+    {
+        adsrValues[selectedDrawbar][1] = newValue;
+        adsrValueEditors[1].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    else if (parameterID == currentHarmonicParamIDs[2])
+    {
+        adsrValues[selectedDrawbar][2] = newValue;
+        adsrValueEditors[2].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
+    else if (parameterID == currentHarmonicParamIDs[3])
+    {
+        adsrValues[selectedDrawbar][3] = newValue;
+        adsrValueEditors[3].setText(juce::String(newValue, 2), juce::dontSendNotification);
+        repaint();
+    }
 }

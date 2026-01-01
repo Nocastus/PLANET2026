@@ -1,7 +1,7 @@
 /*
   ==============================================================================
     PLANETMainGui.h - User-Friendly GUI for PLANET Synthesizer
-    Mockup Phase - No parameter binding yet
+    With parameter binding to audio engine
   ==============================================================================
 */
 
@@ -10,10 +10,11 @@
 #include <JuceHeader.h>
 #include <array>
 
-class PLANETMainGui : public juce::Component
+class PLANETMainGui : public juce::Component,
+                       public juce::AudioProcessorValueTreeState::Listener
 {
 public:
-    PLANETMainGui();
+    PLANETMainGui(juce::AudioProcessorValueTreeState& apvts);
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
@@ -22,6 +23,12 @@ public:
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void updateAdsrDisplay();  // Update ADSR fields for selected drawbar
+    
+    // Parameter listener callback
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
+    
+    // Bind context-sensitive controls to currently selected drawbar
+    void bindToSelectedDrawbar();
 
     // Envelope drag state
     enum class DragTarget { None, HarmonicAttack, HarmonicDecaySustain, HarmonicRelease,
@@ -63,15 +70,24 @@ private:
     static constexpr int patchBarHeight = 40;
     static constexpr int drawbarSectionHeight = 200;
 
+    // Reference to APVTS
+    juce::AudioProcessorValueTreeState& apvts;
+    
     // Drawbar components
     std::array<juce::Slider, 10> drawbarSliders;
     std::array<juce::Label, 10> fValueLabels;
     int selectedDrawbar = 0;  // Currently selected drawbar (0-9)
+    
+    // SliderAttachments for K1-K10 drawbars
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 10> drawbarAttachments;
 
-    // Harmonic ADSR display
+    // Harmonic ADSR display (context-sensitive - bound to selected drawbar)
     std::array<juce::Label, 4> adsrLabels;      // A, D, S, R text labels
     std::array<juce::Label, 4> adsrValueEditors; // Editable value fields
-    float adsrValues[10][4] = {};  // [drawbar][A/D/S/R] - placeholder values
+    float adsrValues[10][4] = {};  // [drawbar][A/D/S/R] - cached values for display
+    
+    // Current harmonic parameter IDs (updated when selection changes)
+    juce::String currentHarmonicParamIDs[4];  // Attack, Decay, Sustain, Release
 
     // Harmonic LFO controls
     juce::ComboBox lfoShapeCombo;
@@ -122,6 +138,33 @@ private:
     juce::Slider reverbTimeSlider, reverbMixSlider;
     juce::Label detuneAmountLabel, detuneMixLabel;
     juce::Label reverbTimeLabel, reverbMixLabel;
+    
+    // ======================== SLIDER ATTACHMENTS (Simple 1:1 bindings) ========================
+    
+    // Right column attachments
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vibratoRateAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vibratoDepthAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vibratoFadeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchDistAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchTimeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> brillianceAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAmountAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbTimeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbMixAttachment;
+    
+    // Amplitude section attachments
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAmpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velBrillAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAttackAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> envCurveAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vintageAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> envDepthAttachment;
+    
+    // Context-sensitive attachments (harmonic section - recreated when selection changes)
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSpeedAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };
