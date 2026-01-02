@@ -439,6 +439,8 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Update global parameters (shared by all voices)
     coefficients.updateAllActiveValues();
     float baseBrilliance = brillianceParameter->load();
+    float modWheelBrilliance = currentModWheelValue.load();
+    float effectiveBrilliance = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheelBrilliance);
 
     // Get envelope exponential parameters
     float currentExponentialControl = exponentialControlParameter->load();
@@ -556,7 +558,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     {
         float mixedSample = voiceManager.processNextSample(coefficients,
             ampAttackTime, ampDecayTime, ampSustainLevel, ampReleaseTime,
-            baseBrilliance, getSampleRate(),
+            effectiveBrilliance, getSampleRate(),
             pitchWheelSemitones,
             vibratoRate, vibratoDepth, vibratoFadeIn,
             velToAmplitude, velToBrilliance, velToAttackTime, vintageAmount,

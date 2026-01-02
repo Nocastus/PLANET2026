@@ -11,10 +11,11 @@
 #include <array>
 
 class PLANETMainGui : public juce::Component,
-                       public juce::AudioProcessorValueTreeState::Listener
+                       public juce::AudioProcessorValueTreeState::Listener,
+                       public juce::Timer
 {
 public:
-    PLANETMainGui(juce::AudioProcessorValueTreeState& apvts);
+    PLANETMainGui(juce::AudioProcessorValueTreeState& apvts, std::atomic<float>* modWheelPtr = nullptr);
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
@@ -22,12 +23,10 @@ public:
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
-    void updateAdsrDisplay();  // Update ADSR fields for selected drawbar
+    void updateAdsrDisplay();
+    void timerCallback() override;
     
-    // Parameter listener callback
     void parameterChanged(const juce::String& parameterID, float newValue) override;
-    
-    // Bind context-sensitive controls to currently selected drawbar
     void bindToSelectedDrawbar();
 
     // Envelope drag state
@@ -35,7 +34,7 @@ public:
                             AmpAttack, AmpDecaySustain, AmpRelease };
     DragTarget currentDragTarget = DragTarget::None;
     
-    // Envelope graph bounds (calculated in resized, used in mouse handling)
+    // Envelope graph bounds
     juce::Rectangle<int> harmonicEnvBounds;
     juce::Rectangle<int> ampEnvBounds;
     
@@ -43,12 +42,17 @@ public:
     juce::Point<float> getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
                                          float attack, float decay, float sustain, float release);
     void updateAdsrFromDrag(const juce::MouseEvent& event);
+    
+    // Envelope drawing helper - consolidates duplicate code
+    void drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<int>& bounds,
+                           float attack, float decay, float sustain, float release,
+                           float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour);
 
 private:
     // Colour scheme
-    juce::Colour backgroundLight { 0xff3a3a3a };   // Per-harmonic zone (lighter grey)
-    juce::Colour backgroundGlobal { 0xff2a2a4a };  // Global controls zone (brighter blue-purple)
-    juce::Colour accentColour { 0xff6ab0ff };      // Highlights (brighter blue)
+    juce::Colour backgroundLight { 0xff3a3a3a };
+    juce::Colour backgroundGlobal { 0xff2a2a4a };
+    juce::Colour accentColour { 0xff6ab0ff };
 
     // Drawbar colours (resistor code inspired)
     std::array<juce::Colour, 10> drawbarColours {
@@ -65,8 +69,8 @@ private:
     };
 
     // Layout proportions
-    static constexpr float leftWidthRatio = 0.67f;   // Left 2/3
-    static constexpr float rightWidthRatio = 0.33f;  // Right 1/3
+    static constexpr float leftWidthRatio = 0.67f;
+    static constexpr float rightWidthRatio = 0.33f;
     static constexpr int patchBarHeight = 40;
     static constexpr int drawbarSectionHeight = 200;
 
@@ -76,25 +80,25 @@ private:
     // Drawbar components
     std::array<juce::Slider, 10> drawbarSliders;
     std::array<juce::Label, 10> fValueLabels;
-    int selectedDrawbar = 0;  // Currently selected drawbar (0-9)
+    int selectedDrawbar = 0;
     
     // SliderAttachments for K1-K10 drawbars
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 10> drawbarAttachments;
 
-    // Harmonic ADSR display (context-sensitive - bound to selected drawbar)
-    std::array<juce::Label, 4> adsrLabels;      // A, D, S, R text labels
-    std::array<juce::Label, 4> adsrValueEditors; // Editable value fields
-    float adsrValues[10][4] = {};  // [drawbar][A/D/S/R] - cached values for display
+    // Harmonic ADSR display
+    std::array<juce::Label, 4> adsrLabels;
+    std::array<juce::Label, 4> adsrValueEditors;
+    float adsrValues[10][4] = {};
     
-    // Current harmonic parameter IDs (updated when selection changes)
-    juce::String currentHarmonicParamIDs[4];  // Attack, Decay, Sustain, Release
+    // Current harmonic parameter IDs
+    juce::String currentHarmonicParamIDs[4];
 
     // Harmonic LFO controls
     juce::ComboBox lfoShapeCombo;
     juce::Slider lfoSpeedKnob;
     juce::Slider lfoDepthKnob;
     juce::Label lfoShapeLabel, lfoSpeedLabel, lfoDepthLabel;
-    juce::Label selectedFDisplay;  // Shows F value of selected drawbar
+    juce::Label selectedFDisplay;
 
     // Envelope depth control
     juce::Slider envDepthKnob;
@@ -102,9 +106,9 @@ private:
     juce::Label envDepthValue;
 
     // Amplitude ADSR display
-    std::array<juce::Label, 4> ampAdsrLabels;      // A, D, S, R text labels
-    std::array<juce::Label, 4> ampAdsrValueEditors; // Editable value fields
-    float ampAdsrValues[4] = { 0.1f, 0.3f, 0.7f, 0.5f };  // Global amp envelope values
+    std::array<juce::Label, 4> ampAdsrLabels;
+    std::array<juce::Label, 4> ampAdsrValueEditors;
+    float ampAdsrValues[4] = { 0.1f, 0.3f, 0.7f, 0.5f };
 
     // Velocity to Amplitude control
     juce::Slider velAmpSlider;
@@ -118,9 +122,6 @@ private:
 
     // ======================== RIGHT COLUMN CONTROLS ========================
     
-    // Waveform display (placeholder for now)
-    // Will be implemented as custom painting + circular buffer later
-    
     // Vibrato section
     juce::Slider vibratoRateKnob, vibratoDepthKnob, vibratoFadeKnob;
     juce::Label vibratoRateLabel, vibratoDepthLabel, vibratoFadeLabel;
@@ -129,17 +130,22 @@ private:
     juce::Slider pitchDistKnob, pitchTimeKnob;
     juce::Label pitchDistLabel, pitchTimeLabel;
     
-    // Brilliance section (horizontal slider)
+    // Brilliance section
     juce::Slider brillianceSlider;
     juce::Label brillianceMainLabel;
     
-    // Effects section (vertical sliders)
+    // Mod wheel tracking
+    std::atomic<float>* modWheelValue = nullptr;
+    juce::Rectangle<int> brillianceSliderBounds;
+    float cachedEffectiveBrilliance = 0.5f;
+    
+    // Effects section
     juce::Slider detuneAmountSlider, detuneMixSlider;
     juce::Slider reverbTimeSlider, reverbMixSlider;
     juce::Label detuneAmountLabel, detuneMixLabel;
     juce::Label reverbTimeLabel, reverbMixLabel;
     
-    // ======================== SLIDER ATTACHMENTS (Simple 1:1 bindings) ========================
+    // ======================== SLIDER ATTACHMENTS ========================
     
     // Right column attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vibratoRateAttachment;
@@ -161,7 +167,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vintageAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> envDepthAttachment;
     
-    // Context-sensitive attachments (harmonic section - recreated when selection changes)
+    // Context-sensitive attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;

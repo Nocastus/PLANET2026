@@ -2,13 +2,14 @@
   ==============================================================================
     PLANETMainGui.cpp - User-Friendly GUI for PLANET Synthesizer
     With parameter binding to audio engine
+    REFACTORED: Extracted envelope drawing into reusable helper function
   ==============================================================================
 */
 
 #include "PLANETMainGui.h"
 
-PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
-    : apvts(apvtsRef)
+PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef, std::atomic<float>* modWheelPtr)
+    : apvts(apvtsRef), modWheelValue(modWheelPtr)
 {
     // Set up drawbar sliders
     for (int i = 0; i < 10; ++i)
@@ -18,8 +19,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
         drawbarSliders[i].setValue(0.0);
         drawbarSliders[i].setDoubleClickReturnValue(true, 0.0);
         drawbarSliders[i].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        drawbarSliders[i].setSliderSnapsToMousePosition(false);  // Don't jump to click
-        drawbarSliders[i].addMouseListener(this, false);  // Pass clicks to parent
+        drawbarSliders[i].setSliderSnapsToMousePosition(false);
+        drawbarSliders[i].addMouseListener(this, false);
         addAndMakeVisible(drawbarSliders[i]);
     }
 
@@ -40,7 +41,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
     {
         adsrValues[i][0] = 0.1f;   // Attack
         adsrValues[i][1] = 0.3f;   // Decay
-        adsrValues[i][2] = 0.5f;   // Sustain (0-1 level)
+        adsrValues[i][2] = 0.5f;   // Sustain
         adsrValues[i][3] = 0.5f;   // Release
     }
 
@@ -98,7 +99,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
     lfoDepthLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(lfoDepthLabel);
 
-    // Set up selected F display - white background for contrast
+    // Set up selected F display
     selectedFDisplay.setText("F1", juce::dontSendNotification);
     selectedFDisplay.setFont(juce::Font(24.0f, juce::Font::bold));
     selectedFDisplay.setJustificationType(juce::Justification::centred);
@@ -106,7 +107,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
     selectedFDisplay.setColour(juce::Label::textColourId, drawbarColours[0]);
     addAndMakeVisible(selectedFDisplay);
 
-    // Set up envelope depth slider (vertical, center zero)
+    // Set up envelope depth slider
     envDepthKnob.setSliderStyle(juce::Slider::LinearVertical);
     envDepthKnob.setRange(-5.0, 20.0, 0.01);
     envDepthKnob.setValue(0.0);
@@ -119,7 +120,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
     envDepthLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(envDepthLabel);
 
-    // Env depth value display
     envDepthValue.setText("0.00", juce::dontSendNotification);
     envDepthValue.setJustificationType(juce::Justification::centred);
     envDepthValue.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -128,10 +128,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
     addAndMakeVisible(envDepthValue);
 
     // Set up Amplitude ADSR labels and value editors
-    const char* ampAdsrNames[] = { "A", "D", "S", "R" };
     for (int i = 0; i < 4; ++i)
     {
-        ampAdsrLabels[i].setText(ampAdsrNames[i], juce::dontSendNotification);
+        ampAdsrLabels[i].setText(adsrNames[i], juce::dontSendNotification);
         ampAdsrLabels[i].setJustificationType(juce::Justification::centred);
         ampAdsrLabels[i].setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(ampAdsrLabels[i]);
@@ -145,7 +144,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
         addAndMakeVisible(ampAdsrValueEditors[i]);
     }
 
-    // Set up Velocity to Amplitude slider (vertical, center zero)
+    // Set up Velocity to Amplitude slider
     velAmpSlider.setSliderStyle(juce::Slider::LinearVertical);
     velAmpSlider.setRange(0.0, 200.0, 1.0);
     velAmpSlider.setValue(100.0);
@@ -207,7 +206,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
     envCurveKnob.setValue(0.5);
     envCurveKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     envCurveKnob.setDoubleClickReturnValue(true, 0.5);
-    envCurveKnob.onValueChange = [this]() { repaint(); };  // Repaint envelopes when curve changes
+    envCurveKnob.onValueChange = [this]() { repaint(); };
     addAndMakeVisible(envCurveKnob);
     envCurveLabel.setText("Env Curve", juce::dontSendNotification);
     envCurveLabel.setJustificationType(juce::Justification::centred);
@@ -308,7 +307,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
             apvts, kParamNames[i], drawbarSliders[i]);
     }
     
-    // Right column attachments (simple 1:1 bindings)
+    // Right column attachments
     vibratoRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "vibratoRate", vibratoRateKnob);
     vibratoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -379,12 +378,12 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
         }
     }
     
-    // Wire up F value label editing to write back to APVTS
+    // Wire up F value label editing
     for (int i = 0; i < 10; ++i)
     {
         fValueLabels[i].onTextChange = [this, i]() {
             float newVal = fValueLabels[i].getText().getFloatValue();
-            newVal = std::round(newVal * 2.0f) / 2.0f;  // Round to nearest 0.5
+            newVal = std::round(newVal * 2.0f) / 2.0f;
             newVal = juce::jlimit(0.5f, 30.0f, newVal);
             if (auto* param = apvts.getParameter("input_f" + juce::String(i + 1)))
                 param->setValueNotifyingHost(param->convertTo0to1(newVal));
@@ -423,22 +422,108 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef)
         };
     }
     
-    // Register as listener for amplitude envelope parameters (for automation sync)
+    // Register as listener for amplitude envelope parameters
     apvts.addParameterListener("ampEnvAttackTime", this);
     apvts.addParameterListener("ampEnvDecayTime", this);
     apvts.addParameterListener("ampEnvSustainLevel", this);
     apvts.addParameterListener("ampEnvReleaseTime", this);
 
     setSize(1400, 800);
+    startTimerHz(30);
 }
 
 PLANETMainGui::~PLANETMainGui()
 {
-    // Remove parameter listeners to prevent dangling callbacks
+    stopTimer();
     apvts.removeParameterListener("ampEnvAttackTime", this);
     apvts.removeParameterListener("ampEnvDecayTime", this);
     apvts.removeParameterListener("ampEnvSustainLevel", this);
     apvts.removeParameterListener("ampEnvReleaseTime", this);
+}
+
+void PLANETMainGui::timerCallback()
+{
+    if (modWheelValue != nullptr)
+    {
+        float baseBrilliance = (float)brillianceSlider.getValue();
+        float newEffective = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheelValue->load());
+        
+        if (std::abs(newEffective - cachedEffectiveBrilliance) > 0.001f)
+        {
+            cachedEffectiveBrilliance = newEffective;
+            repaint(brillianceSliderBounds.expanded(5));
+        }
+    }
+}
+
+//==============================================================================
+// ENVELOPE DRAWING HELPER - Eliminates duplication between harmonic and amplitude envelopes
+//==============================================================================
+void PLANETMainGui::drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<int>& bounds,
+                                       float attack, float decay, float sustain, float release,
+                                       float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour)
+{
+    float curveFactor = 1.0f + curveAmount * 6.0f;
+    float totalTime = attack + decay + 0.3f + release;
+    if (totalTime < 0.1f) totalTime = 0.1f;
+    float timeScale = (float)bounds.getWidth() / totalTime;
+    
+    float x0 = (float)bounds.getX();
+    float y0 = (float)bounds.getBottom();
+    float yTop = (float)bounds.getY() + 10;
+    float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
+    
+    float x1 = x0 + attack * timeScale;
+    float x2 = x1 + decay * timeScale;
+    float x3 = x2 + 0.3f * timeScale;
+    float x4 = x3 + release * timeScale;
+    
+    juce::Path envPath;
+    envPath.startNewSubPath(x0, y0);
+    const int numSegments = 20;
+    
+    // Helper lambda for curved segments
+    auto addCurvedSegment = [&](float startX, float endX, float startY, float endY, bool isAttack) {
+        if (curveAmount > 0.001f) {
+            for (int i = 1; i <= numSegments; ++i) {
+                float t = (float)i / numSegments;
+                float curvedT;
+                if (isAttack) {
+                    curvedT = 1.0f - std::exp(-curveFactor * t);
+                    float maxCurve = 1.0f - std::exp(-curveFactor);
+                    curvedT /= maxCurve;
+                } else {
+                    curvedT = std::exp(-curveFactor * t);
+                    float minCurve = std::exp(-curveFactor);
+                    curvedT = (curvedT - minCurve) / (1.0f - minCurve);
+                    curvedT = 1.0f - curvedT;
+                }
+                envPath.lineTo(startX + (endX - startX) * t, startY + (endY - startY) * curvedT);
+            }
+        } else {
+            envPath.lineTo(endX, endY);
+        }
+    };
+    
+    addCurvedSegment(x0, x1, y0, yTop, true);        // Attack
+    addCurvedSegment(x1, x2, yTop, ySustain, false); // Decay
+    envPath.lineTo(x3, ySustain);                    // Sustain hold
+    addCurvedSegment(x3, x4, ySustain, y0, false);   // Release
+    
+    g.setColour(strokeColour);
+    g.strokePath(envPath, juce::PathStrokeType(2.5f));
+    
+    // Draw handles
+    float handleRadius = 6.0f;
+    g.setColour(juce::Colours::white);
+    g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);
+    g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);
+    g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);
+    
+    g.setColour(handleOutlineColour);
+    g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+    g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+    g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
 }
 
 void PLANETMainGui::paint(juce::Graphics& g)
@@ -449,14 +534,13 @@ void PLANETMainGui::paint(juce::Graphics& g)
     int rightWidth = bounds.getWidth() - leftWidth;
     int mainHeight = bounds.getHeight() - patchBarHeight;
     
-    // Calculate section heights for left side
     int harmonicAndAmpHeight = mainHeight - drawbarSectionHeight;
     int harmonicHeight = harmonicAndAmpHeight / 2;
     int ampHeight = harmonicAndAmpHeight - harmonicHeight;
 
     // ======================== LEFT SIDE ========================
     
-    // Drawbar section (per-harmonic - light background)
+    // Drawbar section
     g.setColour(backgroundLight);
     g.fillRect(0, 0, leftWidth, drawbarSectionHeight);
     
@@ -471,238 +555,55 @@ void PLANETMainGui::paint(juce::Graphics& g)
                                 (float)drawbarWidth - 4, (float)drawbarSectionHeight - drawbarMargin * 2, 5.0f);
     }
     
-    // Harmonic section (per-harmonic - coloured based on selection)
+    // Harmonic section
     g.setColour(drawbarColours[selectedDrawbar].withAlpha(0.3f));
     g.fillRect(0, drawbarSectionHeight, leftWidth, harmonicHeight);
 
-    // Draw ADSR envelope shape
+    // Draw Harmonic ADSR envelope
     {
-        int adsrZoneWidth = (int)(leftWidth * 0.65f);  // 2/3 of harmonic section
+        int adsrZoneWidth = (int)(leftWidth * 0.65f);
         int adsrMargin = 20;
-        int adsrGraphHeight = harmonicHeight - 80;  // Leave room for labels below
+        int adsrGraphHeight = harmonicHeight - 80;
         int adsrGraphY = drawbarSectionHeight + 10;
         int adsrGraphWidth = adsrZoneWidth - adsrMargin * 2;
-
-        // Background for ADSR graph
+        
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle((float)adsrMargin, (float)adsrGraphY, 
                                 (float)adsrGraphWidth, (float)adsrGraphHeight, 5.0f);
-
-        // Get current drawbar's ADSR values
-        float attack = adsrValues[selectedDrawbar][0];
-        float decay = adsrValues[selectedDrawbar][1];
-        float sustain = adsrValues[selectedDrawbar][2];
-        float release = adsrValues[selectedDrawbar][3];
         
-        // Get curve amount from the Env Curve knob (0-1)
-        float curveAmount = (float)envCurveKnob.getValue();
-        float curveFactor = 1.0f + curveAmount * 6.0f;
-
-        // Normalise times for display
-        float totalTime = attack + decay + 0.3f + release;  // 0.3 for sustain hold
-        if (totalTime < 0.1f) totalTime = 0.1f;
-        float timeScale = (float)adsrGraphWidth / totalTime;
-
-        // Calculate key points
-        float x0 = (float)adsrMargin;
-        float y0 = (float)(adsrGraphY + adsrGraphHeight);  // Bottom (zero level)
-        float yTop = (float)(adsrGraphY + 10);              // Top (full level)
-        float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
-
-        float x1 = x0 + attack * timeScale;                 // End of attack
-        float x2 = x1 + decay * timeScale;                  // End of decay
-        float x3 = x2 + 0.3f * timeScale;                   // End of sustain hold
-        float x4 = x3 + release * timeScale;                // End of release
-
-        // Draw envelope with curves
-        juce::Path envPath;
-        envPath.startNewSubPath(x0, y0);           // Start at zero
-        
-        const int numSegments = 20;
-        
-        // Attack phase (convex curve: 1 - exp(-curveFactor * t))
-        if (curveAmount > 0.001f) {
-            for (int i = 1; i <= numSegments; ++i) {
-                float t = (float)i / numSegments;
-                float curvedT = 1.0f - std::exp(-curveFactor * t);
-                // Normalise curvedT since exp curve doesn't quite reach 1
-                float maxCurve = 1.0f - std::exp(-curveFactor);
-                curvedT /= maxCurve;
-                float x = x0 + (x1 - x0) * t;
-                float y = y0 + (yTop - y0) * curvedT;
-                envPath.lineTo(x, y);
-            }
-        } else {
-            envPath.lineTo(x1, yTop);  // Linear fallback
-        }
-        
-        // Decay phase (concave curve: exp(-curveFactor * t))
-        if (curveAmount > 0.001f) {
-            for (int i = 1; i <= numSegments; ++i) {
-                float t = (float)i / numSegments;
-                float curvedProgress = std::exp(-curveFactor * t);
-                // Normalise
-                float minCurve = std::exp(-curveFactor);
-                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
-                float x = x1 + (x2 - x1) * t;
-                float y = yTop + (ySustain - yTop) * (1.0f - curvedProgress);
-                envPath.lineTo(x, y);
-            }
-        } else {
-            envPath.lineTo(x2, ySustain);  // Linear fallback
-        }
-        
-        envPath.lineTo(x3, ySustain);              // Sustain hold (always linear)
-        
-        // Release phase (concave curve: exp(-curveFactor * t))
-        if (curveAmount > 0.001f) {
-            for (int i = 1; i <= numSegments; ++i) {
-                float t = (float)i / numSegments;
-                float curvedProgress = std::exp(-curveFactor * t);
-                // Normalise
-                float minCurve = std::exp(-curveFactor);
-                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
-                float x = x3 + (x4 - x3) * t;
-                float y = ySustain + (y0 - ySustain) * (1.0f - curvedProgress);
-                envPath.lineTo(x, y);
-            }
-        } else {
-            envPath.lineTo(x4, y0);  // Linear fallback
-        }
-
-        g.setColour(drawbarColours[selectedDrawbar]);
-        g.strokePath(envPath, juce::PathStrokeType(2.5f));
-
-        // Draw draggable handles
-        float handleRadius = 6.0f;
-        g.setColour(juce::Colours::white);
-        g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);           // Attack peak
-        g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);       // Decay/Sustain
-        g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);             // Release end
-        
-        // Handle outlines
-        g.setColour(drawbarColours[selectedDrawbar]);
-        g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
-        g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
-        g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+        juce::Rectangle<int> envBounds(adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
+        drawEnvelopeCurve(g, envBounds,
+                          adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
+                          adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3],
+                          (float)envCurveKnob.getValue(),
+                          drawbarColours[selectedDrawbar], drawbarColours[selectedDrawbar]);
     }
     
-    // Amplitude section (global - tinted background)
+    // Amplitude section
     g.setColour(backgroundGlobal);
     g.fillRect(0, drawbarSectionHeight + harmonicHeight, leftWidth, ampHeight);
 
-    // Draw Amplitude ADSR envelope shape
+    // Draw Amplitude ADSR envelope
     {
         int adsrZoneWidth = (int)(leftWidth * 0.65f);
         int adsrMargin = 20;
         int adsrGraphHeight = ampHeight - 80;
         int adsrGraphY = drawbarSectionHeight + harmonicHeight + 10;
         int adsrGraphWidth = adsrZoneWidth - adsrMargin * 2;
-
-        // Background for ADSR graph
+        
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle((float)adsrMargin, (float)adsrGraphY, 
                                 (float)adsrGraphWidth, (float)adsrGraphHeight, 5.0f);
-
-        // Get amplitude ADSR values
-        float attack = ampAdsrValues[0];
-        float decay = ampAdsrValues[1];
-        float sustain = ampAdsrValues[2];
-        float release = ampAdsrValues[3];
         
-        // Get curve amount from the Env Curve knob (0-1)
-        float curveAmount = (float)envCurveKnob.getValue();
-        float curveFactor = 1.0f + curveAmount * 6.0f;
-
-        // Normalise times for display
-        float totalTime = attack + decay + 0.3f + release;
-        if (totalTime < 0.1f) totalTime = 0.1f;
-        float timeScale = (float)adsrGraphWidth / totalTime;
-
-        // Calculate key points
-        float x0 = (float)adsrMargin;
-        float y0 = (float)(adsrGraphY + adsrGraphHeight);
-        float yTop = (float)(adsrGraphY + 10);
-        float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
-
-        float x1 = x0 + attack * timeScale;
-        float x2 = x1 + decay * timeScale;
-        float x3 = x2 + 0.3f * timeScale;
-        float x4 = x3 + release * timeScale;
-
-        // Draw envelope with curves
-        juce::Path envPath;
-        envPath.startNewSubPath(x0, y0);
-        
-        const int numSegments = 20;
-        
-        // Attack phase (convex curve)
-        if (curveAmount > 0.001f) {
-            for (int i = 1; i <= numSegments; ++i) {
-                float t = (float)i / numSegments;
-                float curvedT = 1.0f - std::exp(-curveFactor * t);
-                float maxCurve = 1.0f - std::exp(-curveFactor);
-                curvedT /= maxCurve;
-                float x = x0 + (x1 - x0) * t;
-                float y = y0 + (yTop - y0) * curvedT;
-                envPath.lineTo(x, y);
-            }
-        } else {
-            envPath.lineTo(x1, yTop);
-        }
-        
-        // Decay phase (concave curve)
-        if (curveAmount > 0.001f) {
-            for (int i = 1; i <= numSegments; ++i) {
-                float t = (float)i / numSegments;
-                float curvedProgress = std::exp(-curveFactor * t);
-                float minCurve = std::exp(-curveFactor);
-                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
-                float x = x1 + (x2 - x1) * t;
-                float y = yTop + (ySustain - yTop) * (1.0f - curvedProgress);
-                envPath.lineTo(x, y);
-            }
-        } else {
-            envPath.lineTo(x2, ySustain);
-        }
-        
-        envPath.lineTo(x3, ySustain);  // Sustain hold
-        
-        // Release phase (concave curve)
-        if (curveAmount > 0.001f) {
-            for (int i = 1; i <= numSegments; ++i) {
-                float t = (float)i / numSegments;
-                float curvedProgress = std::exp(-curveFactor * t);
-                float minCurve = std::exp(-curveFactor);
-                curvedProgress = (curvedProgress - minCurve) / (1.0f - minCurve);
-                float x = x3 + (x4 - x3) * t;
-                float y = ySustain + (y0 - ySustain) * (1.0f - curvedProgress);
-                envPath.lineTo(x, y);
-            }
-        } else {
-            envPath.lineTo(x4, y0);
-        }
-
-        g.setColour(juce::Colours::white);
-        g.strokePath(envPath, juce::PathStrokeType(2.5f));
-
-        // Draw draggable handles
-        float handleRadius = 6.0f;
-        g.setColour(juce::Colours::white);
-        g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);           // Attack peak
-        g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);       // Decay/Sustain
-        g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);             // Release end
-        
-        // Handle outlines
-        g.setColour(accentColour);
-        g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
-        g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
-        g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+        juce::Rectangle<int> envBounds(adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
+        drawEnvelopeCurve(g, envBounds,
+                          ampAdsrValues[0], ampAdsrValues[1], ampAdsrValues[2], ampAdsrValues[3],
+                          (float)envCurveKnob.getValue(),
+                          juce::Colours::white, accentColour);
     }
 
     // ======================== RIGHT SIDE ========================
     
-    // Entire right column is global (tinted background)
     g.setColour(backgroundGlobal);
     g.fillRect(leftWidth, 0, rightWidth, mainHeight);
 
@@ -720,55 +621,63 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setColour(backgroundLight.darker(0.3f));
     g.fillRect(0, mainHeight, bounds.getWidth(), patchBarHeight);
 
-    // ======================== SECTION LABELS (temporary) ========================
+    // ======================== SECTION LABELS ========================
     
     g.setColour(juce::Colours::white.withAlpha(0.5f));
     g.setFont(16.0f);
     
-    // Left side labels
-    g.drawText("DRAWBARS", 0, 0, leftWidth, drawbarSectionHeight, 
-               juce::Justification::centred);
-    g.drawText("HARMONIC (per-drawbar)", 0, drawbarSectionHeight, leftWidth, harmonicHeight, 
-               juce::Justification::centred);
-    g.drawText("AMPLITUDE (global)", 0, drawbarSectionHeight + harmonicHeight, leftWidth, ampHeight, 
-               juce::Justification::centred);
+    g.drawText("DRAWBARS", 0, 0, leftWidth, drawbarSectionHeight, juce::Justification::centred);
+    g.drawText("HARMONIC (per-drawbar)", 0, drawbarSectionHeight, leftWidth, harmonicHeight, juce::Justification::centred);
+    g.drawText("AMPLITUDE (global)", 0, drawbarSectionHeight + harmonicHeight, leftWidth, ampHeight, juce::Justification::centred);
     
-    // Right side labels (adjusted for waveform at top)
     int rightX = leftWidth;
-    int rightContentHeight = mainHeight - drawbarSectionHeight;  // Below waveform
-    int rightSectionHeight = rightContentHeight / 4;  // 4 sections below waveform
-    int rightSectionY = drawbarSectionHeight;  // Start below waveform
+    int rightContentHeight = mainHeight - drawbarSectionHeight;
+    int rightSectionHeight = rightContentHeight / 4;
+    int rightSectionY = drawbarSectionHeight;
     
-    g.drawText("VIBRATO", rightX, rightSectionY, rightWidth, rightSectionHeight, 
-               juce::Justification::centred);
-    g.drawText("PITCH", rightX, rightSectionY + rightSectionHeight, rightWidth, rightSectionHeight, 
-               juce::Justification::centred);
-    g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 2, rightWidth, rightSectionHeight, 
-               juce::Justification::centred);
-    g.drawText("EFFECTS", rightX, rightSectionY + rightSectionHeight * 3, rightWidth, rightSectionHeight, 
-               juce::Justification::centred);
+    g.drawText("VIBRATO", rightX, rightSectionY, rightWidth, rightSectionHeight, juce::Justification::centred);
+    g.drawText("PITCH", rightX, rightSectionY + rightSectionHeight, rightWidth, rightSectionHeight, juce::Justification::centred);
+    g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 2, rightWidth, rightSectionHeight, juce::Justification::centred);
     
-    // Patch bar label
-    g.drawText("PATCH / PRESET", 0, mainHeight, bounds.getWidth(), patchBarHeight, 
-               juce::Justification::centred);
+    // Draw effective brilliance indicator
+    if (modWheelValue != nullptr && brillianceSliderBounds.getWidth() > 0)
+    {
+        float baseBrilliance = (float)brillianceSlider.getValue();
+        float modWheel = modWheelValue->load();
+        
+        if (modWheel > 0.001f)
+        {
+            float effectiveBrilliance = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheel);
+            
+            int sliderX = brillianceSliderBounds.getX();
+            int sliderWidth = brillianceSliderBounds.getWidth();
+            int sliderY = brillianceSliderBounds.getY();
+            int sliderHeight = brillianceSliderBounds.getHeight();
+            
+            int baseX = sliderX + (int)(baseBrilliance * sliderWidth);
+            int effectiveX = sliderX + (int)(effectiveBrilliance * sliderWidth);
+            
+            g.setColour(accentColour.withAlpha(0.5f));
+            int barY = sliderY + sliderHeight / 2 - 3;
+            g.fillRect(baseX, barY, effectiveX - baseX, 6);
+            
+            g.setColour(accentColour);
+            g.fillRect(effectiveX - 2, sliderY + 5, 4, sliderHeight - 10);
+        }
+    }
+    
+    g.drawText("EFFECTS", rightX, rightSectionY + rightSectionHeight * 3, rightWidth, rightSectionHeight, juce::Justification::centred);
+    g.drawText("PATCH / PRESET", 0, mainHeight, bounds.getWidth(), patchBarHeight, juce::Justification::centred);
 
-    // ======================== DIVIDING LINES (temporary guides) ========================
+    // ======================== DIVIDING LINES ========================
     
     g.setColour(juce::Colours::white.withAlpha(0.2f));
-    
-    // Vertical divider
     g.drawVerticalLine(leftWidth, 0, (float)mainHeight);
-    
-    // Horizontal dividers on left
     g.drawHorizontalLine(drawbarSectionHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight + harmonicHeight, 0, (float)leftWidth);
-    
-    // Horizontal dividers on right (below waveform)
-    g.drawHorizontalLine(drawbarSectionHeight, (float)leftWidth, (float)bounds.getWidth());  // Below waveform
+    g.drawHorizontalLine(drawbarSectionHeight, (float)leftWidth, (float)bounds.getWidth());
     for (int i = 1; i < 4; ++i)
         g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i, (float)leftWidth, (float)bounds.getWidth());
-    
-    // Patch bar divider
     g.drawHorizontalLine(mainHeight, 0, (float)bounds.getWidth());
 }
 
@@ -786,11 +695,7 @@ void PLANETMainGui::resized()
     for (int i = 0; i < 10; ++i)
     {
         int x = drawbarMargin + i * drawbarWidth;
-        
-        // F value label at top
         fValueLabels[i].setBounds(x + 5, drawbarMargin, drawbarWidth - 10, fLabelHeight);
-        
-        // Drawbar slider below
         drawbarSliders[i].setBounds(x + 10, drawbarMargin + fLabelHeight + 5, drawbarWidth - 20, drawbarHeight);
     }
 
@@ -807,7 +712,6 @@ void PLANETMainGui::resized()
     int adsrFieldHeight = 25;
     int adsrSpacing = (adsrZoneWidth - 40) / 4;
 
-    // Store harmonic envelope bounds for mouse interaction
     harmonicEnvBounds = juce::Rectangle<int>(20, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
 
     for (int i = 0; i < 4; ++i)
@@ -817,7 +721,7 @@ void PLANETMainGui::resized()
         adsrValueEditors[i].setBounds(xPos, adsrLabelY + 22, adsrFieldWidth, adsrFieldHeight);
     }
 
-    // Position LFO controls in right portion of Harmonic section
+    // Position LFO controls
     int envDepthSliderWidth = 50;
     int envDepthX = adsrZoneWidth + 10;
     int lfoZoneX = envDepthX + envDepthSliderWidth + 20;
@@ -825,24 +729,20 @@ void PLANETMainGui::resized()
     int lfoZoneY = drawbarSectionHeight + 10;
     int knobSize = 80;
 
-    // Envelope depth slider - same height as ADSR graphic, with label and value below
     int envDepthY = adsrGraphY;
     int envDepthSliderHeight = adsrGraphHeight;
     envDepthKnob.setBounds(envDepthX, envDepthY, envDepthSliderWidth, envDepthSliderHeight);
     envDepthLabel.setBounds(envDepthX - 10, envDepthY + envDepthSliderHeight + 5, envDepthSliderWidth + 20, 18);
     envDepthValue.setBounds(envDepthX, envDepthY + envDepthSliderHeight + 25, envDepthSliderWidth, 22);
 
-    // F display at top - centered with rounded background
     int fDisplayWidth = 70;
     selectedFDisplay.setBounds(lfoZoneX + (lfoZoneWidth - fDisplayWidth) / 2, lfoZoneY, fDisplayWidth, 35);
 
-    // LFO Shape label and dropdown on same line
     int comboY = lfoZoneY + 45;
     int comboWidth = (lfoZoneWidth - 30) / 2;
     lfoShapeLabel.setBounds(lfoZoneX + 10, comboY, comboWidth - 5, 25);
     lfoShapeCombo.setBounds(lfoZoneX + 10 + comboWidth, comboY, comboWidth, 25);
 
-    // Two knobs side by side below dropdown - larger and lower
     int knobY = comboY + 45;
     int knobSpacing = (lfoZoneWidth - knobSize * 2) / 3;
     int knob1X = lfoZoneX + knobSpacing;
@@ -860,7 +760,6 @@ void PLANETMainGui::resized()
     int ampAdsrGraphY = drawbarSectionHeight + harmonicHeight + 10;
     int ampAdsrLabelY = ampAdsrGraphY + ampAdsrGraphHeight + 5;
 
-    // Store amplitude envelope bounds for mouse interaction
     ampEnvBounds = juce::Rectangle<int>(20, ampAdsrGraphY, adsrGraphWidth, ampAdsrGraphHeight);
 
     for (int i = 0; i < 4; ++i)
@@ -870,18 +769,16 @@ void PLANETMainGui::resized()
         ampAdsrValueEditors[i].setBounds(xPos, ampAdsrLabelY + 22, adsrFieldWidth, adsrFieldHeight);
     }
 
-    // Velocity to Amplitude slider - same position as Env Depth but in Amplitude section
     velAmpSlider.setBounds(envDepthX, ampAdsrGraphY, envDepthSliderWidth, ampAdsrGraphHeight);
     velAmpLabel.setBounds(envDepthX - 10, ampAdsrGraphY + ampAdsrGraphHeight + 5, envDepthSliderWidth + 20, 18);
     velAmpValue.setBounds(envDepthX, ampAdsrGraphY + ampAdsrGraphHeight + 25, envDepthSliderWidth, 22);
 
-    // 2x2 knob grid in Amplitude zone - aligned with LFO knobs above
+    // 2x2 knob grid in Amplitude zone
     int ampKnobSize = 60;
     int ampKnobValueHeight = 20;
     int ampKnobStartY = drawbarSectionHeight + harmonicHeight + 10;
-    int ampKnobRowHeight = 18 + ampKnobSize + ampKnobValueHeight + 10;  // label + knob + value + gap
+    int ampKnobRowHeight = 18 + ampKnobSize + ampKnobValueHeight + 10;
 
-    // Row 1: Vel Brill (under LFO Speed), Vel Attack (under LFO Depth)
     velBrillLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 18);
     velBrillKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
     velBrillValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
@@ -890,7 +787,6 @@ void PLANETMainGui::resized()
     velAttackKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
     velAttackValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    // Row 2: Env Curve (under Vel Brill), Vintage (under Vel Attack)
     int row2Y = ampKnobStartY + ampKnobRowHeight;
     envCurveLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 18);
     envCurveKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 18, ampKnobSize, ampKnobSize);
@@ -903,14 +799,13 @@ void PLANETMainGui::resized()
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
     int rightContentWidth = bounds.getWidth() - leftWidth - 20;
-    int rightKnobSize = 80;  // Match LFO knob size
+    int rightKnobSize = 80;
     
-    // Calculate section heights for right column (below waveform)
     int waveformHeight = drawbarSectionHeight;
     int remainingHeight = mainHeight - waveformHeight;
-    int rightSectionHeight = remainingHeight / 4;  // 4 sections: Vibrato, Pitch, Brilliance, Effects
+    int rightSectionHeight = remainingHeight / 4;
     
-    // Vibrato section (3 knobs)
+    // Vibrato section
     int vibratoY = waveformHeight + 5;
     int vibratoKnobSpacing = rightContentWidth / 3;
     
@@ -926,7 +821,7 @@ void PLANETMainGui::resized()
     vibratoFadeLabel.setBounds(vkx2, vibratoY, rightKnobSize, 16);
     vibratoFadeKnob.setBounds(vkx2, vibratoY + 16, rightKnobSize, rightKnobSize);
     
-    // Pitch section (2 knobs)
+    // Pitch section
     int pitchY = waveformHeight + rightSectionHeight + 5;
     int pitchKnobSpacing = rightContentWidth / 2;
     
@@ -938,13 +833,14 @@ void PLANETMainGui::resized()
     pitchTimeLabel.setBounds(pkx1, pitchY, rightKnobSize, 16);
     pitchTimeKnob.setBounds(pkx1, pitchY + 16, rightKnobSize, rightKnobSize);
     
-    // Brilliance section (horizontal slider filling width)
+    // Brilliance section
     int brillianceY = waveformHeight + rightSectionHeight * 2 + 10;
     int sliderMargin = 20;
     brillianceMainLabel.setBounds(rightX, brillianceY, rightContentWidth, 18);
-    brillianceSlider.setBounds(rightX + sliderMargin, brillianceY + 22, rightContentWidth - sliderMargin * 2, 40);
+    brillianceSliderBounds = juce::Rectangle<int>(rightX + sliderMargin, brillianceY + 22, rightContentWidth - sliderMargin * 2, 40);
+    brillianceSlider.setBounds(brillianceSliderBounds);
     
-    // Effects section (4 vertical sliders evenly spaced)
+    // Effects section
     int effectsY = waveformHeight + rightSectionHeight * 3 + 5;
     int effectsSliderWidth = 40;
     int effectsSliderHeight = rightSectionHeight - 40;
@@ -984,8 +880,7 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
     }
     
-    // Check for envelope handle clicks
-    float handleRadius = 10.0f;  // Slightly larger hit area than visual
+    float handleRadius = 10.0f;
     
     // Check harmonic envelope handles
     if (harmonicEnvBounds.contains(event.x, event.y) || 
@@ -1052,7 +947,7 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
     }
     
-    // Otherwise check if click is in the drawbar background area
+    // Check drawbar background area
     auto bounds = getLocalBounds();
     int leftWidth = (int)(bounds.getWidth() * leftWidthRatio);
     int drawbarMargin = 20;
@@ -1094,22 +989,22 @@ juce::Point<float> PLANETMainGui::getEnvelopePoint(int pointIndex, const juce::R
     float timeScale = (float)bounds.getWidth() / totalTime;
     
     float x0 = (float)bounds.getX();
-    float y0 = (float)bounds.getBottom();  // Bottom (zero level)
-    float yTop = (float)bounds.getY() + 10;  // Top (full level)
+    float y0 = (float)bounds.getBottom();
+    float yTop = (float)bounds.getY() + 10;
     float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
     
-    float x1 = x0 + attack * timeScale;      // Attack peak
-    float x2 = x1 + decay * timeScale;       // Decay/Sustain point
-    float x3 = x2 + 0.3f * timeScale;        // End of sustain hold
-    float x4 = x3 + release * timeScale;     // Release end
+    float x1 = x0 + attack * timeScale;
+    float x2 = x1 + decay * timeScale;
+    float x3 = x2 + 0.3f * timeScale;
+    float x4 = x3 + release * timeScale;
     
     switch (pointIndex)
     {
-        case 0: return { x0, y0 };           // Start
-        case 1: return { x1, yTop };         // Attack peak
-        case 2: return { x2, ySustain };     // Decay/Sustain
-        case 3: return { x3, ySustain };     // End of sustain hold
-        case 4: return { x4, y0 };           // Release end
+        case 0: return { x0, y0 };
+        case 1: return { x1, yTop };
+        case 2: return { x2, ySustain };
+        case 3: return { x3, ySustain };
+        case 4: return { x4, y0 };
         default: return { x0, y0 };
     }
 }
@@ -1137,7 +1032,6 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
     float yTop = (float)bounds.getY() + 10;
     float yRange = y0 - yTop - 10;
     
-    // Calculate x position of attack peak for reference
     float x1 = x0 + attack * timeScale;
     
     switch (currentDragTarget)
@@ -1145,7 +1039,6 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
         case DragTarget::HarmonicAttack:
         case DragTarget::AmpAttack:
         {
-            // Horizontal drag changes attack time
             float newX = juce::jlimit(x0, (float)bounds.getRight(), (float)event.x);
             float newAttack = (newX - x0) / timeScale;
             values[0] = juce::jlimit(0.001f, 10.0f, newAttack);
@@ -1155,13 +1048,11 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
         case DragTarget::HarmonicDecaySustain:
         case DragTarget::AmpDecaySustain:
         {
-            // Horizontal drag changes decay time (relative to attack peak)
             float currentX1 = x0 + values[0] * timeScale;
             float newX = juce::jlimit(currentX1, (float)bounds.getRight(), (float)event.x);
             float newDecay = (newX - currentX1) / timeScale;
             values[1] = juce::jlimit(0.001f, 10.0f, newDecay);
             
-            // Vertical drag changes sustain level
             float newY = juce::jlimit(yTop, y0 - 10, (float)event.y);
             float newSustain = 1.0f - (newY - yTop) / yRange;
             values[2] = juce::jlimit(0.0f, 1.0f, newSustain);
@@ -1171,7 +1062,6 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
         case DragTarget::HarmonicRelease:
         case DragTarget::AmpRelease:
         {
-            // Horizontal drag changes release time (relative to sustain end)
             float currentX3 = x0 + (values[0] + values[1] + 0.3f) * timeScale;
             float newX = juce::jlimit(currentX3, (float)bounds.getRight() + 50, (float)event.x);
             float newRelease = (newX - currentX3) / timeScale;
@@ -1215,33 +1105,27 @@ void PLANETMainGui::updateAdsrDisplay()
                                      juce::dontSendNotification);
     }
     
-    // Update F display with selected drawbar's F value
     selectedFDisplay.setText("F" + fValueLabels[selectedDrawbar].getText(), 
                               juce::dontSendNotification);
     selectedFDisplay.setColour(juce::Label::textColourId, drawbarColours[selectedDrawbar]);
     
-    // Rebind context-sensitive controls to new drawbar
     bindToSelectedDrawbar();
 }
 
 void PLANETMainGui::bindToSelectedDrawbar()
 {
-    // Build parameter ID prefix for current drawbar (k1, k2, ... k10)
     juce::String prefix = "k" + juce::String(selectedDrawbar + 1);
     
-    // Store current parameter IDs for reference
     currentHarmonicParamIDs[0] = prefix + "AttackTime";
     currentHarmonicParamIDs[1] = prefix + "DecayTime";
     currentHarmonicParamIDs[2] = prefix + "SustainLevel";
     currentHarmonicParamIDs[3] = prefix + "ReleaseTime";
     
-    // Destroy old attachments first (must be done before creating new ones)
     lfoSpeedAttachment.reset();
     lfoDepthAttachment.reset();
     lfoShapeAttachment.reset();
     envDepthAttachment.reset();
     
-    // Create new attachments for the selected drawbar's LFO parameters
     lfoSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "LFORate", lfoSpeedKnob);
     lfoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -1251,7 +1135,6 @@ void PLANETMainGui::bindToSelectedDrawbar()
     envDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "EnvelopeAmount", envDepthKnob);
     
-    // Update ADSR display values from parameters
     if (auto* param = apvts.getParameter(currentHarmonicParamIDs[0]))
         adsrValues[selectedDrawbar][0] = param->convertFrom0to1(param->getValue());
     if (auto* param = apvts.getParameter(currentHarmonicParamIDs[1]))
@@ -1261,68 +1144,33 @@ void PLANETMainGui::bindToSelectedDrawbar()
     if (auto* param = apvts.getParameter(currentHarmonicParamIDs[3]))
         adsrValues[selectedDrawbar][3] = param->convertFrom0to1(param->getValue());
     
-    // Update ADSR text displays
     for (int i = 0; i < 4; ++i)
         adsrValueEditors[i].setText(juce::String(adsrValues[selectedDrawbar][i], 2), juce::dontSendNotification);
     
-    // Update envelope depth display
     if (auto* param = apvts.getParameter(prefix + "EnvelopeAmount"))
         envDepthValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
 }
 
 void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    // This callback fires when parameters change from automation or other sources
-    // We use it to keep the GUI in sync with parameter values
+    // Amplitude envelope parameters
+    const char* ampParams[] = { "ampEnvAttackTime", "ampEnvDecayTime", "ampEnvSustainLevel", "ampEnvReleaseTime" };
+    for (int i = 0; i < 4; ++i) {
+        if (parameterID == ampParams[i]) {
+            ampAdsrValues[i] = newValue;
+            ampAdsrValueEditors[i].setText(juce::String(newValue, 2), juce::dontSendNotification);
+            repaint();
+            return;
+        }
+    }
     
-    // Check if it's one of the amplitude envelope parameters
-    if (parameterID == "ampEnvAttackTime")
-    {
-        ampAdsrValues[0] = newValue;
-        ampAdsrValueEditors[0].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    else if (parameterID == "ampEnvDecayTime")
-    {
-        ampAdsrValues[1] = newValue;
-        ampAdsrValueEditors[1].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    else if (parameterID == "ampEnvSustainLevel")
-    {
-        ampAdsrValues[2] = newValue;
-        ampAdsrValueEditors[2].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    else if (parameterID == "ampEnvReleaseTime")
-    {
-        ampAdsrValues[3] = newValue;
-        ampAdsrValueEditors[3].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    // Check if it's one of the currently selected harmonic's ADSR parameters
-    else if (parameterID == currentHarmonicParamIDs[0])
-    {
-        adsrValues[selectedDrawbar][0] = newValue;
-        adsrValueEditors[0].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    else if (parameterID == currentHarmonicParamIDs[1])
-    {
-        adsrValues[selectedDrawbar][1] = newValue;
-        adsrValueEditors[1].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    else if (parameterID == currentHarmonicParamIDs[2])
-    {
-        adsrValues[selectedDrawbar][2] = newValue;
-        adsrValueEditors[2].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
-    }
-    else if (parameterID == currentHarmonicParamIDs[3])
-    {
-        adsrValues[selectedDrawbar][3] = newValue;
-        adsrValueEditors[3].setText(juce::String(newValue, 2), juce::dontSendNotification);
-        repaint();
+    // Harmonic envelope parameters (currently selected)
+    for (int i = 0; i < 4; ++i) {
+        if (parameterID == currentHarmonicParamIDs[i]) {
+            adsrValues[selectedDrawbar][i] = newValue;
+            adsrValueEditors[i].setText(juce::String(newValue, 2), juce::dontSendNotification);
+            repaint();
+            return;
+        }
     }
 }

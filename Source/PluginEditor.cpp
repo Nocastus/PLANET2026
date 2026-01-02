@@ -381,7 +381,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
                 juce::Colours::darkgrey,
                 juce::DocumentWindow::allButtons);
             
-            guiPreviewWindow->setContentOwned(new PLANETMainGui(audioProcessor.parameters), true);
+            guiPreviewWindow->setContentOwned(new PLANETMainGui(audioProcessor.parameters, &audioProcessor.currentModWheelValue), true);
             guiPreviewWindow->setResizable(true, true);
             guiPreviewWindow->centreWithSize(1400, 800);
             guiPreviewWindow->setVisible(true);
@@ -393,7 +393,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     };
 
     // Version label
-    versionLabel.setText("PLANET v0.1.1 - 01 Jan 2026", juce::dontSendNotification);
+    versionLabel.setText("PLANET v0.1.2 - 01 Jan 2026", juce::dontSendNotification);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(versionLabel);
@@ -410,13 +410,9 @@ PLANETtest4AudioProcessorEditor::~PLANETtest4AudioProcessorEditor()
 //=====================================================TIMER CALLBACK============================================
 void PLANETtest4AudioProcessorEditor::timerCallback()
 {
-    // Core functionality: Update brilliance slider from mod wheel
-    float modWheelValue = audioProcessor.currentModWheelValue.load();
-    if (modWheelValue != brillianceSlider.getValue())
-    {
-        brillianceSlider.setValue(modWheelValue, juce::sendNotification);
-    }
-
+    // Mod wheel now adds to base brilliance in audio engine (no GUI sync needed)
+    // This prevents the race condition where GUI and MIDI fought for control
+    
     // Call debugging function (easy to disable by commenting out this line)
     debugTimerCallback();
 }
