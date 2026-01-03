@@ -8,6 +8,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "WaveformDisplay.h"
 #include <array>
 
 class PLANETMainGui : public juce::Component,
@@ -15,7 +16,13 @@ class PLANETMainGui : public juce::Component,
                        public juce::Timer
 {
 public:
-    PLANETMainGui(juce::AudioProcessorValueTreeState& apvts, std::atomic<float>* modWheelPtr = nullptr);
+    PLANETMainGui(juce::AudioProcessorValueTreeState& apvts,
+        std::atomic<float>* modWheelPtr = nullptr,
+        std::array<float, 2048>* waveformSnapshotPtr = nullptr,
+        std::atomic<int>* snapshotLengthPtr = nullptr,
+        std::atomic<bool>* snapshotReadyPtr = nullptr,
+        std::atomic<bool>* snapshotRequestPtr = nullptr,
+        std::atomic<bool>* waveformActivePtr = nullptr);
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
@@ -25,6 +32,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     void updateAdsrDisplay();
     void timerCallback() override;
+    void updateDrawbarColors();
     
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void bindToSelectedDrawbar();
@@ -138,6 +146,9 @@ private:
     std::atomic<float>* modWheelValue = nullptr;
     juce::Rectangle<int> brillianceSliderBounds;
     float cachedEffectiveBrilliance = 0.5f;
+
+    // Waveform display component
+    WaveformDisplay waveformDisplay;
     
     // Effects section
     juce::Slider detuneAmountSlider, detuneMixSlider;

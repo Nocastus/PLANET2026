@@ -48,6 +48,8 @@ public:
 
     // Voice identification
     int getNoteNumber() const { return currentNoteNumber; }
+    float getCurrentFrequency() const { return (float)currentFrequency; }
+    bool getCycleStartFlag() const { return cycleStartFlag; }
     float getVelocity() const { return noteVelocity; }
 
     // Mod wheel hook (for future implementation)
@@ -130,6 +132,8 @@ private:
     float ampEnvLevel = 0.0f;
     float storedAmpEnvValue = 0.0f;  // stores envelope value between cycles
     float ampReleaseStartLevel = 0.0f; // new mechanism for ensuring release starts at the right level
+
+    bool cycleStartFlag = false;
 
     // Per-voice pitch attack envelope
     EnvelopeStage pitchEnvStage = EnvelopeStage::Idle;

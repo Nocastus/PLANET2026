@@ -89,9 +89,11 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToBrilliance, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime)
+
 {  // Opening brace
     float mixedSample = 0.0f;
     int activeVoices = 0;
+    bool firstVoiceCaptured = false;
 
     for (auto& voice : voices) {
         if (voice.isActive()) {
@@ -102,6 +104,13 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
                 vibratoRate, vibratoDepth, vibratoFadeIn,
                 velToAmplitude, velToBrilliance, velToAttackTime, vintageAmount,
                 pitchEnvDistance, pitchAttackTime);
+
+            // Capture first voice for waveform display
+            if (!firstVoiceCaptured) {
+                lastFirstVoiceSample = voiceSample;
+                firstVoiceCaptured = true;
+            }
+
             mixedSample += voiceSample;
             activeVoices++;
         }
@@ -126,6 +135,26 @@ int PLANETVoiceManager::getActiveVoiceCount() const
         }
     }
     return count;
+}
+
+float PLANETVoiceManager::getFirstVoiceFrequency() const
+{
+    for (const auto& voice : voices) {
+        if (voice.isActive()) {
+            return voice.getCurrentFrequency();
+        }
+    }
+    return 440.0f;
+}
+
+bool PLANETVoiceManager::getFirstVoiceCycleStart() const
+{
+    for (const auto& voice : voices) {
+        if (voice.isActive()) {
+            return voice.getCycleStartFlag();
+        }
+    }
+    return false;
 }
 
 void PLANETVoiceManager::clearFinishedVoices()

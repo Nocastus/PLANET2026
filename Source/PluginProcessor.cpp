@@ -87,16 +87,26 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k10ReleaseTime", "K10 Release Time", 0.001f, 10.0f, 2.0f),
 
             // ======================== ENVELOPE AMOUNT PARAMETERS (10) ========================
-            std::make_unique<juce::AudioParameterFloat>("k1EnvelopeAmount", "K1 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k2EnvelopeAmount", "K2 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k3EnvelopeAmount", "K3 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k4EnvelopeAmount", "K4 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k5EnvelopeAmount", "K5 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k6EnvelopeAmount", "K6 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k7EnvelopeAmount", "K7 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k8EnvelopeAmount", "K8 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k9EnvelopeAmount", "K9 Envelope Amount", -5.0f, 20.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k10EnvelopeAmount", "K10 Envelope Amount", -5.0f, 20.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k1EnvelopeAmount", "K1 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2EnvelopeAmount", "K2 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3EnvelopeAmount", "K3 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4EnvelopeAmount", "K4 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5EnvelopeAmount", "K5 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6EnvelopeAmount", "K6 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7EnvelopeAmount", "K7 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8EnvelopeAmount", "K8 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9EnvelopeAmount", "K9 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10EnvelopeAmount", "K10 Envelope Amount",
+                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
 
             // ======================== LFO SHAPE PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("k1LFOShape", "K1 LFO Shape", 1.0f, 3.0f, 1.0f),
@@ -513,10 +523,11 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             }
 
         }
-        // Handle mod wheel (CC #1)
+        // Handle mod wheel (CC #1) - bipolar, centered at 64
         else if (message.getControllerNumber() == 1)
         {
-            currentModWheelValue.store(message.getControllerValue() / 127.0f);  // 0-1 range
+            float bipolarValue = (message.getControllerValue() - 64) / 64.0f;  // -1 to +1
+            currentModWheelValue.store(bipolarValue * 0.5f);  // -0.5 to +0.5 brilliance offset
         }
 
         else if (message.isPitchWheel())
@@ -564,6 +575,33 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             velToAmplitude, velToBrilliance, velToAttackTime, vintageAmount,
             pitchEnvDistance, pitchAttackTime);
 
+        // Waveform snapshot capture
+        if (snapshotCapturing)
+        {
+            waveformSnapshot[snapshotWritePos++] = voiceManager.getLastFirstVoiceSample();
+            if (snapshotWritePos >= snapshotTargetLength)
+            {
+                snapshotCapturing = false;
+                waveformSnapshotLength.store(snapshotTargetLength);
+                waveformSnapshotReady.store(true);
+            }
+        }
+        else if (waveformSnapshotRequest.load() && voiceManager.getFirstVoiceCycleStart())
+        {
+            // Start new capture at cycle boundary
+            float freq = voiceManager.getFirstVoiceFrequency();
+            int samplesPerCycle = (int)(getSampleRate() / freq);
+            snapshotTargetLength = juce::jmin(samplesPerCycle * 2, WAVEFORM_SNAPSHOT_SIZE);
+            snapshotWritePos = 0;
+            snapshotCapturing = true;
+            waveformSnapshotRequest.store(false);
+
+            // Capture first sample
+            waveformSnapshot[snapshotWritePos++] = voiceManager.getLastFirstVoiceSample();
+        }
+
+        
+
         // Process through effects chain
         auto stereoOutput = effects.processStereoSample(mixedSample);
 
@@ -577,6 +615,9 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             rightData[sample] = stereoOutput.second * 0.125f;
         }
     }
+
+    // Update waveform display state
+    waveformActive.store(voiceManager.getActiveVoiceCount() > 0);
 
     // Clean up finished voices
     voiceManager.clearFinishedVoices();

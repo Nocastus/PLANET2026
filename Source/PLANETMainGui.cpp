@@ -8,9 +8,20 @@
 
 #include "PLANETMainGui.h"
 
-PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef, std::atomic<float>* modWheelPtr)
+PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
+    std::atomic<float>* modWheelPtr,
+    std::array<float, 2048>* waveformSnapshotPtr,
+    std::atomic<int>* snapshotLengthPtr,
+    std::atomic<bool>* snapshotReadyPtr,
+    std::atomic<bool>* snapshotRequestPtr,
+    std::atomic<bool>* waveformActivePtr)
     : apvts(apvtsRef), modWheelValue(modWheelPtr)
 {
+    // Connect waveform display to data source
+    waveformDisplay.setDataSource(waveformSnapshotPtr, snapshotLengthPtr,
+        snapshotReadyPtr, snapshotRequestPtr,
+        waveformActivePtr);
+
     // Set up drawbar sliders
     for (int i = 0; i < 10; ++i)
     {
@@ -428,7 +439,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef, std::
     apvts.addParameterListener("ampEnvSustainLevel", this);
     apvts.addParameterListener("ampEnvReleaseTime", this);
 
+    addAndMakeVisible(waveformDisplay);
+
     setSize(1400, 800);
+    updateDrawbarColors();
     startTimerHz(30);
 }
 
@@ -446,13 +460,35 @@ void PLANETMainGui::timerCallback()
     if (modWheelValue != nullptr)
     {
         float baseBrilliance = (float)brillianceSlider.getValue();
-        float newEffective = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheelValue->load());
-        
+        float modOffset = modWheelValue->load();  // Now -0.5 to +0.5
+        float newEffective = juce::jlimit(0.0f, 1.0f, baseBrilliance + modOffset);
+
         if (std::abs(newEffective - cachedEffectiveBrilliance) > 0.001f)
         {
             cachedEffectiveBrilliance = newEffective;
             repaint(brillianceSliderBounds.expanded(5));
         }
+    }
+
+    updateDrawbarColors();
+}
+
+void PLANETMainGui::updateDrawbarColors()
+{
+    for (int i = 0; i < 10; ++i)
+    {
+        juce::String paramID = "k" + juce::String(i + 1) + "EnvelopeAmount";
+        float envAmount = 0.0f;
+
+        if (auto* param = apvts.getParameter(paramID))
+            envAmount = param->convertFrom0to1(param->getValue());
+
+        // Red if envelope amount is non-zero, otherwise default blue
+        juce::Colour thumbColour = (std::abs(envAmount) > 0.001f)
+            ? juce::Colour(0xffcc4444)  // Muted red
+            : accentColour;             // Default pale blue
+
+        drawbarSliders[i].setColour(juce::Slider::thumbColourId, thumbColour);
     }
 }
 
@@ -607,14 +643,14 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setColour(backgroundGlobal);
     g.fillRect(leftWidth, 0, rightWidth, mainHeight);
 
-    // Waveform display area (placeholder)
-    g.setColour(juce::Colours::black);
-    g.fillRoundedRectangle((float)leftWidth + 10, 10.0f, 
-                           (float)rightWidth - 20, (float)drawbarSectionHeight - 20, 5.0f);
-    g.setColour(accentColour.withAlpha(0.3f));
-    g.drawHorizontalLine(drawbarSectionHeight / 2, (float)leftWidth + 15, (float)bounds.getWidth() - 15);
-    g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.drawText("WAVEFORM", leftWidth + 10, 15, rightWidth - 20, 20, juce::Justification::left);
+
+
+
+
+
+
+
+
 
     // ======================== PATCH BAR ========================
     
@@ -645,22 +681,26 @@ void PLANETMainGui::paint(juce::Graphics& g)
         float baseBrilliance = (float)brillianceSlider.getValue();
         float modWheel = modWheelValue->load();
         
-        if (modWheel > 0.001f)
+        if (std::abs(modWheel) > 0.001f)
         {
             float effectiveBrilliance = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheel);
-            
+
             int sliderX = brillianceSliderBounds.getX();
             int sliderWidth = brillianceSliderBounds.getWidth();
             int sliderY = brillianceSliderBounds.getY();
             int sliderHeight = brillianceSliderBounds.getHeight();
-            
+
             int baseX = sliderX + (int)(baseBrilliance * sliderWidth);
             int effectiveX = sliderX + (int)(effectiveBrilliance * sliderWidth);
-            
+
             g.setColour(accentColour.withAlpha(0.5f));
             int barY = sliderY + sliderHeight / 2 - 3;
-            g.fillRect(baseX, barY, effectiveX - baseX, 6);
-            
+
+            // Draw bar from base to effective (works for both directions)
+            int barLeft = juce::jmin(baseX, effectiveX);
+            int barRight = juce::jmax(baseX, effectiveX);
+            g.fillRect(barLeft, barY, barRight - barLeft, 6);
+
             g.setColour(accentColour);
             g.fillRect(effectiveX - 2, sliderY + 5, 4, sliderHeight - 10);
         }
@@ -800,6 +840,9 @@ void PLANETMainGui::resized()
     int rightX = leftWidth + 10;
     int rightContentWidth = bounds.getWidth() - leftWidth - 20;
     int rightKnobSize = 80;
+
+    // Waveform display
+    waveformDisplay.setBounds(rightX, 10, rightContentWidth, drawbarSectionHeight - 20);
     
     int waveformHeight = drawbarSectionHeight;
     int remainingHeight = mainHeight - waveformHeight;

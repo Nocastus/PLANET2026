@@ -158,6 +158,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float pitchEnvDistance, float pitchAttackTime)
 {
     auto twoPi = 2.0 * juce::MathConstants<double>::pi;
+    cycleStartFlag = false;
 
     // Calculate timing
     double sampleDeltaTime = 1.0 / sampleRate;           // For amplitude envelope (per-sample)
@@ -186,6 +187,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     // Detect cycle wrap (zero-crossing)
     if (currentAngle >= twoPi) {
         currentAngle -= twoPi;
+        cycleStartFlag = true;
 
         // ======================== VIBRATO PROCESSING (EXISTING) ========================
         double vibratoPhaseAdvance = 2.0 * juce::MathConstants<double>::pi * vibratoRate * cycleDeltaTime;

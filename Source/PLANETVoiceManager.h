@@ -25,6 +25,10 @@ public:
 
     PLANETVoice* getFirstActiveVoice();  // For debug info
 
+    float getFirstVoiceFrequency() const;
+    float getLastFirstVoiceSample() const { return lastFirstVoiceSample; }
+    bool getFirstVoiceCycleStart() const;
+
 
     PLANETVoiceManager();
 
@@ -60,4 +64,5 @@ private:
     // Voice stealing counter (simple increment for "oldest")
     int voiceAllocationCounter = 0;
     std::array<int, MAX_VOICES> voiceAllocationTimes;
+    float lastFirstVoiceSample = 0.0f;
 };
