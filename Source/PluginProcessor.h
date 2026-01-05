@@ -18,7 +18,18 @@ class PLANETtest4AudioProcessor : public juce::AudioProcessor
 {
 public:
 
+    // Waveform snapshot buffer (captured once per GUI frame)
+    static constexpr int WAVEFORM_SNAPSHOT_SIZE = 2048;
+    std::array<float, WAVEFORM_SNAPSHOT_SIZE> waveformSnapshot{};
+    std::atomic<int> waveformSnapshotLength{ 0 };
+    std::atomic<bool> waveformSnapshotReady{ false };
+    std::atomic<bool> waveformSnapshotRequest{ false };
+    std::atomic<bool> waveformActive{ false };
 
+    // Audio-thread only (not atomic)
+    int snapshotWritePos = 0;
+    int snapshotTargetLength = 0;
+    bool snapshotCapturing = false;
 
     //========Read MOD WHEEL to control BRILLIANCE
 
