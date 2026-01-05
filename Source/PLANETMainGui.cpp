@@ -305,6 +305,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     
     setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
     setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
+    setupVerticalSlider(warmthSlider, warmthLabel, "Warmth", 0.0, 1.0, 0.0);
     
      
 
@@ -335,6 +336,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "detuneAmount", detuneAmountSlider);
     detuneMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "detuneMix", detuneMixSlider);
+    warmthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "warmth", warmthSlider);
  
  
     
@@ -894,6 +897,10 @@ void PLANETMainGui::resized()
     int esx1 = rightX + effectsSliderSpacing + (effectsSliderSpacing - effectsSliderWidth) / 2;
     detuneMixLabel.setBounds(esx1, effectsY, effectsSliderWidth, 14);
     detuneMixSlider.setBounds(esx1, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+
+    int esx2 = rightX + effectsSliderSpacing * 2 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    warmthLabel.setBounds(esx2, effectsY, effectsSliderWidth, 14);
+    warmthSlider.setBounds(esx2, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
     
  
 }

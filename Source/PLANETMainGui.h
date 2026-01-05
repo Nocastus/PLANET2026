@@ -151,10 +151,10 @@ private:
     WaveformDisplay waveformDisplay;
     
     // Effects section
-    juce::Slider detuneAmountSlider, detuneMixSlider;
-     
+    juce::Slider detuneAmountSlider, detuneMixSlider; 
     juce::Label detuneAmountLabel, detuneMixLabel;
-     
+    juce::Slider warmthSlider;
+    juce::Label warmthLabel;
     
     // ======================== SLIDER ATTACHMENTS ========================
     
@@ -167,6 +167,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> brillianceAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAmountAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> warmthAttachment;
    
    
     

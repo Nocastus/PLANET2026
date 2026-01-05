@@ -180,9 +180,10 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             // ========================EXPONENTIAL ENVELOPE PARAMETER==========================
             std::make_unique<juce::AudioParameterFloat>("exponentialControl", "Exponential Control", 0.0f, 1.0f, 0.5f),
 
-            // ======================== EFFECTS PARAMETERS (4) ========================
-            std::make_unique<juce::AudioParameterFloat>("detuneAmount", "Detune Amount", 0.0f, 1.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("detuneMix", "Detune Mix", 0.0f, 1.0f, 0.0f),
+            // ======================== EFFECTS PARAMETERS ========================
+                std::make_unique<juce::AudioParameterFloat>("detuneAmount", "Detune Amount", 0.0f, 1.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("detuneMix", "Detune Mix", 0.0f, 1.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("warmth", "Warmth", 0.0f, 1.0f, 0.0f),
 
         })
 #endif
@@ -216,6 +217,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     // ======================== INITIALIZE EFFECTS PARAMETER POINTERS ========================
     detuneAmountParameter = parameters.getRawParameterValue("detuneAmount");
     detuneMixParameter = parameters.getRawParameterValue("detuneMix");
+    warmthParameter = parameters.getRawParameterValue("warmth");
 
 
 
@@ -302,7 +304,7 @@ void PLANETtest4AudioProcessor::prepareToPlay(double sampleRate, int samplesPerB
 {
     currentSampleRate = sampleRate;
     // Initialize effects
-    effects.prepareToPlay(sampleRate, samplesPerBlock);
+    effects.prepareToPlay(sampleRate);
     // LFO phase deltas are now calculated per-voice in PLANETVoice
 }
 
@@ -542,6 +544,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // ======================== LOAD ALL PARAMETERS ONCE PER BLOCK ========================
     float detuneAmount = detuneAmountParameter->load();
     float detuneMix = detuneMixParameter->load();
+    float warmth = warmthParameter->load();
  
     float vibratoRate = vibratoRateParameter->load();
     float vibratoDepth = vibratoDepthParameter->load();
@@ -550,6 +553,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // Update effects parameters once per block
     effects.updateDetuneParams(detuneAmount, detuneMix);
+    effects.updateWarmthParams(warmth);
  
 
     // ======================== GENERATE POLYPHONIC AUDIO ========================

@@ -17,13 +17,14 @@ public:
     PLANETEffects();
 
     // Setup
-    void prepareToPlay(double sampleRate, int samplesPerBlock);
+    void prepareToPlay(double sampleRate);
 
     // Main processing - converts mono input to stereo output with effects
     std::pair<float, float> processStereoSample(float monoInput);
 
     // Parameter updates (call once per audio block for efficiency)
     void updateDetuneParams(float amount, float mix);
+    void updateWarmthParams(float amount);
    
 
 private:
@@ -60,9 +61,32 @@ private:
     };
  
     //==========================================================================
+    // WARMTH EFFECT (15ips Tape Character)
+    //==========================================================================
+    struct WarmthProcessor {
+        // Low shelf filter at 150Hz
+        juce::IIRFilter lowShelfFilter;
+
+        // Pre-emphasis / de-emphasis filters for tape simulation
+        juce::IIRFilter preEmphasisFilter;
+        juce::IIRFilter deEmphasisFilter;
+
+        float warmthAmount = 0.0f;
+        double sampleRate = 44100.0;
+
+        void prepareToPlay(double sr);
+        void updateParameters(float amount, double sr);
+        float process(float input);
+
+    private:
+        float tapeDistortion(float input, float drive);
+    };
+
+    //==========================================================================
     // EFFECT INSTANCES
     //==========================================================================
     DetuneProcessor detuneProcessor;
+    WarmthProcessor warmthProcessor;
  
 
     // Audio properties

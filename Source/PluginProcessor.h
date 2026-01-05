@@ -128,7 +128,7 @@ private:
     // ======================== EFFECTS PARAMETER POINTERS ========================
     std::atomic<float>* detuneAmountParameter = nullptr;
     std::atomic<float>* detuneMixParameter = nullptr;
-
+    std::atomic<float>* warmthParameter = nullptr;
 
 
 
