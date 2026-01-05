@@ -305,8 +305,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     
     setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
     setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
-    setupVerticalSlider(reverbTimeSlider, reverbTimeLabel, "Reverb", 0.0, 1.0, 0.3);
-    setupVerticalSlider(reverbMixSlider, reverbMixLabel, "Rev Mix", 0.0, 1.0, 0.0);
+    
+     
 
     // ======================== CREATE SLIDER ATTACHMENTS ========================
     
@@ -335,10 +335,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "detuneAmount", detuneAmountSlider);
     detuneMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "detuneMix", detuneMixSlider);
-    reverbTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, "reverbLength", reverbTimeSlider);
-    reverbMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, "reverbMix", reverbMixSlider);
+ 
+ 
     
     // Amplitude section attachments
     velAmpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -897,13 +895,7 @@ void PLANETMainGui::resized()
     detuneMixLabel.setBounds(esx1, effectsY, effectsSliderWidth, 14);
     detuneMixSlider.setBounds(esx1, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
     
-    int esx2 = rightX + effectsSliderSpacing * 2 + (effectsSliderSpacing - effectsSliderWidth) / 2;
-    reverbTimeLabel.setBounds(esx2, effectsY, effectsSliderWidth, 14);
-    reverbTimeSlider.setBounds(esx2, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
-    
-    int esx3 = rightX + effectsSliderSpacing * 3 + (effectsSliderSpacing - effectsSliderWidth) / 2;
-    reverbMixLabel.setBounds(esx3, effectsY, effectsSliderWidth, 14);
-    reverbMixSlider.setBounds(esx3, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+ 
 }
 
 void PLANETMainGui::mouseDown(const juce::MouseEvent& event)

@@ -24,7 +24,7 @@ public:
 
     // Parameter updates (call once per audio block for efficiency)
     void updateDetuneParams(float amount, float mix);
-    void updateReverbParams(float roomSize, float damping, float width, float mix);
+   
 
 private:
     //==========================================================================
@@ -58,23 +58,12 @@ private:
         float interpolatedRead(float readPosition);
         float centsToRatio(float cents);
     };
-    //==========================================================================
-    // JUCE REVERB EFFECT
-    //==========================================================================
-    struct ReverbProcessor {
-        juce::Reverb reverb;
-        juce::Reverb::Parameters reverbParams;
-
-        void updateParameters(float roomSize, float damping, float width, float mix);  // Updated to 4 parameters
-        std::pair<float, float> process(float leftInput, float rightInput);
-        void prepareToPlay(double sampleRate);
-    };
-
+ 
     //==========================================================================
     // EFFECT INSTANCES
     //==========================================================================
     DetuneProcessor detuneProcessor;
-    ReverbProcessor reverbProcessor;  // Add this line
+ 
 
     // Audio properties
     double currentSampleRate = 44100.0;

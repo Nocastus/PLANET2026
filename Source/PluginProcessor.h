@@ -155,10 +155,7 @@ private:
     // ======================== EFFECTS PARAMETER POINTERS ========================
     std::atomic<float>* detuneAmountParameter = nullptr;
     std::atomic<float>* detuneMixParameter = nullptr;
-    std::atomic<float>* reverbLengthParameter = nullptr;
-    std::atomic<float>* reverbMixParameter = nullptr;
-    std::atomic<float>* reverbDampingParameter = nullptr;    // NEW
-    std::atomic<float>* reverbWidthParameter = nullptr;      // NEW
+
 
 
 

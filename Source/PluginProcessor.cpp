@@ -183,11 +183,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             // ======================== EFFECTS PARAMETERS (4) ========================
             std::make_unique<juce::AudioParameterFloat>("detuneAmount", "Detune Amount", 0.0f, 1.0f, 0.0f),
             std::make_unique<juce::AudioParameterFloat>("detuneMix", "Detune Mix", 0.0f, 1.0f, 0.0f),
-            // ======================== REVERB PARAMETERS (4 total) ========================
-            std::make_unique<juce::AudioParameterFloat>("reverbLength", "Reverb Length", 0.0f, 1.0f, 0.3f),  // Room Size
-            std::make_unique<juce::AudioParameterFloat>("reverbMix", "Reverb Mix", 0.0f, 1.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("reverbDamping", "Reverb Damping", 0.0f, 1.0f, 0.3f), // NEW
-            std::make_unique<juce::AudioParameterFloat>("reverbWidth", "Reverb Width", 0.0f, 1.0f, 1.0f),     // NEW
+
         })
 #endif
 {
@@ -220,10 +216,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     // ======================== INITIALIZE EFFECTS PARAMETER POINTERS ========================
     detuneAmountParameter = parameters.getRawParameterValue("detuneAmount");
     detuneMixParameter = parameters.getRawParameterValue("detuneMix");
-    reverbLengthParameter = parameters.getRawParameterValue("reverbLength");
-    reverbMixParameter = parameters.getRawParameterValue("reverbMix");
-    reverbDampingParameter = parameters.getRawParameterValue("reverbDamping");      // NEW
-    reverbWidthParameter = parameters.getRawParameterValue("reverbWidth");          // NEW
+
 
 
 
@@ -551,10 +544,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // ======================== LOAD ALL PARAMETERS ONCE PER BLOCK ========================
     float detuneAmount = detuneAmountParameter->load();
     float detuneMix = detuneMixParameter->load();
-    float reverbLength = reverbLengthParameter->load();
-    float reverbMix = reverbMixParameter->load();
-    float reverbDamping = reverbDampingParameter->load();      // NEW
-    float reverbWidth = reverbWidthParameter->load();          // NEW
+ 
     float vibratoRate = vibratoRateParameter->load();
     float vibratoDepth = vibratoDepthParameter->load();
     float vibratoFadeIn = vibratoFadeInParameter->load();
@@ -562,7 +552,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // Update effects parameters once per block
     effects.updateDetuneParams(detuneAmount, detuneMix);
-    effects.updateReverbParams(reverbLength, reverbDamping, reverbWidth, reverbMix);  // Updated call
+ 
 
     // ======================== GENERATE POLYPHONIC AUDIO ========================
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)

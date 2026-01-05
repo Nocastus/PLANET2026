@@ -25,7 +25,7 @@ PLANETEffects::PLANETEffects()
 void PLANETEffects::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
-    reverbProcessor.prepareToPlay(sampleRate);
+ 
 }
 
 //==============================================================================
@@ -37,11 +37,7 @@ void PLANETEffects::updateDetuneParams(float amount, float mix)
     detuneProcessor.updateParameters(amount, mix, currentSampleRate);
 }
 
-void PLANETEffects::updateReverbParams(float roomSize, float damping, float width, float mix)
-{
-    reverbProcessor.updateParameters(roomSize, damping, width, mix);
-}
-
+ 
 //==============================================================================
 // MAIN PROCESSING
 //==============================================================================
@@ -51,10 +47,7 @@ std::pair<float, float> PLANETEffects::processStereoSample(float monoInput)
     // Process through detune effect
     auto detuneOutput = detuneProcessor.process(monoInput);
 
-    // Process through reverb effect  
-    auto allEffectsOutput = reverbProcessor.process(detuneOutput.first, detuneOutput.second);
-
-    return allEffectsOutput;
+    return detuneOutput;
 }
 
 //==============================================================================
@@ -132,35 +125,4 @@ float PLANETEffects::DetuneProcessor::interpolatedRead(float readPosition)
     return buffer[index1] * (1.0f - fraction) + buffer[index2] * fraction;
 }
 
-//==============================================================================
-// JUCE REVERB IMPLEMENTATION
-//==============================================================================
-
-void PLANETEffects::ReverbProcessor::prepareToPlay(double sampleRate)
-{
-    reverb.setSampleRate(sampleRate);
-    reverb.reset();
-}
-
-void PLANETEffects::ReverbProcessor::updateParameters(float roomSize, float damping, float width, float mix)
-{
-    // Use all provided parameters instead of hardcoded values
-    reverbParams.roomSize = juce::jlimit(0.0f, 1.0f, roomSize);
-    reverbParams.damping = juce::jlimit(0.0f, 1.0f, damping);
-    reverbParams.width = juce::jlimit(0.0f, 1.0f, width);
-    reverbParams.wetLevel = juce::jlimit(0.0f, 1.0f, mix);
-    reverbParams.dryLevel = juce::jlimit(0.0f, 1.0f, 1.0f - mix);
-    reverbParams.freezeMode = false;
-
-    reverb.setParameters(reverbParams);
-}
-
-std::pair<float, float> PLANETEffects::ReverbProcessor::process(float leftInput, float rightInput)
-{
-    float leftOutput = leftInput;
-    float rightOutput = rightInput;
-
-    reverb.processStereo(&leftOutput, &rightOutput, 1);
-
-    return { leftOutput, rightOutput };
-}
+ 

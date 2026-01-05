@@ -152,9 +152,9 @@ private:
     
     // Effects section
     juce::Slider detuneAmountSlider, detuneMixSlider;
-    juce::Slider reverbTimeSlider, reverbMixSlider;
+     
     juce::Label detuneAmountLabel, detuneMixLabel;
-    juce::Label reverbTimeLabel, reverbMixLabel;
+     
     
     // ======================== SLIDER ATTACHMENTS ========================
     
@@ -167,8 +167,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> brillianceAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAmountAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbTimeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> reverbMixAttachment;
+   
+   
     
     // Amplitude section attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAmpAttachment;
