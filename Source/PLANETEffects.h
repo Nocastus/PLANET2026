@@ -61,15 +61,52 @@ private:
     };
  
     //==========================================================================
-    // WARMTH EFFECT (15ips Tape Character)
-    //==========================================================================
+     // WARMTH EFFECT (15ips Tape Character)
+     //==========================================================================
     struct WarmthProcessor {
-        // Low shelf filter at 150Hz
-        juce::IIRFilter lowShelfFilter;
+        // Simple biquad filter state
+        struct BiquadFilter {
+            float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+            float a1 = 0.0f, a2 = 0.0f;
+            float x1 = 0.0f, x2 = 0.0f;
+            float y1 = 0.0f, y2 = 0.0f;
 
-        // Pre-emphasis / de-emphasis filters for tape simulation
-        juce::IIRFilter preEmphasisFilter;
-        juce::IIRFilter deEmphasisFilter;
+            void setLowShelf(double sampleRate, float freq, float q, float gainDB) {
+                float A = std::pow(10.0f, gainDB / 40.0f);
+                float w0 = 2.0f * juce::MathConstants<float>::pi * freq / (float)sampleRate;
+                float cosw0 = std::cos(w0);
+                float sinw0 = std::sin(w0);
+                float alpha = sinw0 / (2.0f * q);
+
+                float sqrtA = std::sqrt(A);
+                float beta = 2.0f * sqrtA * alpha;
+
+                float a0 = (A + 1.0f) + (A - 1.0f) * cosw0 + beta;
+
+                b0 = (A * ((A + 1.0f) - (A - 1.0f) * cosw0 + beta)) / a0;
+                b1 = (2.0f * A * ((A - 1.0f) - (A + 1.0f) * cosw0)) / a0;
+                b2 = (A * ((A + 1.0f) - (A - 1.0f) * cosw0 - beta)) / a0;
+                a1 = (-2.0f * ((A - 1.0f) + (A + 1.0f) * cosw0)) / a0;
+                a2 = ((A + 1.0f) + (A - 1.0f) * cosw0 - beta) / a0;
+            }
+
+            float process(float input) {
+                float output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+
+                x2 = x1;
+                x1 = input;
+                y2 = y1;
+                y1 = output;
+
+                return output;
+            }
+
+            void reset() {
+                x1 = x2 = y1 = y2 = 0.0f;
+            }
+        };
+
+        BiquadFilter lowShelfFilter;
 
         float warmthAmount = 0.0f;
         double sampleRate = 44100.0;

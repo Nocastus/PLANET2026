@@ -141,11 +141,7 @@ float PLANETEffects::DetuneProcessor::interpolatedRead(float readPosition)
 void PLANETEffects::WarmthProcessor::prepareToPlay(double sr)
 {
     sampleRate = sr;
-
-    // Initialize filters
     lowShelfFilter.reset();
-    preEmphasisFilter.reset();
-    deEmphasisFilter.reset();
 }
 
 void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
@@ -153,47 +149,25 @@ void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
     warmthAmount = juce::jlimit(0.0f, 1.0f, amount);
     sampleRate = sr;
 
-    // Low shelf coefficients at 150Hz
-    // Increased gain: 0dB to +10dB across full range (was +6dB)
+    // Low shelf at 250Hz with boost from 0dB to +10dB
     float shelfGainDB = warmthAmount * 10.0f;
-    auto shelfCoeffs = juce::IIRCoefficients::makeLowShelf(sampleRate, 250.0, 0.7,
-        juce::Decibels::decibelsToGain(shelfGainDB));
-    lowShelfFilter.setCoefficients(shelfCoeffs);
-
-    // Pre-emphasis at 3kHz for tape character (boost before saturation)
-    auto preCoeffs = juce::IIRCoefficients::makeHighShelf(sampleRate, 3000.0, 0.7,
-        juce::Decibels::decibelsToGain(3.0f));
-    preEmphasisFilter.setCoefficients(preCoeffs);
-
-    // De-emphasis (inverse of pre-emphasis)
-    auto deCoeffs = juce::IIRCoefficients::makeHighShelf(sampleRate, 3000.0, 0.7,
-        juce::Decibels::decibelsToGain(-3.0f));
-    deEmphasisFilter.setCoefficients(deCoeffs);
+    lowShelfFilter.setLowShelf(sampleRate, 250.0f, 0.7f, shelfGainDB);
 }
 
 float PLANETEffects::WarmthProcessor::process(float input)
 {
-    // Always apply low shelf
-    float output = lowShelfFilter.processSingleSampleRaw(input);
+    // Always apply low shelf - this should now be audible!
+    float output = lowShelfFilter.process(input);
 
-    // Apply tape saturation starting from 50% (gradual introduction)
+    // Apply tape saturation starting from 50%
     if (warmthAmount > 0.5f)
     {
-        // Saturation amount scales from 0-1 in upper half (50-100%)
         float saturationAmount = (warmthAmount - 0.5f) * 2.0f;
 
-        // Pre-emphasis
-        output = preEmphasisFilter.processSingleSampleRaw(output);
-
-        // Tape distortion with increased drive range (was 1.0-3.0, now 1.0-5.0)
+        // Simple tape distortion with your 1.2 coefficient
         output = tapeDistortion(output, saturationAmount);
 
-        // De-emphasis
-        output = deEmphasisFilter.processSingleSampleRaw(output);
-
-        // Gain compensation: -3dB at 51% scaling to -10dB at 100%
-        // At saturationAmount = 0.02 (51%): compensationDB = -3dB
-        // At saturationAmount = 1.0 (100%): compensationDB = -10dB
+        // Gain compensation
         float compensationDB = -3.0f - (saturationAmount * 7.0f);
         float compensationGain = juce::Decibels::decibelsToGain(compensationDB);
         output *= compensationGain;
@@ -201,6 +175,35 @@ float PLANETEffects::WarmthProcessor::process(float input)
 
     return output;
 }
+
+// float PLANETEffects::WarmthProcessor::process(float input)
+//{
+    // Always apply low shelf
+ //   float output = lowShelfFilter.processSample(input);
+
+    // Apply tape saturation starting from 50% (gradual introduction)
+//    if (warmthAmount > 0.5f)
+//    {
+//        // Saturation amount scales from 0-1 in upper half (50-100%)
+//        float saturationAmount = (warmthAmount - 0.5f) * 2.0f;
+
+        // Pre-emphasis
+        // output = preEmphasisFilter.processSample(output);
+
+        // Tape distortion with your adjusted drive (coefficient 1.2)
+  //      output = tapeDistortion(output, saturationAmount);
+
+        // De-emphasis
+        // output = deEmphasisFilter.processSample(output);
+
+        // Gain compensation: -3dB at 51% scaling to -10dB at 100%
+ //       float compensationDB = -3.0f - (saturationAmount * 7.0f);
+  //      float compensationGain = juce::Decibels::decibelsToGain(compensationDB);
+   //     output *= compensationGain;
+  //  }
+
+//    return output;
+//}
 
 float PLANETEffects::WarmthProcessor::tapeDistortion(float input, float drive)
 {
