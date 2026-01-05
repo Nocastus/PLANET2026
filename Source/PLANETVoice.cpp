@@ -324,10 +324,6 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float velocityAmplitude = cachedVelocityAmplitude;
     auto sample = (float)std::sin(distortedPhase) * ampEnvValue * velocityAmplitude;
 
-    // Debug
-    debugLastVelocity = noteVelocity;
-    debugLastBrilliance = brilliance;
-    debugLastVelocityBrilliance = velocityBrilliance;
 
     return sample;
 }

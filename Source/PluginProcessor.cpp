@@ -363,7 +363,7 @@ float PLANETtest4AudioProcessor::generateLFOWaveform(double phase, float shape)
 float PLANETtest4AudioProcessor::processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel,
     double deltaTime, float attackTime, float decayTime, float sustainLevel, float releaseTime, bool noteOn)
 {
-    //debugEnvelopeUpdateCount.store(debugEnvelopeUpdateCount.load() + 1);
+  
 
     switch (stage)
     {
@@ -491,9 +491,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         else if (message.isController())
         {
 
-            // Debug tracking
-            debugLastCC.store(message.getControllerNumber());
-            debugLastCCValue.store(message.getControllerValue());
+
 
             // Handle sustain pedal (CC #64)
             // Handle sustain pedal (CC #64)
@@ -612,23 +610,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Clean up finished voices
     voiceManager.clearFinishedVoices();
 
-    if (auto* activeVoice = voiceManager.getFirstActiveVoice()) {
-        debugVelocity.store(activeVoice->getDebugVelocity());
-        debugBrilliance.store(activeVoice->getDebugBrilliance());
-        debugVelocityBrilliance.store(activeVoice->getDebugVelocityBrilliance());
-    }
-    else {
-        debugVelocity.store(-1.0f);  // No active voice found
-    }
 
-    // int activeVoiceCount = voiceManager.getActiveVoiceCount();
-    // debugVelocity.store((float)activeVoiceCount);  // Use velocity display to show voice count
-
-    //if (auto* activeVoice = voiceManager.getFirstActiveVoice()) {
-    //    debugVelocity.store(activeVoice->getDebugVelocity());
-    //    debugBrilliance.store(activeVoice->getDebugBrilliance());
-    //    debugVelocityBrilliance.store(activeVoice->getDebugVelocityBrilliance());
-    //}
 
 }
 //==============================================================================

@@ -18,45 +18,7 @@ class PLANETtest4AudioProcessor : public juce::AudioProcessor
 {
 public:
 
-    // Debug values for GUI display=================================================
-    std::atomic<float> debugCurrentAttackTime{ 0.0f };
-    std::atomic<float> debugCurrentEnvLevel{ 0.0f };
-    std::atomic<int> debugEnvStage{ 0 }; // 0=Idle, 1=Attack, 2=Decay, 3=Sustain, 4=Release
-    std::atomic<float> debugDeltaTime{ 0.0f };
-    std::atomic<float> debugCurrentFrequency{ 0.0f };
-    std::atomic<int> debugEnvelopeUpdateCount{ 0 };
-    std::atomic<float> debugEnvTime{ 0.0f };
-    std::atomic<float> debugSampleRate{ 0.0f };
 
-    std::atomic<int> debugLastNoteOn{ -1 };
-    std::atomic<int> debugLastNoteOff{ -1 };
-    std::atomic<float> debugLastVelocity{ 0.0f };
-    std::atomic<int> debugActiveVoices{ 0 };
-
-    std::atomic<int> debugAmpEnvStage{ 0 };
-    std::atomic<float> debugAmpEnvTime{ 0.0f };
-    std::atomic<float> debugReleaseTime{ 0.0f };
-    std::atomic<float> debugDeltaTimeUsed{ 0.0f };
-
-    std::atomic<float> debugVelocity{ 0.0f };
-    std::atomic<float> debugBrilliance{ 0.0f };
-    std::atomic<float> debugVelocityBrilliance{ 0.0f };
-
-    std::atomic<int> debugLastCC{ -1 };
-    std::atomic<int> debugLastCCValue{ 0 };
-
-    // Waveform snapshot buffer (captured once per GUI frame)
-    static constexpr int WAVEFORM_SNAPSHOT_SIZE = 2048;
-    std::array<float, WAVEFORM_SNAPSHOT_SIZE> waveformSnapshot{};
-    std::atomic<int> waveformSnapshotLength{ 0 };
-    std::atomic<bool> waveformSnapshotReady{ false };
-    std::atomic<bool> waveformSnapshotRequest{ false };
-    std::atomic<bool> waveformActive{ false };
-
-    // Audio-thread only (not atomic)
-    int snapshotWritePos = 0;
-    int snapshotTargetLength = 0;
-    bool snapshotCapturing = false;
 
     //========Read MOD WHEEL to control BRILLIANCE
 

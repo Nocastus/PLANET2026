@@ -58,10 +58,7 @@ public:
     //Setter for Envelope exponential curve control
     void setExponentialControl(float value) { exponentialControl = value; }
 
-    //Getter methods for Debug
-    float getDebugVelocity() const { return debugLastVelocity; }
-    float getDebugBrilliance() const { return debugLastBrilliance; }
-    float getDebugVelocityBrilliance() const { return debugLastVelocityBrilliance; }
+
    
 
 
@@ -87,11 +84,7 @@ private:
 
 
 
-    //Debug variables
 
-    float debugLastVelocity = 0.0f;
-    float debugLastBrilliance = 0.0f;
-    float debugLastVelocityBrilliance = 0.0f;
 
     // NEW: Cache expensive velocity calculations (add after debugLastVelocityBrilliance)
     float cachedVelocityAmplitude = 1.0f;
