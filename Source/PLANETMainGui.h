@@ -155,6 +155,10 @@ private:
     juce::Label detuneAmountLabel, detuneMixLabel;
     juce::Slider warmthSlider;
     juce::Label warmthLabel;
+    juce::Slider punchSlider;
+    juce::Label punchLabel;
+    juce::Label punchFreqLabel;
+    juce::Label punchFreqValue;
     
     // ======================== SLIDER ATTACHMENTS ========================
     
@@ -168,6 +172,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAmountAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> warmthAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> punchAttachment;
    
    
     

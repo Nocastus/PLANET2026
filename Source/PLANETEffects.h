@@ -25,6 +25,7 @@ public:
     // Parameter updates (call once per audio block for efficiency)
     void updateDetuneParams(float amount, float mix);
     void updateWarmthParams(float amount);
+    void updatePunchParams(float amount, float frequency);
    
 
 private:
@@ -120,10 +121,82 @@ private:
     };
 
     //==========================================================================
+    // PUNCH EFFECT (1176 FET Compressor + Presence)
+    //==========================================================================
+    struct PunchProcessor {
+        // Simple biquad filter for presence boost (reusing from Warmth)
+        struct BiquadFilter {
+            float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+            float a1 = 0.0f, a2 = 0.0f;
+            float x1 = 0.0f, x2 = 0.0f;
+            float y1 = 0.0f, y2 = 0.0f;
+
+            void setHighShelf(double sampleRate, float freq, float q, float gainDB) {
+                float A = std::pow(10.0f, gainDB / 40.0f);
+                float w0 = 2.0f * juce::MathConstants<float>::pi * freq / (float)sampleRate;
+                float cosw0 = std::cos(w0);
+                float sinw0 = std::sin(w0);
+                float alpha = sinw0 / (2.0f * q);
+
+                float sqrtA = std::sqrt(A);
+                float beta = 2.0f * sqrtA * alpha;
+
+                float a0 = (A + 1.0f) - (A - 1.0f) * cosw0 + beta;
+
+                b0 = (A * ((A + 1.0f) + (A - 1.0f) * cosw0 + beta)) / a0;
+                b1 = (-2.0f * A * ((A - 1.0f) + (A + 1.0f) * cosw0)) / a0;
+                b2 = (A * ((A + 1.0f) + (A - 1.0f) * cosw0 - beta)) / a0;
+                a1 = (2.0f * ((A - 1.0f) - (A + 1.0f) * cosw0)) / a0;
+                a2 = ((A + 1.0f) - (A - 1.0f) * cosw0 - beta) / a0;
+            }
+
+            float process(float input) {
+                float output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+
+                x2 = x1;
+                x1 = input;
+                y2 = y1;
+                y1 = output;
+
+                return output;
+            }
+
+            void reset() {
+                x1 = x2 = y1 = y2 = 0.0f;
+            }
+        };
+
+        BiquadFilter presenceFilter;
+
+        // Compressor state
+        float envelope = 0.0f;
+        float punchAmount = 0.0f;
+        float punchFreq = 1800.0f;
+        double sampleRate = 44100.0;
+
+        // 1176 FET characteristics
+        static constexpr float RATIO = 4.0f;
+        static constexpr float THRESHOLD = 0.5f;  // -6dB
+        static constexpr float ATTACK_MS = 4.0f;
+        static constexpr float RELEASE_MS = 50.0f;
+
+        float attackCoeff = 0.0f;
+        float releaseCoeff = 0.0f;
+
+        void prepareToPlay(double sr);
+        void updateParameters(float amount, float frequency, double sr);
+        float process(float input);
+
+    private:
+        float compress(float input, float threshold, float ratio);
+    };
+
+    //==========================================================================
     // EFFECT INSTANCES
     //==========================================================================
     DetuneProcessor detuneProcessor;
     WarmthProcessor warmthProcessor;
+    PunchProcessor punchProcessor;
  
 
     // Audio properties

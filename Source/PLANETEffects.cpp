@@ -26,6 +26,7 @@ void PLANETEffects::prepareToPlay(double sampleRate)
 {
     currentSampleRate = sampleRate;
     warmthProcessor.prepareToPlay(sampleRate);
+    punchProcessor.prepareToPlay(sampleRate);
 }
 
 
@@ -43,6 +44,11 @@ void PLANETEffects::updateWarmthParams(float amount)
     warmthProcessor.updateParameters(amount, currentSampleRate);
 }
 
+void PLANETEffects::updatePunchParams(float amount, float frequency)
+{
+    punchProcessor.updateParameters(amount, frequency, currentSampleRate);
+}
+
  
 //==============================================================================
 // MAIN PROCESSING
@@ -53,8 +59,11 @@ std::pair<float, float> PLANETEffects::processStereoSample(float monoInput)
     // Process through warmth (mono)
     float warmedSignal = warmthProcessor.process(monoInput);
 
+    // Process through punch (mono)
+    float punchedSignal = punchProcessor.process(warmedSignal);
+
     // Process through detune effect (mono to stereo)
-    auto detuneOutput = detuneProcessor.process(warmedSignal);
+    auto detuneOutput = detuneProcessor.process(punchedSignal);
 
     return detuneOutput;
 }
@@ -222,4 +231,81 @@ float PLANETEffects::WarmthProcessor::tapeDistortion(float input, float drive)
 
     // Compensate for gain
     return saturated / std::tanh(driveAmount);
+}
+
+//==============================================================================
+// PUNCH EFFECT IMPLEMENTATION
+//==============================================================================
+
+void PLANETEffects::PunchProcessor::prepareToPlay(double sr)
+{
+    sampleRate = sr;
+    presenceFilter.reset();
+    envelope = 0.0f;
+
+    // Calculate time constants for 1176-style envelope follower
+    attackCoeff = 1.0f - std::exp(-1.0f / (ATTACK_MS * 0.001f * sampleRate));
+    releaseCoeff = 1.0f - std::exp(-1.0f / (RELEASE_MS * 0.001f * sampleRate));
+}
+
+void PLANETEffects::PunchProcessor::updateParameters(float amount, float frequency, double sr)
+{
+    punchAmount = juce::jlimit(0.0f, 1.0f, amount);
+    punchFreq = juce::jlimit(500.0f, 5000.0f, frequency);
+    sampleRate = sr;
+
+    // High shelf for presence boost (active in second half 50-100%)
+    if (punchAmount > 0.5f)
+    {
+        // Scale from 0 to +4dB in upper half
+        float presenceAmount = (punchAmount - 0.5f) * 2.0f;
+        float shelfGainDB = presenceAmount * 4.0f;
+        presenceFilter.setHighShelf(sampleRate, punchFreq, 0.7f, shelfGainDB);
+    }
+}
+
+float PLANETEffects::PunchProcessor::process(float input)
+{
+    float output = input;
+
+    // Apply 1176 compression if punch > 0
+    if (punchAmount > 0.0f)
+    {
+        // Scale compression intensity with punch amount (0-50% range)
+        float compressionIntensity = juce::jmin(punchAmount * 2.0f, 1.0f);
+
+        // FET-style envelope follower (peak detection)
+        float inputLevel = std::abs(output);
+
+        if (inputLevel > envelope)
+            envelope += attackCoeff * (inputLevel - envelope);
+        else
+            envelope += releaseCoeff * (inputLevel - envelope);
+
+        // Hard knee compression
+        if (envelope > THRESHOLD)
+        {
+            float gainReduction = compress(envelope, THRESHOLD, RATIO);
+            output *= gainReduction * (1.0f - compressionIntensity) + compressionIntensity;
+        }
+
+        // Makeup gain to compensate for compression
+        output *= (1.0f + compressionIntensity * 0.5f);
+    }
+
+    // Apply presence boost in second half (50-100%)
+    if (punchAmount > 0.5f)
+    {
+        output = presenceFilter.process(output);
+    }
+
+    return output;
+}
+
+float PLANETEffects::PunchProcessor::compress(float level, float threshold, float ratio)
+{
+    // Hard knee compression - classic 1176 style
+    float overshoot = level - threshold;
+    float compressed = threshold + overshoot / ratio;
+    return compressed / level;  // Return gain reduction factor
 }

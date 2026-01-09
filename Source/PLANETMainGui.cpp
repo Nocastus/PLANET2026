@@ -306,6 +306,21 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
     setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
     setupVerticalSlider(warmthSlider, warmthLabel, "Warmth", 0.0, 1.0, 0.0);
+    setupVerticalSlider(punchSlider, punchLabel, "Punch", 0.0, 1.0, 0.0);
+
+    // Set up Punch Frequency editable label
+    punchFreqLabel.setText("Freq", juce::dontSendNotification);
+    punchFreqLabel.setJustificationType(juce::Justification::centred);
+    punchFreqLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(punchFreqLabel);
+
+    punchFreqValue.setText("1800", juce::dontSendNotification);
+    punchFreqValue.setEditable(true);
+    punchFreqValue.setJustificationType(juce::Justification::centred);
+    punchFreqValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    punchFreqValue.setColour(juce::Label::outlineColourId, juce::Colours::grey);
+    punchFreqValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(punchFreqValue);
     
      
 
@@ -338,6 +353,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "detuneMix", detuneMixSlider);
     warmthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "warmth", warmthSlider);
+    punchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "punch", punchSlider);
  
  
     
@@ -402,6 +419,16 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
             fValueLabels[i].setText(juce::String(newVal, 1), juce::dontSendNotification);
         };
     }
+
+    // Wire up Punch frequency editing
+    punchFreqValue.onTextChange = [this]() {
+        float newVal = punchFreqValue.getText().getFloatValue();
+        newVal = std::round(newVal / 100.0f) * 100.0f;  // Round to nearest 100Hz
+        newVal = juce::jlimit(500.0f, 5000.0f, newVal);
+        if (auto* param = apvts.getParameter("punchFrequency"))
+            param->setValueNotifyingHost(param->convertTo0to1(newVal));
+        punchFreqValue.setText(juce::String((int)newVal), juce::dontSendNotification);
+        };
     
     // Wire up harmonic ADSR value editing
     const char* adsrSuffixes[] = { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime" };
@@ -439,6 +466,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     apvts.addParameterListener("ampEnvDecayTime", this);
     apvts.addParameterListener("ampEnvSustainLevel", this);
     apvts.addParameterListener("ampEnvReleaseTime", this);
+    apvts.addParameterListener("punchFrequency", this);
 
     addAndMakeVisible(waveformDisplay);
 
@@ -454,6 +482,7 @@ PLANETMainGui::~PLANETMainGui()
     apvts.removeParameterListener("ampEnvDecayTime", this);
     apvts.removeParameterListener("ampEnvSustainLevel", this);
     apvts.removeParameterListener("ampEnvReleaseTime", this);
+    apvts.removeParameterListener("punchFrequency", this);
 }
 
 void PLANETMainGui::timerCallback()
@@ -901,6 +930,14 @@ void PLANETMainGui::resized()
     int esx2 = rightX + effectsSliderSpacing * 2 + (effectsSliderSpacing - effectsSliderWidth) / 2;
     warmthLabel.setBounds(esx2, effectsY, effectsSliderWidth, 14);
     warmthSlider.setBounds(esx2, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+
+    int esx3 = rightX + effectsSliderSpacing * 3 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    punchLabel.setBounds(esx3, effectsY, effectsSliderWidth, 14);
+    punchSlider.setBounds(esx3, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+
+    // Punch frequency label below slider
+    punchFreqLabel.setBounds(esx3, effectsY + 16 + effectsSliderHeight + 2, effectsSliderWidth, 12);
+    punchFreqValue.setBounds(esx3, effectsY + 16 + effectsSliderHeight + 16, effectsSliderWidth, 20);
     
  
 }
@@ -1212,6 +1249,13 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
             adsrValues[selectedDrawbar][i] = newValue;
             adsrValueEditors[i].setText(juce::String(newValue, 2), juce::dontSendNotification);
             repaint();
+            return;
+        }
+
+
+        // Punch frequency parameter
+        if (parameterID == "punchFrequency") {
+            punchFreqValue.setText(juce::String((int)newValue), juce::dontSendNotification);
             return;
         }
     }

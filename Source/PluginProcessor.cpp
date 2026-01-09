@@ -184,6 +184,8 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 std::make_unique<juce::AudioParameterFloat>("detuneAmount", "Detune Amount", 0.0f, 1.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("detuneMix", "Detune Mix", 0.0f, 1.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("warmth", "Warmth", 0.0f, 1.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("punch", "Punch", 0.0f, 1.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("punchFrequency", "Punch Frequency", 500.0f, 5000.0f, 1800.0f),
 
         })
 #endif
@@ -218,6 +220,8 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     detuneAmountParameter = parameters.getRawParameterValue("detuneAmount");
     detuneMixParameter = parameters.getRawParameterValue("detuneMix");
     warmthParameter = parameters.getRawParameterValue("warmth");
+    punchParameter = parameters.getRawParameterValue("punch");
+    punchFrequencyParameter = parameters.getRawParameterValue("punchFrequency");
 
 
 
@@ -545,6 +549,8 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float detuneAmount = detuneAmountParameter->load();
     float detuneMix = detuneMixParameter->load();
     float warmth = warmthParameter->load();
+    float punch = punchParameter->load();
+    float punchFrequency = punchFrequencyParameter->load();
  
     float vibratoRate = vibratoRateParameter->load();
     float vibratoDepth = vibratoDepthParameter->load();
@@ -554,6 +560,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Update effects parameters once per block
     effects.updateDetuneParams(detuneAmount, detuneMix);
     effects.updateWarmthParams(warmth);
+    effects.updatePunchParams(punch, punchFrequency);
  
 
     // ======================== GENERATE POLYPHONIC AUDIO ========================

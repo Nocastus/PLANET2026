@@ -129,6 +129,8 @@ private:
     std::atomic<float>* detuneAmountParameter = nullptr;
     std::atomic<float>* detuneMixParameter = nullptr;
     std::atomic<float>* warmthParameter = nullptr;
+    std::atomic<float>* punchParameter = nullptr;
+    std::atomic<float>* punchFrequencyParameter = nullptr;
 
 
 
