@@ -49,7 +49,7 @@ void PLANETEffects::updatePunchParams(float amount, float frequency)
     punchProcessor.updateParameters(amount, frequency, currentSampleRate);
 }
 
- 
+
 //==============================================================================
 // MAIN PROCESSING
 //==============================================================================

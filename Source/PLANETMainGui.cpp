@@ -32,6 +32,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         drawbarSliders[i].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         drawbarSliders[i].setSliderSnapsToMousePosition(false);
         drawbarSliders[i].addMouseListener(this, false);
+        drawbarSliders[i].setLookAndFeel(&drawbarLookAndFeel);  // Apply custom LookAndFeel
         addAndMakeVisible(drawbarSliders[i]);
     }
 
@@ -124,6 +125,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envDepthKnob.setValue(0.0);
     envDepthKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     envDepthKnob.setDoubleClickReturnValue(true, 0.0);
+    // Add callback to update the value label when slider changes
+    envDepthKnob.onValueChange = [this]() {
+        envDepthValue.setText(juce::String(envDepthKnob.getValue(), 2), juce::dontSendNotification);
+    };
     addAndMakeVisible(envDepthKnob);
 
     envDepthLabel.setText("Env Depth", juce::dontSendNotification);
@@ -161,6 +166,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAmpSlider.setValue(100.0);
     velAmpSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velAmpSlider.setDoubleClickReturnValue(true, 100.0);
+    // Add callback to update the value label when slider changes
+    velAmpSlider.onValueChange = [this]() {
+        velAmpValue.setText(juce::String((int)velAmpSlider.getValue()), juce::dontSendNotification);
+    };
     addAndMakeVisible(velAmpSlider);
 
     velAmpLabel.setText("Vel Ampli", juce::dontSendNotification);
@@ -181,6 +190,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velBrillKnob.setValue(100.0);
     velBrillKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velBrillKnob.setDoubleClickReturnValue(true, 100.0);
+    // Add callback to update the value label when knob changes
+    velBrillKnob.onValueChange = [this]() {
+        velBrillValue.setText(juce::String((int)velBrillKnob.getValue()), juce::dontSendNotification);
+    };
     addAndMakeVisible(velBrillKnob);
     velBrillLabel.setText("Vel Brill", juce::dontSendNotification);
     velBrillLabel.setJustificationType(juce::Justification::centred);
@@ -199,6 +212,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAttackKnob.setValue(0.0);
     velAttackKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velAttackKnob.setDoubleClickReturnValue(true, 0.0);
+    // Add callback to update the value label when knob changes
+    velAttackKnob.onValueChange = [this]() {
+        velAttackValue.setText(juce::String((int)velAttackKnob.getValue()), juce::dontSendNotification);
+    };
     addAndMakeVisible(velAttackKnob);
     velAttackLabel.setText("Vel Attk", juce::dontSendNotification);
     velAttackLabel.setJustificationType(juce::Justification::centred);
@@ -217,7 +234,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envCurveKnob.setValue(0.5);
     envCurveKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     envCurveKnob.setDoubleClickReturnValue(true, 0.5);
-    envCurveKnob.onValueChange = [this]() { repaint(); };
+    envCurveKnob.onValueChange = [this]() {
+        envCurveValue.setText(juce::String(envCurveKnob.getValue(), 2), juce::dontSendNotification);
+        repaint();
+    };
     addAndMakeVisible(envCurveKnob);
     envCurveLabel.setText("Env Curve", juce::dontSendNotification);
     envCurveLabel.setJustificationType(juce::Justification::centred);
@@ -236,6 +256,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     vintageKnob.setValue(0.0);
     vintageKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     vintageKnob.setDoubleClickReturnValue(true, 0.0);
+    vintageKnob.onValueChange = [this]() {
+        vintageValue.setText(juce::String((int)vintageKnob.getValue()), juce::dontSendNotification);
+    };
     addAndMakeVisible(vintageKnob);
     vintageLabel.setText("Vintage", juce::dontSendNotification);
     vintageLabel.setJustificationType(juce::Justification::centred);
@@ -317,12 +340,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     punchFreqValue.setText("1800", juce::dontSendNotification);
     punchFreqValue.setEditable(true);
     punchFreqValue.setJustificationType(juce::Justification::centred);
-    punchFreqValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
-    punchFreqValue.setColour(juce::Label::outlineColourId, juce::Colours::grey);
     punchFreqValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    punchFreqValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
     addAndMakeVisible(punchFreqValue);
-    
-     
+
 
     // ======================== CREATE SLIDER ATTACHMENTS ========================
     
@@ -355,9 +376,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "warmth", warmthSlider);
     punchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "punch", punchSlider);
- 
- 
-    
+
+
+
     // Amplitude section attachments
     velAmpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "velToAmplitude", velAmpSlider);
@@ -419,16 +440,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
             fValueLabels[i].setText(juce::String(newVal, 1), juce::dontSendNotification);
         };
     }
-
-    // Wire up Punch frequency editing
-    punchFreqValue.onTextChange = [this]() {
-        float newVal = punchFreqValue.getText().getFloatValue();
-        newVal = std::round(newVal / 100.0f) * 100.0f;  // Round to nearest 100Hz
-        newVal = juce::jlimit(500.0f, 5000.0f, newVal);
-        if (auto* param = apvts.getParameter("punchFrequency"))
-            param->setValueNotifyingHost(param->convertTo0to1(newVal));
-        punchFreqValue.setText(juce::String((int)newVal), juce::dontSendNotification);
-        };
     
     // Wire up harmonic ADSR value editing
     const char* adsrSuffixes[] = { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime" };
@@ -466,7 +477,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     apvts.addParameterListener("ampEnvDecayTime", this);
     apvts.addParameterListener("ampEnvSustainLevel", this);
     apvts.addParameterListener("ampEnvReleaseTime", this);
-    apvts.addParameterListener("punchFrequency", this);
 
     addAndMakeVisible(waveformDisplay);
 
@@ -482,7 +492,12 @@ PLANETMainGui::~PLANETMainGui()
     apvts.removeParameterListener("ampEnvDecayTime", this);
     apvts.removeParameterListener("ampEnvSustainLevel", this);
     apvts.removeParameterListener("ampEnvReleaseTime", this);
-    apvts.removeParameterListener("punchFrequency", this);
+
+    // Reset LookAndFeel for drawbar sliders
+    for (int i = 0; i < 10; ++i)
+    {
+        drawbarSliders[i].setLookAndFeel(nullptr);
+    }
 }
 
 void PLANETMainGui::timerCallback()
@@ -507,18 +522,44 @@ void PLANETMainGui::updateDrawbarColors()
 {
     for (int i = 0; i < 10; ++i)
     {
-        juce::String paramID = "k" + juce::String(i + 1) + "EnvelopeAmount";
+        // Get current drawbar value
+        float drawbarValue = drawbarSliders[i].getValue();
+        bool isNull = std::abs(drawbarValue) < 0.001f;
+
+        // Get envelope amount (use RawParameterValue for direct access)
+        juce::String envParamID = "k" + juce::String(i + 1) + "EnvelopeAmount";
         float envAmount = 0.0f;
+        if (auto* envPtr = apvts.getRawParameterValue(envParamID))
+            envAmount = envPtr->load();
+        bool hasActiveEnvelope = std::abs(envAmount) > 0.001f;
 
-        if (auto* param = apvts.getParameter(paramID))
-            envAmount = param->convertFrom0to1(param->getValue());
+        // Get LFO amount (use RawParameterValue for direct access)
+        juce::String lfoParamID = "k" + juce::String(i + 1) + "LFOAmount";
+        float lfoAmount = 0.0f;
+        if (auto* lfoPtr = apvts.getRawParameterValue(lfoParamID))
+            lfoAmount = lfoPtr->load();
+        bool hasActiveLFO = std::abs(lfoAmount) > 0.001f;
 
-        // Red if envelope amount is non-zero, otherwise default blue
-        juce::Colour thumbColour = (std::abs(envAmount) > 0.001f)
-            ? juce::Colour(0xffcc4444)  // Muted red
-            : accentColour;             // Default pale blue
+        // Determine thumb color based on state priority:
+        // 1. Red if envelope is active
+        // 2. Blue if drawbar is non-null
+        // 3. White if drawbar is at null position
+        juce::Colour thumbColour;
+        if (hasActiveEnvelope) {
+            thumbColour = juce::Colour(0xffcc4444);  // Muted red
+        } else if (!isNull) {
+            thumbColour = accentColour;  // Pale blue (0xff6ab0ff)
+        } else {
+            thumbColour = juce::Colours::white;  // White for null position
+        }
 
         drawbarSliders[i].setColour(juce::Slider::thumbColourId, thumbColour);
+
+        // Store LFO state as a property for the custom LookAndFeel to read
+        drawbarSliders[i].getProperties().set("hasActiveLFO", hasActiveLFO);
+
+        // Always trigger repaint to update visual state immediately
+        drawbarSliders[i].repaint();
     }
 }
 
@@ -938,8 +979,8 @@ void PLANETMainGui::resized()
     // Punch frequency label below slider
     punchFreqLabel.setBounds(esx3, effectsY + 16 + effectsSliderHeight + 2, effectsSliderWidth, 12);
     punchFreqValue.setBounds(esx3, effectsY + 16 + effectsSliderHeight + 16, effectsSliderWidth, 20);
-    
- 
+
+
 }
 
 void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
@@ -1249,13 +1290,6 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
             adsrValues[selectedDrawbar][i] = newValue;
             adsrValueEditors[i].setText(juce::String(newValue, 2), juce::dontSendNotification);
             repaint();
-            return;
-        }
-
-
-        // Punch frequency parameter
-        if (parameterID == "punchFrequency") {
-            punchFreqValue.setText(juce::String((int)newValue), juce::dontSendNotification);
             return;
         }
     }

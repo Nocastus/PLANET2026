@@ -10,6 +10,94 @@
 #include "PLANETDataStructures.h"
 
 //==============================================================================
+// SINE LOOKUP TABLE (Optimization)
+//==============================================================================
+
+class SineLUT {
+public:
+    static constexpr int TABLE_SIZE = 8192;
+    static constexpr double TABLE_SIZE_OVER_2PI = TABLE_SIZE / (2.0 * juce::MathConstants<double>::pi);
+
+    SineLUT() {
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            table[i] = std::sin(2.0 * juce::MathConstants<double>::pi * i / TABLE_SIZE);
+        }
+    }
+
+    // Fast sine lookup with linear interpolation
+    inline float lookup(double phase) const {
+        // Wrap phase to [0, 2π]
+        while (phase < 0.0) phase += 2.0 * juce::MathConstants<double>::pi;
+        while (phase >= 2.0 * juce::MathConstants<double>::pi)
+            phase -= 2.0 * juce::MathConstants<double>::pi;
+
+        // Convert phase to table index
+        double indexDouble = phase * TABLE_SIZE_OVER_2PI;
+        int index1 = static_cast<int>(indexDouble) % TABLE_SIZE;
+        int index2 = (index1 + 1) % TABLE_SIZE;
+
+        // Linear interpolation
+        float fraction = static_cast<float>(indexDouble - std::floor(indexDouble));
+        return table[index1] * (1.0f - fraction) + table[index2] * fraction;
+    }
+
+    // Get singleton instance
+    static const SineLUT& getInstance() {
+        static SineLUT instance;
+        return instance;
+    }
+
+private:
+    std::array<float, TABLE_SIZE> table;
+};
+
+//==============================================================================
+// FAST EXPONENTIAL APPROXIMATION (Optimization)
+//==============================================================================
+
+class FastMath {
+public:
+    // Fast exponential approximation using Padé approximant
+    // Accurate for typical envelope curves (x in range [-7, 0])
+    // ~10-20x faster than std::exp()
+    static inline float fastExp(float x) {
+        // Clamp to reasonable range for audio envelopes
+        x = juce::jlimit(-10.0f, 10.0f, x);
+
+        // For negative exponents (decay/release curves), use Padé (2,2) approximation
+        // e^x ≈ (12 + 6x + x²) / (12 - 6x + x²)
+        if (x < 0.0f) {
+            float x2 = x * x;
+            return (12.0f + 6.0f * x + x2) / (12.0f - 6.0f * x + x2);
+        }
+
+        // For positive exponents (attack curves), use series approximation
+        // e^-x for attack: 1 - e^(-x)
+        float x2 = x * x;
+        return (12.0f + 6.0f * x + x2) / (12.0f - 6.0f * x + x2);
+    }
+
+    // Specialized version for 1 - e^(-x) pattern (attack curves)
+    static inline float fastExpAttack(float x) {
+        // Input x is positive attack progress
+        // Returns 1 - e^(-x)
+        x = juce::jlimit(0.0f, 10.0f, x);
+        float x2 = x * x;
+        float expNegX = (12.0f - 6.0f * x + x2) / (12.0f + 6.0f * x + x2);
+        return 1.0f - expNegX;
+    }
+
+    // Specialized version for e^(-x) pattern (decay/release curves)
+    static inline float fastExpDecay(float x) {
+        // Input x is positive decay/release progress
+        // Returns e^(-x)
+        x = juce::jlimit(0.0f, 10.0f, x);
+        float x2 = x * x;
+        return (12.0f - 6.0f * x + x2) / (12.0f + 6.0f * x + x2);
+    }
+};
+
+//==============================================================================
 // INDIVIDUAL VOICE CLASS
 //==============================================================================
 

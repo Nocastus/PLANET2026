@@ -209,8 +209,9 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             vibratoState.fadeInLevel = 1.0f;  // Immediate full vibrato
         }
 
-        // Calculate vibrato contribution
-        float vibratoLFOValue = std::sin(vibratoState.lfoPhase);
+        // Calculate vibrato contribution (use LUT for performance)
+        const auto& sineLUT = SineLUT::getInstance();
+        float vibratoLFOValue = sineLUT.lookup(vibratoState.lfoPhase);
         float effectiveVibratoDepth = vibratoDepth * vibratoState.fadeInLevel * modWheelScale;
         float vibratoOffset = vibratoLFOValue * effectiveVibratoDepth;
 
@@ -244,32 +245,15 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             }
         }
 
-
-
-        // Process coefficient envelope generators
-        float envValues[NUM_COEFFICIENTS];
-        for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
-            envValues[i] = processEnvelope(coeffModStates[i].envStage, coeffModStates[i].envTime,
-                coeffModStates[i].envLevel, cycleDeltaTime,
-                globalParams[i].attackTime, globalParams[i].decayTime,
-                globalParams[i].sustainLevel, globalParams[i].releaseTime,
-                ampEnvStage != EnvelopeStage::Release && ampEnvStage != EnvelopeStage::Idle,
-                coeffModStates[i].releaseStartLevel, exponentialControl);  // Add hardcoded value
-        }
-
-        // Apply modulation to coefficients
-        float lfoValues[NUM_COEFFICIENTS];
-        for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
-            lfoValues[i] = generateLFOWaveform(coeffModStates[i].lfoPhase, globalParams[i].lfoShape);
-        }
-
-        // Calculate final modulated coefficients
+        // Calculate final modulated coefficients (envelope processing merged into single loop)
         auto& stagedCoeffs = voiceCoeffGrid.getStagedCoefficients();
         for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
             float finalCoeff = globalParams[i].coefficient;
 
-            // Calculate envelope modulation if envelope amount is non-zero
-            if (globalParams[i].envelopeAmount != 0.0f) {
+            // Always process envelope for timing (needed for LFO fade-in even if envelopeAmount is zero)
+            bool needsEnvelope = (globalParams[i].envelopeAmount != 0.0f) || (globalParams[i].lfoAmount != 0.0f);
+
+            if (needsEnvelope) {
                 float envValue = processEnvelope(coeffModStates[i].envStage, coeffModStates[i].envTime,
                     coeffModStates[i].envLevel, cycleDeltaTime,
                     globalParams[i].attackTime * (1.0f - (noteVelocity * velToAttackTime / 50.0f)), globalParams[i].decayTime,
@@ -277,7 +261,10 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                     ampEnvStage != EnvelopeStage::Release && ampEnvStage != EnvelopeStage::Idle,
                     coeffModStates[i].releaseStartLevel, exponentialControl);
 
-                finalCoeff += envValue * globalParams[i].envelopeAmount;
+                // Only apply envelope modulation if envelope amount is non-zero
+                if (globalParams[i].envelopeAmount != 0.0f) {
+                    finalCoeff += envValue * globalParams[i].envelopeAmount;
+                }
             }
 
             // Calculate LFO modulation with envelope-based fade-in
@@ -291,8 +278,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                     lfoScale = coeffModStates[i].envLevel;
                 }
                 else if (coeffModStates[i].envStage == EnvelopeStage::Decay) {
-                    // During decay: scale from 1 down to sustainLevel
-                    // We want LFO to keep fading in, so use the envelope level directly
+                    // During decay: continue fade-in using envelope level
                     lfoScale = coeffModStates[i].envLevel;
                 }
                 // During Sustain, Release, and Idle: full LFO (lfoScale remains 1.0f)
@@ -314,15 +300,19 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
 
     }
 
-    // Use cached velocity-influenced brilliance (calculated once per note)
-    float velocityBrilliance = juce::jlimit(0.0f, 1.0f, brilliance + cachedVelocityBrilliance);
+    // Use cached velocity-influenced brilliance (already calculated at cycle boundaries - line 292)
+    // Note: cachedVelocityBrilliance already includes base brilliance + velocity offset
+    float velocityBrilliance = cachedVelocityBrilliance;
 
     // Apply phase distortion using velocity-influenced brilliance and pre-calculated spectral multipliers
     auto distortedPhase = applyPhaseDistortion(normalizedPhase, velocityBrilliance, globalParams);
     // Apply user-controllable velocity to amplitude scaling
-  // Use cached value instead of recalculating every sample  
+  // Use cached value instead of recalculating every sample
     float velocityAmplitude = cachedVelocityAmplitude;
-    auto sample = (float)std::sin(distortedPhase) * ampEnvValue * velocityAmplitude;
+
+    // Use sine LUT for final synthesis (optimization)
+    const auto& sineLUT = SineLUT::getInstance();
+    auto sample = sineLUT.lookup(distortedPhase) * ampEnvValue * velocityAmplitude;
 
 
     return sample;
@@ -344,11 +334,14 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
     auto x = normalizedPhase * 2.0 * juce::MathConstants<double>::pi;
     auto activeCoeffs = voiceCoeffGrid.getActiveCoefficients();
 
+    // Get sine LUT instance for fast lookup
+    const auto& sineLUT = SineLUT::getInstance();
+
     auto distortedPhase = x;
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
         auto f = globalParams[i].inputSpectralMultiplier;  // Direct usage - no LFO needed
-        distortedPhase += k * std::sin(f * x);
+        distortedPhase += k * sineLUT.lookup(f * x);  // Use LUT instead of std::sin
     }
 
     return distortedPhase;
@@ -356,11 +349,12 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
 
 float PLANETVoice::generateLFOWaveform(double phase, float shape)
 {
+    const auto& sineLUT = SineLUT::getInstance();
     int shapeInt = (int)shape;
     switch (shapeInt)
     {
     case 1: // Sine
-        return std::sin(phase);
+        return sineLUT.lookup(phase);
     case 2: // Triangle
     {
         double normalizedPhase = phase / (2.0 * juce::MathConstants<double>::pi);
@@ -371,9 +365,9 @@ float PLANETVoice::generateLFOWaveform(double phase, float shape)
             return (float)(3.0 - 4.0 * normalizedPhase);
     }
     case 3: // Square
-        return (std::sin(phase) >= 0.0f) ? 1.0f : -1.0f;
+        return (sineLUT.lookup(phase) >= 0.0f) ? 1.0f : -1.0f;
     default:
-        return std::sin(phase);
+        return sineLUT.lookup(phase);
     }
 }
 
@@ -398,7 +392,7 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             // Apply exponential curve for attack (convex)
             if (curveAmount > 0.001f) {
                 float curveFactor = 1.0f + curveAmount * 6.0f;
-                envLevel = 1.0f - std::exp(-curveFactor * linearProgress);
+                envLevel = FastMath::fastExpAttack(curveFactor * linearProgress);
             }
             else {
                 envLevel = linearProgress;  // Linear fallback
@@ -421,7 +415,7 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             // Apply exponential curve for decay (concave)
             if (curveAmount > 0.001f) {
                 float curveFactor = 1.0f + curveAmount * 6.0f;
-                curvedProgress = std::exp(-curveFactor * linearProgress);
+                curvedProgress = FastMath::fastExpDecay(curveFactor * linearProgress);
             }
             else {
                 curvedProgress = 1.0f - linearProgress;  // Linear fallback
@@ -453,7 +447,7 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             // Apply exponential curve for release (concave)
             if (curveAmount > 0.001f) {
                 float curveFactor = 1.0f + curveAmount * 6.0f;
-                curvedProgress = std::exp(-curveFactor * linearProgress);
+                curvedProgress = FastMath::fastExpDecay(curveFactor * linearProgress);
             }
             else {
                 curvedProgress = 1.0f - linearProgress;  // Linear fallback

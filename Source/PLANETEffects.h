@@ -26,7 +26,7 @@ public:
     void updateDetuneParams(float amount, float mix);
     void updateWarmthParams(float amount);
     void updatePunchParams(float amount, float frequency);
-   
+
 
 private:
     //==========================================================================
@@ -188,7 +188,7 @@ private:
         float process(float input);
 
     private:
-        float compress(float input, float threshold, float ratio);
+        float compress(float level, float threshold, float ratio);
     };
 
     //==========================================================================
@@ -197,7 +197,7 @@ private:
     DetuneProcessor detuneProcessor;
     WarmthProcessor warmthProcessor;
     PunchProcessor punchProcessor;
- 
+
 
     // Audio properties
     double currentSampleRate = 44100.0;

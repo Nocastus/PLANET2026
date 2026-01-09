@@ -11,6 +11,64 @@
 #include "WaveformDisplay.h"
 #include <array>
 
+//==============================================================================
+// CUSTOM LOOKANDFEEL FOR DRAWBAR SLIDERS WITH LFO INDICATION
+//==============================================================================
+
+class DrawbarLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    DrawbarLookAndFeel() {}
+
+    void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
+                         float sliderPos, float minSliderPos, float maxSliderPos,
+                         const juce::Slider::SliderStyle style, juce::Slider& slider) override
+    {
+        if (style == juce::Slider::LinearVertical)
+        {
+            auto trackWidth = juce::jmin(6.0f, (float)width * 0.25f);
+            auto trackLeft = x + (width - trackWidth) * 0.5f;
+
+            // Draw track
+            g.setColour(slider.findColour(juce::Slider::backgroundColourId));
+            g.fillRect(juce::Rectangle<float>(trackLeft, (float)y, trackWidth, (float)height));
+
+            // Calculate thumb position (circular thumb like ADSR handles)
+            auto sliderPosProportional = (float)slider.valueToProportionOfLength(slider.getValue());
+            auto thumbCenterX = x + width * 0.5f;
+            auto thumbCenterY = y + height * (1.0f - sliderPosProportional);
+            float thumbRadius = 10.0f;  // Slightly larger than ADSR handles for visibility
+
+            // Check if this slider has LFO active (stored as a property)
+            bool hasLFO = slider.getProperties()["hasActiveLFO"];
+
+            // Draw thumb circle - filled with main color
+            g.setColour(slider.findColour(juce::Slider::thumbColourId));
+            g.fillEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
+                         thumbRadius * 2, thumbRadius * 2);
+
+            // If LFO is active, draw an outline stroke (like ADSR handles)
+            if (hasLFO)
+            {
+                // Use a contrasting dark color that works on white, blue, and red
+                g.setColour(juce::Colour(0xff000000));  // Black outline for contrast
+                g.drawEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
+                             thumbRadius * 2, thumbRadius * 2, 2.5f);  // 2.5px stroke
+            }
+        }
+        else
+        {
+            // For non-vertical sliders, use default drawing
+            LookAndFeel_V4::drawLinearSlider(g, x, y, width, height, sliderPos,
+                                              minSliderPos, maxSliderPos, style, slider);
+        }
+    }
+};
+
+//==============================================================================
+// MAIN GUI CLASS
+//==============================================================================
+
 class PLANETMainGui : public juce::Component,
                        public juce::AudioProcessorValueTreeState::Listener,
                        public juce::Timer
@@ -151,7 +209,7 @@ private:
     WaveformDisplay waveformDisplay;
     
     // Effects section
-    juce::Slider detuneAmountSlider, detuneMixSlider; 
+    juce::Slider detuneAmountSlider, detuneMixSlider;
     juce::Label detuneAmountLabel, detuneMixLabel;
     juce::Slider warmthSlider;
     juce::Label warmthLabel;
@@ -159,7 +217,7 @@ private:
     juce::Label punchLabel;
     juce::Label punchFreqLabel;
     juce::Label punchFreqValue;
-    
+
     // ======================== SLIDER ATTACHMENTS ========================
     
     // Right column attachments
@@ -173,9 +231,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> warmthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> punchAttachment;
-   
-   
-    
+
+
+
     // Amplitude section attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAmpAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velBrillAttachment;
@@ -188,6 +246,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
+
+    // Custom LookAndFeel for drawbar sliders
+    DrawbarLookAndFeel drawbarLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };
