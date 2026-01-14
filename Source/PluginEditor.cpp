@@ -13,6 +13,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
 {
     // Create the main GUI
     mainGui = std::make_unique<PLANETMainGui>(audioProcessor.parameters,
+        &audioProcessor,
         &audioProcessor.currentModWheelValue,
         &audioProcessor.waveformSnapshot,
         &audioProcessor.waveformSnapshotLength,
@@ -23,7 +24,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     addAndMakeVisible(*mainGui);
 
     // Version label
-    versionLabel.setText("PLANET v0.2.0 - 02 Jan 2026", juce::dontSendNotification);
+    versionLabel.setText("PLANET v0.4.0 - 14 Jan 2026", juce::dontSendNotification);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey.withAlpha(0.6f));
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setFont(juce::Font(11.0f));

@@ -12,14 +12,11 @@
 #include <array>
 
 //==============================================================================
-// CUSTOM LOOKANDFEEL FOR DRAWBAR SLIDERS WITH LFO INDICATION
+// Custom LookAndFeel for drawbar sliders with LFO visual feedback
 //==============================================================================
-
 class DrawbarLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    DrawbarLookAndFeel() {}
-
     void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
                          float sliderPos, float minSliderPos, float maxSliderPos,
                          const juce::Slider::SliderStyle style, juce::Slider& slider) override
@@ -37,7 +34,7 @@ public:
             auto sliderPosProportional = (float)slider.valueToProportionOfLength(slider.getValue());
             auto thumbCenterX = x + width * 0.5f;
             auto thumbCenterY = y + height * (1.0f - sliderPosProportional);
-            float thumbRadius = 10.0f;  // Slightly larger than ADSR handles for visibility
+            float thumbRadius = 10.0f;
 
             // Check if this slider has LFO active (stored as a property)
             bool hasLFO = slider.getProperties()["hasActiveLFO"];
@@ -47,13 +44,12 @@ public:
             g.fillEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
                          thumbRadius * 2, thumbRadius * 2);
 
-            // If LFO is active, draw an outline stroke (like ADSR handles)
+            // If LFO is active, draw pale blue outline stroke
             if (hasLFO)
             {
-                // Use a contrasting dark color that works on white, blue, and red
-                g.setColour(juce::Colour(0xff000000));  // Black outline for contrast
+                g.setColour(juce::Colour(0x99ffffff));  // Pale blue (matches accent color)
                 g.drawEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
-                             thumbRadius * 2, thumbRadius * 2, 2.5f);  // 2.5px stroke
+                             thumbRadius * 2, thumbRadius * 2, 6.0f);  // 6px stroke
             }
         }
         else
@@ -66,15 +62,15 @@ public:
 };
 
 //==============================================================================
-// MAIN GUI CLASS
+// Main GUI Component
 //==============================================================================
-
 class PLANETMainGui : public juce::Component,
                        public juce::AudioProcessorValueTreeState::Listener,
                        public juce::Timer
 {
 public:
     PLANETMainGui(juce::AudioProcessorValueTreeState& apvts,
+        juce::AudioProcessor* processor = nullptr,
         std::atomic<float>* modWheelPtr = nullptr,
         std::array<float, 2048>* waveformSnapshotPtr = nullptr,
         std::atomic<int>* snapshotLengthPtr = nullptr,
@@ -142,12 +138,14 @@ private:
 
     // Reference to APVTS
     juce::AudioProcessorValueTreeState& apvts;
-    
+    juce::AudioProcessor* audioProcessor = nullptr;
+
     // Drawbar components
     std::array<juce::Slider, 10> drawbarSliders;
     std::array<juce::Label, 10> fValueLabels;
     int selectedDrawbar = 0;
-    
+    DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
+
     // SliderAttachments for K1-K10 drawbars
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 10> drawbarAttachments;
 
@@ -213,10 +211,18 @@ private:
     juce::Label detuneAmountLabel, detuneMixLabel;
     juce::Slider warmthSlider;
     juce::Label warmthLabel;
-    juce::Slider punchSlider;
-    juce::Label punchLabel;
-    juce::Label punchFreqLabel;
-    juce::Label punchFreqValue;
+    juce::Slider punchSlider, punchFrequencySlider;
+    juce::Label punchLabel, punchFrequencyLabel;
+
+    // ======================== PATCH MANAGEMENT UI ========================
+    juce::TextButton loadPatchButton;
+    juce::TextButton savePatchButton;
+    juce::Label currentPatchLabel;
+    juce::String currentPatchName;
+
+    void loadPatchButtonClicked();
+    void savePatchButtonClicked();
+    void updatePatchNameDisplay(const juce::String& name);
 
     // ======================== SLIDER ATTACHMENTS ========================
     
@@ -231,9 +237,10 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> warmthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> punchAttachment;
-
-
-
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> punchFrequencyAttachment;
+   
+   
+    
     // Amplitude section attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAmpAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velBrillAttachment;
@@ -246,9 +253,6 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
-
-    // Custom LookAndFeel for drawbar sliders
-    DrawbarLookAndFeel drawbarLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };

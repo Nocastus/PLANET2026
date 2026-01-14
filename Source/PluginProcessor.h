@@ -10,6 +10,7 @@
 #include "PLANETDataStructures.h"
 #include "PLANETVoiceManager.h"
 #include "PLANETEffects.h"
+#include "PLANETPatchManager.h"
 
 //==============================================================================
 /**
@@ -40,6 +41,17 @@ public:
     ~PLANETtest4AudioProcessor() override;
 
     juce::AudioProcessorValueTreeState parameters;
+
+    // ======================== PATCH MANAGEMENT ========================
+    PLANETPatchManager patchManager;
+
+    // Patch management methods
+    void loadPatch(const juce::File& patchFile);
+    void savePatch(const juce::File& patchFile, const juce::String& name,
+                   const juce::String& description, const juce::String& tags,
+                   const juce::String& category);
+    const std::vector<PLANETPatch>& getAllPatches() const { return patchManager.getAllPatches(); }
+    void scanPatchLibrary() { patchManager.scanPatchLibrary(PLANETPatchManager::getDefaultPatchDirectory()); }
 
     //==============================================================================
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -131,6 +143,7 @@ private:
     std::atomic<float>* warmthParameter = nullptr;
     std::atomic<float>* punchParameter = nullptr;
     std::atomic<float>* punchFrequencyParameter = nullptr;
+
 
 
 

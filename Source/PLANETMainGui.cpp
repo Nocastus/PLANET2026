@@ -7,15 +7,17 @@
 */
 
 #include "PLANETMainGui.h"
+#include "PluginProcessor.h"
 
 PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
+    juce::AudioProcessor* processor,
     std::atomic<float>* modWheelPtr,
     std::array<float, 2048>* waveformSnapshotPtr,
     std::atomic<int>* snapshotLengthPtr,
     std::atomic<bool>* snapshotReadyPtr,
     std::atomic<bool>* snapshotRequestPtr,
     std::atomic<bool>* waveformActivePtr)
-    : apvts(apvtsRef), modWheelValue(modWheelPtr)
+    : apvts(apvtsRef), audioProcessor(processor), modWheelValue(modWheelPtr)
 {
     // Connect waveform display to data source
     waveformDisplay.setDataSource(waveformSnapshotPtr, snapshotLengthPtr,
@@ -32,7 +34,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         drawbarSliders[i].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         drawbarSliders[i].setSliderSnapsToMousePosition(false);
         drawbarSliders[i].addMouseListener(this, false);
-        drawbarSliders[i].setLookAndFeel(&drawbarLookAndFeel);  // Apply custom LookAndFeel
+        drawbarSliders[i].setLookAndFeel(&drawbarLookAndFeel);  // Apply custom LookAndFeel for LFO feedback
         addAndMakeVisible(drawbarSliders[i]);
     }
 
@@ -125,10 +127,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envDepthKnob.setValue(0.0);
     envDepthKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     envDepthKnob.setDoubleClickReturnValue(true, 0.0);
-    // Add callback to update the value label when slider changes
-    envDepthKnob.onValueChange = [this]() {
-        envDepthValue.setText(juce::String(envDepthKnob.getValue(), 2), juce::dontSendNotification);
-    };
     addAndMakeVisible(envDepthKnob);
 
     envDepthLabel.setText("Env Depth", juce::dontSendNotification);
@@ -166,10 +164,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAmpSlider.setValue(100.0);
     velAmpSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velAmpSlider.setDoubleClickReturnValue(true, 100.0);
-    // Add callback to update the value label when slider changes
-    velAmpSlider.onValueChange = [this]() {
-        velAmpValue.setText(juce::String((int)velAmpSlider.getValue()), juce::dontSendNotification);
-    };
     addAndMakeVisible(velAmpSlider);
 
     velAmpLabel.setText("Vel Ampli", juce::dontSendNotification);
@@ -190,10 +184,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velBrillKnob.setValue(100.0);
     velBrillKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velBrillKnob.setDoubleClickReturnValue(true, 100.0);
-    // Add callback to update the value label when knob changes
-    velBrillKnob.onValueChange = [this]() {
-        velBrillValue.setText(juce::String((int)velBrillKnob.getValue()), juce::dontSendNotification);
-    };
     addAndMakeVisible(velBrillKnob);
     velBrillLabel.setText("Vel Brill", juce::dontSendNotification);
     velBrillLabel.setJustificationType(juce::Justification::centred);
@@ -212,10 +202,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAttackKnob.setValue(0.0);
     velAttackKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velAttackKnob.setDoubleClickReturnValue(true, 0.0);
-    // Add callback to update the value label when knob changes
-    velAttackKnob.onValueChange = [this]() {
-        velAttackValue.setText(juce::String((int)velAttackKnob.getValue()), juce::dontSendNotification);
-    };
     addAndMakeVisible(velAttackKnob);
     velAttackLabel.setText("Vel Attk", juce::dontSendNotification);
     velAttackLabel.setJustificationType(juce::Justification::centred);
@@ -234,10 +220,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envCurveKnob.setValue(0.5);
     envCurveKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     envCurveKnob.setDoubleClickReturnValue(true, 0.5);
-    envCurveKnob.onValueChange = [this]() {
-        envCurveValue.setText(juce::String(envCurveKnob.getValue(), 2), juce::dontSendNotification);
-        repaint();
-    };
+    envCurveKnob.onValueChange = [this]() { repaint(); };
     addAndMakeVisible(envCurveKnob);
     envCurveLabel.setText("Env Curve", juce::dontSendNotification);
     envCurveLabel.setJustificationType(juce::Justification::centred);
@@ -256,9 +239,6 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     vintageKnob.setValue(0.0);
     vintageKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     vintageKnob.setDoubleClickReturnValue(true, 0.0);
-    vintageKnob.onValueChange = [this]() {
-        vintageValue.setText(juce::String((int)vintageKnob.getValue()), juce::dontSendNotification);
-    };
     addAndMakeVisible(vintageKnob);
     vintageLabel.setText("Vintage", juce::dontSendNotification);
     vintageLabel.setJustificationType(juce::Justification::centred);
@@ -330,19 +310,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
     setupVerticalSlider(warmthSlider, warmthLabel, "Warmth", 0.0, 1.0, 0.0);
     setupVerticalSlider(punchSlider, punchLabel, "Punch", 0.0, 1.0, 0.0);
+    setupVerticalSlider(punchFrequencySlider, punchFrequencyLabel, "Pnch Frq", 500.0, 5000.0, 1800.0);
 
-    // Set up Punch Frequency editable label
-    punchFreqLabel.setText("Freq", juce::dontSendNotification);
-    punchFreqLabel.setJustificationType(juce::Justification::centred);
-    punchFreqLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    addAndMakeVisible(punchFreqLabel);
-
-    punchFreqValue.setText("1800", juce::dontSendNotification);
-    punchFreqValue.setEditable(true);
-    punchFreqValue.setJustificationType(juce::Justification::centred);
-    punchFreqValue.setColour(juce::Label::textColourId, juce::Colours::white);
-    punchFreqValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
-    addAndMakeVisible(punchFreqValue);
 
 
     // ======================== CREATE SLIDER ATTACHMENTS ========================
@@ -376,6 +345,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "warmth", warmthSlider);
     punchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "punch", punchSlider);
+    punchFrequencyAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "punchFrequency", punchFrequencySlider);
 
 
 
@@ -478,6 +449,43 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     apvts.addParameterListener("ampEnvSustainLevel", this);
     apvts.addParameterListener("ampEnvReleaseTime", this);
 
+    // Register as listener for amplitude zone parameters
+    apvts.addParameterListener("exponentialControl", this);
+    apvts.addParameterListener("velToBrilliance", this);
+    apvts.addParameterListener("velToAmplitude", this);
+    apvts.addParameterListener("velToAttackTime", this);
+    apvts.addParameterListener("vintageAmount", this);
+
+    // Register as listener for envelope depth parameters (K1-K10)
+    for (int i = 1; i <= 10; ++i)
+    {
+        juce::String paramID = "k" + juce::String(i) + "EnvelopeAmount";
+        apvts.addParameterListener(paramID, this);
+    }
+
+    // Register as listener for F multiplier parameters (input_f1-input_f10)
+    for (int i = 1; i <= 10; ++i)
+    {
+        juce::String paramID = "input_f" + juce::String(i);
+        apvts.addParameterListener(paramID, this);
+    }
+
+    // ======================== PATCH MANAGEMENT UI SETUP ========================
+    loadPatchButton.setButtonText("Load");
+    loadPatchButton.onClick = [this] { loadPatchButtonClicked(); };
+    addAndMakeVisible(loadPatchButton);
+
+    savePatchButton.setButtonText("Save");
+    savePatchButton.onClick = [this] { savePatchButtonClicked(); };
+    addAndMakeVisible(savePatchButton);
+
+    currentPatchName = "Init";
+    currentPatchLabel.setText("Patch: " + currentPatchName, juce::dontSendNotification);
+    currentPatchLabel.setJustificationType(juce::Justification::centred);
+    currentPatchLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    currentPatchLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xff1a1a1a));
+    addAndMakeVisible(currentPatchLabel);
+
     addAndMakeVisible(waveformDisplay);
 
     setSize(1400, 800);
@@ -488,15 +496,35 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
 PLANETMainGui::~PLANETMainGui()
 {
     stopTimer();
+
+    // Reset LookAndFeel for drawbar sliders before destruction
+    for (int i = 0; i < 10; ++i)
+    {
+        drawbarSliders[i].setLookAndFeel(nullptr);
+    }
+
     apvts.removeParameterListener("ampEnvAttackTime", this);
     apvts.removeParameterListener("ampEnvDecayTime", this);
     apvts.removeParameterListener("ampEnvSustainLevel", this);
     apvts.removeParameterListener("ampEnvReleaseTime", this);
+    apvts.removeParameterListener("exponentialControl", this);
+    apvts.removeParameterListener("velToBrilliance", this);
+    apvts.removeParameterListener("velToAmplitude", this);
+    apvts.removeParameterListener("velToAttackTime", this);
+    apvts.removeParameterListener("vintageAmount", this);
 
-    // Reset LookAndFeel for drawbar sliders
-    for (int i = 0; i < 10; ++i)
+    // Remove listeners for envelope depth parameters (K1-K10)
+    for (int i = 1; i <= 10; ++i)
     {
-        drawbarSliders[i].setLookAndFeel(nullptr);
+        juce::String paramID = "k" + juce::String(i) + "EnvelopeAmount";
+        apvts.removeParameterListener(paramID, this);
+    }
+
+    // Remove listeners for F multiplier parameters (input_f1-input_f10)
+    for (int i = 1; i <= 10; ++i)
+    {
+        juce::String paramID = "input_f" + juce::String(i);
+        apvts.removeParameterListener(paramID, this);
     }
 }
 
@@ -954,16 +982,16 @@ void PLANETMainGui::resized()
     brillianceSliderBounds = juce::Rectangle<int>(rightX + sliderMargin, brillianceY + 22, rightContentWidth - sliderMargin * 2, 40);
     brillianceSlider.setBounds(brillianceSliderBounds);
     
-    // Effects section
+    // Effects section (5 sliders: Detune, Det Mix, Warmth, Punch, Pnch Frq)
     int effectsY = waveformHeight + rightSectionHeight * 3 + 5;
     int effectsSliderWidth = 40;
     int effectsSliderHeight = rightSectionHeight - 40;
-    int effectsSliderSpacing = rightContentWidth / 4;
-    
+    int effectsSliderSpacing = rightContentWidth / 5;  // Changed from 4 to 5
+
     int esx0 = rightX + (effectsSliderSpacing - effectsSliderWidth) / 2;
     detuneAmountLabel.setBounds(esx0, effectsY, effectsSliderWidth, 14);
     detuneAmountSlider.setBounds(esx0, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
-    
+
     int esx1 = rightX + effectsSliderSpacing + (effectsSliderSpacing - effectsSliderWidth) / 2;
     detuneMixLabel.setBounds(esx1, effectsY, effectsSliderWidth, 14);
     detuneMixSlider.setBounds(esx1, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
@@ -976,10 +1004,23 @@ void PLANETMainGui::resized()
     punchLabel.setBounds(esx3, effectsY, effectsSliderWidth, 14);
     punchSlider.setBounds(esx3, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
 
-    // Punch frequency label below slider
-    punchFreqLabel.setBounds(esx3, effectsY + 16 + effectsSliderHeight + 2, effectsSliderWidth, 12);
-    punchFreqValue.setBounds(esx3, effectsY + 16 + effectsSliderHeight + 16, effectsSliderWidth, 20);
+    int esx4 = rightX + effectsSliderSpacing * 4 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+    punchFrequencyLabel.setBounds(esx4, effectsY, effectsSliderWidth, 14);
+    punchFrequencySlider.setBounds(esx4, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
 
+    // ======================== PATCH BAR LAYOUT ========================
+    int patchBarY = bounds.getHeight() - patchBarHeight;
+    int buttonWidth = 80;
+    int buttonHeight = 28;
+    int buttonY = patchBarY + (patchBarHeight - buttonHeight) / 2;
+    int buttonMargin = 10;
+
+    loadPatchButton.setBounds(buttonMargin, buttonY, buttonWidth, buttonHeight);
+    savePatchButton.setBounds(buttonMargin + buttonWidth + 10, buttonY, buttonWidth, buttonHeight);
+
+    int patchLabelX = buttonMargin + buttonWidth * 2 + 30;
+    int patchLabelWidth = bounds.getWidth() - patchLabelX - buttonMargin;
+    currentPatchLabel.setBounds(patchLabelX, buttonY, patchLabelWidth, buttonHeight);
 
 }
 
@@ -1283,7 +1324,7 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
             return;
         }
     }
-    
+
     // Harmonic envelope parameters (currently selected)
     for (int i = 0; i < 4; ++i) {
         if (parameterID == currentHarmonicParamIDs[i]) {
@@ -1293,4 +1334,135 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
             return;
         }
     }
+
+    // Amplitude zone parameters
+    if (parameterID == "exponentialControl") {
+        envCurveValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+    if (parameterID == "velToBrilliance") {
+        velBrillValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+    if (parameterID == "velToAmplitude") {
+        velAmpValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+    if (parameterID == "velToAttackTime") {
+        velAttackValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+    if (parameterID == "vintageAmount") {
+        vintageValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+
+    // Envelope depth for currently selected drawbar
+    if (parameterID == juce::String("k") + juce::String(selectedDrawbar + 1) + "EnvelopeAmount") {
+        envDepthValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+
+    // F multiplier parameters (input_f1-input_f10)
+    if (parameterID.startsWith("input_f")) {
+        juce::String numStr = parameterID.substring(7);  // Extract number after "input_f"
+        int drawbarIndex = numStr.getIntValue() - 1;     // Convert to 0-based index
+        if (drawbarIndex >= 0 && drawbarIndex < 10) {
+            fValueLabels[drawbarIndex].setText(juce::String(newValue, 1), juce::dontSendNotification);
+            return;
+        }
+    }
+}
+
+//==============================================================================
+// PATCH MANAGEMENT METHODS
+//==============================================================================
+
+void PLANETMainGui::loadPatchButtonClicked()
+{
+    if (audioProcessor == nullptr)
+        return;
+
+    auto* processor = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor);
+    if (processor == nullptr)
+        return;
+
+    auto chooser = std::make_shared<juce::FileChooser>("Load Patch",
+                                                         PLANETPatchManager::getDefaultPatchDirectory(),
+                                                         "*.md");
+
+    auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    chooser->launchAsync(flags, [this, processor, chooser](const juce::FileChooser& fc)
+    {
+        auto file = fc.getResult();
+        if (file != juce::File{})
+        {
+            processor->loadPatch(file);
+
+            // Update patch name display
+            currentPatchName = file.getFileNameWithoutExtension();
+            updatePatchNameDisplay(currentPatchName);
+        }
+    });
+}
+
+void PLANETMainGui::savePatchButtonClicked()
+{
+    if (audioProcessor == nullptr)
+        return;
+
+    auto* processor = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor);
+    if (processor == nullptr)
+        return;
+
+    // Create a simple input dialog for patch metadata
+    auto* window = new juce::AlertWindow("Save Patch", "Enter patch information:", juce::AlertWindow::NoIcon);
+
+    window->addTextEditor("patchName", currentPatchName, "Patch Name:");
+    window->addTextEditor("description", "", "Description:");
+    window->addTextEditor("tags", "", "Tags (comma-separated):");
+
+    juce::StringArray categories = { "Pads", "Plucks", "Leads", "Bass", "Keys", "FX", "User" };
+    window->addComboBox("category", categories, "Category:");
+
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    window->enterModalState(true, juce::ModalCallbackFunction::create([this, processor, window, categories](int result)
+    {
+        if (result == 1)
+        {
+            juce::String patchName = window->getTextEditorContents("patchName");
+            juce::String description = window->getTextEditorContents("description");
+            juce::String tags = window->getTextEditorContents("tags");
+            int categoryIndex = window->getComboBoxComponent("category")->getSelectedItemIndex();
+            juce::String category = categories[categoryIndex >= 0 ? categoryIndex : 6]; // Default to "User"
+
+            if (patchName.isNotEmpty())
+            {
+                // Create directory if needed
+                auto patchDir = PLANETPatchManager::getDefaultPatchDirectory().getChildFile(category);
+                if (!patchDir.exists())
+                    patchDir.createDirectory();
+
+                juce::File patchFile = patchDir.getChildFile(patchName + ".md");
+
+                // Save the patch
+                processor->savePatch(patchFile, patchName, description, tags, category);
+
+                // Update patch name display
+                currentPatchName = patchName;
+                updatePatchNameDisplay(currentPatchName);
+            }
+        }
+        delete window;
+    }), true);
+}
+
+void PLANETMainGui::updatePatchNameDisplay(const juce::String& name)
+{
+    currentPatchName = name;
+    currentPatchLabel.setText("Patch: " + currentPatchName, juce::dontSendNotification);
+    repaint();
 }

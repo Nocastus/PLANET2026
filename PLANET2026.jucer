@@ -27,6 +27,10 @@
       <FILE id="YZGw52" name="PLANETMainGui.cpp" compile="1" resource="0"
             file="Source/PLANETMainGui.cpp"/>
       <FILE id="WqQax7" name="PLANETMainGui.h" compile="0" resource="0" file="Source/PLANETMainGui.h"/>
+      <FILE id="PtchMH" name="PLANETPatchManager.h" compile="0" resource="0"
+            file="Source/PLANETPatchManager.h"/>
+      <FILE id="PtchMC" name="PLANETPatchManager.cpp" compile="1" resource="0"
+            file="Source/PLANETPatchManager.cpp"/>
     </GROUP>
     <FILE id="puDXNh" name="WaveformDisplay.cpp" compile="1" resource="0"
           file="Source/WaveformDisplay.cpp"/>
