@@ -121,16 +121,27 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k10LFOShape", "K10 LFO Shape", 1.0f, 3.0f, 1.0f),
 
             // ======================== LFO RATE PARAMETERS (10 - EXISTING) ========================
-            std::make_unique<juce::AudioParameterFloat>("k1LFORate", "K1 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k2LFORate", "K2 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k3LFORate", "K3 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k4LFORate", "K4 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k5LFORate", "K5 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k6LFORate", "K6 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k7LFORate", "K7 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k8LFORate", "K8 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k9LFORate", "K9 LFO Rate", 0.05f, 1000.0f, 4.0f),
-            std::make_unique<juce::AudioParameterFloat>("k10LFORate", "K10 LFO Rate", 0.05f, 1000.0f, 4.0f),
+            // Using skew factor 0.2 to give more precision in the useful 0.05-10 Hz range
+            std::make_unique<juce::AudioParameterFloat>("k1LFORate", "K1 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2LFORate", "K2 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3LFORate", "K3 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4LFORate", "K4 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5LFORate", "K5 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6LFORate", "K6 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7LFORate", "K7 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8LFORate", "K8 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9LFORate", "K9 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10LFORate", "K10 LFO Rate",
+                juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
 
             // ======================== LFO AMOUNT PARAMETERS (10 - EXISTING) ========================
             std::make_unique<juce::AudioParameterFloat>("k1LFOAmount", "K1 LFO Amount", -5.0f, 5.0f, 0.0f),
@@ -642,7 +653,18 @@ juce::AudioProcessorEditor* PLANETtest4AudioProcessor::createEditor()
 void PLANETtest4AudioProcessor::loadPatch(const juce::File& patchFile) {
     PLANETPatch patch;
     if (patchManager.loadPatchFromFile(patchFile, patch)) {
+        // Suppress GUI updates during bulk parameter load for performance
+        if (auto* editor = dynamic_cast<PLANETMainGui*>(getActiveEditor())) {
+            editor->suppressParameterUpdates = true;
+        }
+
         patchManager.applyPatchToProcessor(patch, parameters);
+
+        // Re-enable GUI updates and refresh all values once
+        if (auto* editor = dynamic_cast<PLANETMainGui*>(getActiveEditor())) {
+            editor->suppressParameterUpdates = false;
+            editor->refreshAllGUIValues();
+        }
     }
 }
 

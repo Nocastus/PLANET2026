@@ -272,14 +272,19 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 float lfoValue = generateLFOWaveform(coeffModStates[i].lfoPhase, globalParams[i].lfoShape);
 
                 // Scale LFO amount based on envelope stage for fade-in effect
+                // Attack = delay (LFO silent), Decay = fade-in, Sustain+ = full LFO
                 float lfoScale = 1.0f;
                 if (coeffModStates[i].envStage == EnvelopeStage::Attack) {
-                    // During attack: scale from 0 to 1
-                    lfoScale = coeffModStates[i].envLevel;
+                    // During attack: LFO is silent (delay period)
+                    lfoScale = 0.0f;
                 }
                 else if (coeffModStates[i].envStage == EnvelopeStage::Decay) {
-                    // During decay: continue fade-in using envelope level
-                    lfoScale = coeffModStates[i].envLevel;
+                    // During decay: fade in LFO from 0 to 1 with concave exponential curve (slower at start)
+                    // envTime tracks progress through decay stage
+                    float linearProgress = (float)(coeffModStates[i].envTime / globalParams[i].decayTime);
+                    linearProgress = juce::jlimit(0.0f, 1.0f, linearProgress);
+                    // Apply concave exponential curve: y = x^2 (slower start, faster end)
+                    lfoScale = linearProgress * linearProgress;
                 }
                 // During Sustain, Release, and Idle: full LFO (lfoScale remains 1.0f)
 

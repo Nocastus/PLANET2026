@@ -1314,6 +1314,10 @@ void PLANETMainGui::bindToSelectedDrawbar()
 
 void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newValue)
 {
+    // Skip GUI updates during bulk patch loading
+    if (suppressParameterUpdates)
+        return;
+
     // Amplitude envelope parameters
     const char* ampParams[] = { "ampEnvAttackTime", "ampEnvDecayTime", "ampEnvSustainLevel", "ampEnvReleaseTime" };
     for (int i = 0; i < 4; ++i) {
@@ -1372,6 +1376,46 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
             return;
         }
     }
+}
+
+void PLANETMainGui::refreshAllGUIValues()
+{
+    // Refresh amplitude envelope values
+    const char* ampParams[] = { "ampEnvAttackTime", "ampEnvDecayTime", "ampEnvSustainLevel", "ampEnvReleaseTime" };
+    for (int i = 0; i < 4; ++i) {
+        if (auto* param = apvts.getParameter(ampParams[i])) {
+            float value = param->convertFrom0to1(param->getValue());
+            ampAdsrValues[i] = value;
+            ampAdsrValueEditors[i].setText(juce::String(value, 2), juce::dontSendNotification);
+        }
+    }
+
+    // Refresh amplitude zone values
+    if (auto* param = apvts.getParameter("exponentialControl"))
+        envCurveValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("velToBrilliance"))
+        velBrillValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("velToAmplitude"))
+        velAmpValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("velToAttackTime"))
+        velAttackValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("vintageAmount"))
+        vintageValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+
+    // Refresh harmonic envelope values for currently selected drawbar
+    bindToSelectedDrawbar();
+
+    // Refresh F multiplier values for all drawbars
+    for (int i = 0; i < 10; ++i) {
+        juce::String paramID = "input_f" + juce::String(i + 1);
+        if (auto* param = apvts.getParameter(paramID)) {
+            float value = param->convertFrom0to1(param->getValue());
+            fValueLabels[i].setText(juce::String(value, 1), juce::dontSendNotification);
+        }
+    }
+
+    // Trigger a full repaint
+    repaint();
 }
 
 //==============================================================================

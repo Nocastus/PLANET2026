@@ -90,6 +90,10 @@ public:
     
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void bindToSelectedDrawbar();
+    void refreshAllGUIValues();  // Refresh all GUI elements from current parameter values
+
+    // Flag to suppress GUI updates during bulk parameter loading
+    bool suppressParameterUpdates = false;
 
     // Envelope drag state
     enum class DragTarget { None, HarmonicAttack, HarmonicDecaySustain, HarmonicRelease,
