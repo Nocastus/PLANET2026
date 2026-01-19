@@ -91,6 +91,8 @@ public:
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void bindToSelectedDrawbar();
     void refreshAllGUIValues();  // Refresh all GUI elements from current parameter values
+    void updatePatchNameDisplay(const juce::String& name);
+    void updatePatchCommentDisplay(const juce::String& comment);
 
     // Flag to suppress GUI updates during bulk parameter loading
     bool suppressParameterUpdates = false;
@@ -217,16 +219,21 @@ private:
     juce::Label warmthLabel;
     juce::Slider punchSlider, punchFrequencySlider;
     juce::Label punchLabel, punchFrequencyLabel;
+    juce::Label detuneAmountValue, detuneMixValue, warmthValue, punchValue, punchFrequencyValue;
+    juce::Label brillianceValue;
+    juce::Label vibratoRateValue, vibratoDepthValue, vibratoFadeValue;
+    juce::Label pitchDistValue, pitchTimeValue;
 
     // ======================== PATCH MANAGEMENT UI ========================
     juce::TextButton loadPatchButton;
     juce::TextButton savePatchButton;
     juce::Label currentPatchLabel;
     juce::String currentPatchName;
+    juce::Label patchCommentLabel;
 
     void loadPatchButtonClicked();
     void savePatchButtonClicked();
-    void updatePatchNameDisplay(const juce::String& name);
+   
 
     // ======================== SLIDER ATTACHMENTS ========================
     

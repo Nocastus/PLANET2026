@@ -19,6 +19,7 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+    PLANETMainGui* getMainGui() { return mainGui.get(); }
 
 private:
     PLANETtest4AudioProcessor& audioProcessor;

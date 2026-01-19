@@ -654,16 +654,26 @@ void PLANETtest4AudioProcessor::loadPatch(const juce::File& patchFile) {
     PLANETPatch patch;
     if (patchManager.loadPatchFromFile(patchFile, patch)) {
         // Suppress GUI updates during bulk parameter load for performance
-        if (auto* editor = dynamic_cast<PLANETMainGui*>(getActiveEditor())) {
-            editor->suppressParameterUpdates = true;
+        if (auto* editor = dynamic_cast<PLANETtest4AudioProcessorEditor*>(getActiveEditor())) {
+            if (auto* gui = editor->getMainGui()) {
+                gui->suppressParameterUpdates = true;
+            }
         }
 
         patchManager.applyPatchToProcessor(patch, parameters);
 
+        // Store patch metadata in processor
+        currentPatchName = patch.patchName;
+        currentPatchDescription = patch.description;
+
         // Re-enable GUI updates and refresh all values once
-        if (auto* editor = dynamic_cast<PLANETMainGui*>(getActiveEditor())) {
-            editor->suppressParameterUpdates = false;
-            editor->refreshAllGUIValues();
+        if (auto* editor = dynamic_cast<PLANETtest4AudioProcessorEditor*>(getActiveEditor())) {
+            if (auto* gui = editor->getMainGui()) {
+                gui->suppressParameterUpdates = false;
+                gui->refreshAllGUIValues();
+                gui->updatePatchNameDisplay(currentPatchName);
+                gui->updatePatchCommentDisplay(currentPatchDescription);
+            }
         }
     }
 }
@@ -678,9 +688,16 @@ void PLANETtest4AudioProcessor::savePatch(const juce::File& patchFile,
 }
 
 //==============================================================================
+//==============================================================================
+//==============================================================================
 void PLANETtest4AudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = parameters.copyState();
+
+    // Add patch metadata to state
+    state.setProperty("patchName", currentPatchName, nullptr);
+    state.setProperty("patchDescription", currentPatchDescription, nullptr);
+
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, destData);
 }
@@ -689,8 +706,17 @@ void PLANETtest4AudioProcessor::setStateInformation(const void* data, int sizeIn
 {
     std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
     if (xmlState != nullptr && xmlState->hasTagName(parameters.state.getType()))
-        parameters.replaceState(juce::ValueTree::fromXml(*xmlState));
+    {
+        auto newState = juce::ValueTree::fromXml(*xmlState);
+
+        // Restore patch metadata
+        currentPatchName = newState.getProperty("patchName", "Init").toString();
+        currentPatchDescription = newState.getProperty("patchDescription", "").toString();
+
+        parameters.replaceState(newState);
+    }
 }
+
 //==============================================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

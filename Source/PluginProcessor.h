@@ -52,6 +52,9 @@ public:
                    const juce::String& category);
     const std::vector<PLANETPatch>& getAllPatches() const { return patchManager.getAllPatches(); }
     void scanPatchLibrary() { patchManager.scanPatchLibrary(PLANETPatchManager::getDefaultPatchDirectory()); }
+    juce::String currentPatchName = "Init";
+    juce::String currentPatchDescription = "";
+
 
     //==============================================================================
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;

@@ -307,10 +307,67 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     };
     
     setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
-    setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Det Mix", 0.0, 1.0, 0.0);
+    setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Mix", 0.0, 1.0, 0.0);
     setupVerticalSlider(warmthSlider, warmthLabel, "Warmth", 0.0, 1.0, 0.0);
     setupVerticalSlider(punchSlider, punchLabel, "Punch", 0.0, 1.0, 0.0);
-    setupVerticalSlider(punchFrequencySlider, punchFrequencyLabel, "Pnch Frq", 500.0, 5000.0, 1800.0);
+    setupVerticalSlider(punchFrequencySlider, punchFrequencyLabel, "Freq", 500.0, 5000.0, 1800.0);
+
+    // Set up effects value displays
+    auto setupValueLabel = [this](juce::Label& label, const juce::String& initialText) {
+        label.setText(initialText, juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId, juce::Colours::white);
+        label.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+        label.setEditable(true);
+        addAndMakeVisible(label);
+        };
+
+    setupValueLabel(detuneAmountValue, "0.00");
+    setupValueLabel(detuneMixValue, "0.00");
+    setupValueLabel(warmthValue, "0.00");
+    setupValueLabel(punchValue, "0.00");
+    setupValueLabel(punchFrequencyValue, "1800");
+    setupValueLabel(brillianceValue, "0.50");
+    setupValueLabel(vibratoRateValue, "5.00");
+    setupValueLabel(vibratoDepthValue, "0.00");
+    setupValueLabel(vibratoFadeValue, "2.00");
+    setupValueLabel(pitchDistValue, "0.00");
+    setupValueLabel(pitchTimeValue, "0.50");
+
+    // Wire up value display updates via onValueChange
+    detuneAmountSlider.onValueChange = [this]() {
+        detuneAmountValue.setText(juce::String(detuneAmountSlider.getValue(), 2), juce::dontSendNotification);
+        };
+    detuneMixSlider.onValueChange = [this]() {
+        detuneMixValue.setText(juce::String(detuneMixSlider.getValue(), 2), juce::dontSendNotification);
+        };
+    warmthSlider.onValueChange = [this]() {
+        warmthValue.setText(juce::String(warmthSlider.getValue(), 2), juce::dontSendNotification);
+        };
+    punchSlider.onValueChange = [this]() {
+        punchValue.setText(juce::String(punchSlider.getValue(), 2), juce::dontSendNotification);
+        };
+    punchFrequencySlider.onValueChange = [this]() {
+        punchFrequencyValue.setText(juce::String((int)punchFrequencySlider.getValue()), juce::dontSendNotification);
+        };
+    brillianceSlider.onValueChange = [this]() {
+        brillianceValue.setText(juce::String(brillianceSlider.getValue(), 2), juce::dontSendNotification);
+        };
+    vibratoRateKnob.onValueChange = [this]() {
+        vibratoRateValue.setText(juce::String(vibratoRateKnob.getValue(), 2), juce::dontSendNotification);
+        };
+    vibratoDepthKnob.onValueChange = [this]() {
+        vibratoDepthValue.setText(juce::String(vibratoDepthKnob.getValue(), 2), juce::dontSendNotification);
+        };
+    vibratoFadeKnob.onValueChange = [this]() {
+        vibratoFadeValue.setText(juce::String(vibratoFadeKnob.getValue(), 2), juce::dontSendNotification);
+        };
+    pitchDistKnob.onValueChange = [this]() {
+        pitchDistValue.setText(juce::String(pitchDistKnob.getValue(), 2), juce::dontSendNotification);
+        };
+    pitchTimeKnob.onValueChange = [this]() {
+        pitchTimeValue.setText(juce::String(pitchTimeKnob.getValue(), 2), juce::dontSendNotification);
+        };
 
 
 
@@ -479,12 +536,26 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     savePatchButton.onClick = [this] { savePatchButtonClicked(); };
     addAndMakeVisible(savePatchButton);
 
-    currentPatchName = "Init";
-    currentPatchLabel.setText("Patch: " + currentPatchName, juce::dontSendNotification);
-    currentPatchLabel.setJustificationType(juce::Justification::centred);
+    // Get patch metadata from processor if available
+    if (auto* proc = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor))
+    {
+        currentPatchName = proc->currentPatchName;
+        patchCommentLabel.setText(proc->currentPatchDescription, juce::dontSendNotification);
+    }
+    else
+    {
+        currentPatchName = "Init";
+    }
+
+    currentPatchLabel.setText(currentPatchName, juce::dontSendNotification);
+    currentPatchLabel.setJustificationType(juce::Justification::centredLeft);
     currentPatchLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     currentPatchLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xff1a1a1a));
     addAndMakeVisible(currentPatchLabel);
+
+    patchCommentLabel.setJustificationType(juce::Justification::centredLeft);
+    patchCommentLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.6f));
+    addAndMakeVisible(patchCommentLabel);
 
     addAndMakeVisible(waveformDisplay);
 
@@ -806,6 +877,29 @@ void PLANETMainGui::paint(juce::Graphics& g)
     }
     
     g.drawText("EFFECTS", rightX, rightSectionY + rightSectionHeight * 3, rightWidth, rightSectionHeight, juce::Justification::centred);
+
+    // Draw bracket connecting Punch and Freq to show they're related
+    {
+        int rightContentWidth = bounds.getWidth() - leftWidth - 20;
+        int effectsSliderSpacing = rightContentWidth / 5;
+        int effectsSliderWidth = 55;
+        int effectsY = drawbarSectionHeight + rightSectionHeight * 3 + 5;
+        int bracketY = effectsY + 15;  // Just below the labels
+
+        // Calculate center positions of Punch and Freq labels
+        int esx3 = leftWidth + 10 + effectsSliderSpacing * 3 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+        int esx4 = leftWidth + 10 + effectsSliderSpacing * 4 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+        int punchCenter = esx3 + effectsSliderWidth / 2;
+        int freqCenter = esx4 + effectsSliderWidth / 2;
+
+        g.setColour(juce::Colours::white.withAlpha(0.4f));
+
+        // Draw bracket: „¤„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„£
+        int bracketHeight = 4;
+        g.drawHorizontalLine(bracketY, (float)punchCenter, (float)freqCenter);
+        g.drawVerticalLine(punchCenter, (float)(bracketY - bracketHeight), (float)bracketY);
+        g.drawVerticalLine(freqCenter, (float)(bracketY - bracketHeight), (float)bracketY);
+    }
     g.drawText("PATCH / PRESET", 0, mainHeight, bounds.getWidth(), patchBarHeight, juce::Justification::centred);
 
     // ======================== DIVIDING LINES ========================
@@ -950,63 +1044,77 @@ void PLANETMainGui::resized()
     // Vibrato section
     int vibratoY = waveformHeight + 5;
     int vibratoKnobSpacing = rightContentWidth / 3;
-    
+    int knobValueHeight = 20;
+
     int vkx0 = rightX + (vibratoKnobSpacing - rightKnobSize) / 2;
     vibratoRateLabel.setBounds(vkx0, vibratoY, rightKnobSize, 16);
     vibratoRateKnob.setBounds(vkx0, vibratoY + 16, rightKnobSize, rightKnobSize);
-    
+    vibratoRateValue.setBounds(vkx0 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+
     int vkx1 = rightX + vibratoKnobSpacing + (vibratoKnobSpacing - rightKnobSize) / 2;
     vibratoDepthLabel.setBounds(vkx1, vibratoY, rightKnobSize, 16);
     vibratoDepthKnob.setBounds(vkx1, vibratoY + 16, rightKnobSize, rightKnobSize);
-    
+    vibratoDepthValue.setBounds(vkx1 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+
     int vkx2 = rightX + vibratoKnobSpacing * 2 + (vibratoKnobSpacing - rightKnobSize) / 2;
     vibratoFadeLabel.setBounds(vkx2, vibratoY, rightKnobSize, 16);
     vibratoFadeKnob.setBounds(vkx2, vibratoY + 16, rightKnobSize, rightKnobSize);
+    vibratoFadeValue.setBounds(vkx2 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     
     // Pitch section
     int pitchY = waveformHeight + rightSectionHeight + 5;
     int pitchKnobSpacing = rightContentWidth / 2;
-    
+
     int pkx0 = rightX + (pitchKnobSpacing - rightKnobSize) / 2;
     pitchDistLabel.setBounds(pkx0, pitchY, rightKnobSize, 16);
     pitchDistKnob.setBounds(pkx0, pitchY + 16, rightKnobSize, rightKnobSize);
-    
+    pitchDistValue.setBounds(pkx0 + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+
     int pkx1 = rightX + pitchKnobSpacing + (pitchKnobSpacing - rightKnobSize) / 2;
     pitchTimeLabel.setBounds(pkx1, pitchY, rightKnobSize, 16);
     pitchTimeKnob.setBounds(pkx1, pitchY + 16, rightKnobSize, rightKnobSize);
+    pitchTimeValue.setBounds(pkx1 + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     
     // Brilliance section
     int brillianceY = waveformHeight + rightSectionHeight * 2 + 10;
     int sliderMargin = 20;
-    brillianceMainLabel.setBounds(rightX, brillianceY, rightContentWidth, 18);
+    int brillValueWidth = 50;
+    brillianceMainLabel.setBounds(rightX, brillianceY, rightContentWidth - brillValueWidth - 10, 18);
+    brillianceValue.setBounds(rightX + rightContentWidth - brillValueWidth - sliderMargin, brillianceY, brillValueWidth, 18);
     brillianceSliderBounds = juce::Rectangle<int>(rightX + sliderMargin, brillianceY + 22, rightContentWidth - sliderMargin * 2, 40);
     brillianceSlider.setBounds(brillianceSliderBounds);
     
-    // Effects section (5 sliders: Detune, Det Mix, Warmth, Punch, Pnch Frq)
+    // Effects section (5 sliders: Detune, Mix, Warmth, Punch, Freq)
     int effectsY = waveformHeight + rightSectionHeight * 3 + 5;
-    int effectsSliderWidth = 40;
-    int effectsSliderHeight = rightSectionHeight - 40;
-    int effectsSliderSpacing = rightContentWidth / 5;  // Changed from 4 to 5
+    int effectsSliderWidth = 55;
+    int effectsValueHeight = 20;
+    int effectsSliderHeight = rightSectionHeight - 58;  // Room for label + value
+    int effectsSliderSpacing = rightContentWidth / 5;
 
     int esx0 = rightX + (effectsSliderSpacing - effectsSliderWidth) / 2;
     detuneAmountLabel.setBounds(esx0, effectsY, effectsSliderWidth, 14);
     detuneAmountSlider.setBounds(esx0, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+    detuneAmountValue.setBounds(esx0, effectsY + 18 + effectsSliderHeight, effectsSliderWidth, effectsValueHeight);
 
     int esx1 = rightX + effectsSliderSpacing + (effectsSliderSpacing - effectsSliderWidth) / 2;
     detuneMixLabel.setBounds(esx1, effectsY, effectsSliderWidth, 14);
     detuneMixSlider.setBounds(esx1, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+    detuneMixValue.setBounds(esx1, effectsY + 18 + effectsSliderHeight, effectsSliderWidth, effectsValueHeight);
 
     int esx2 = rightX + effectsSliderSpacing * 2 + (effectsSliderSpacing - effectsSliderWidth) / 2;
     warmthLabel.setBounds(esx2, effectsY, effectsSliderWidth, 14);
     warmthSlider.setBounds(esx2, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+    warmthValue.setBounds(esx2, effectsY + 18 + effectsSliderHeight, effectsSliderWidth, effectsValueHeight);
 
     int esx3 = rightX + effectsSliderSpacing * 3 + (effectsSliderSpacing - effectsSliderWidth) / 2;
     punchLabel.setBounds(esx3, effectsY, effectsSliderWidth, 14);
     punchSlider.setBounds(esx3, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+    punchValue.setBounds(esx3, effectsY + 18 + effectsSliderHeight, effectsSliderWidth, effectsValueHeight);
 
     int esx4 = rightX + effectsSliderSpacing * 4 + (effectsSliderSpacing - effectsSliderWidth) / 2;
     punchFrequencyLabel.setBounds(esx4, effectsY, effectsSliderWidth, 14);
     punchFrequencySlider.setBounds(esx4, effectsY + 16, effectsSliderWidth, effectsSliderHeight);
+    punchFrequencyValue.setBounds(esx4, effectsY + 18 + effectsSliderHeight, effectsSliderWidth, effectsValueHeight);
 
     // ======================== PATCH BAR LAYOUT ========================
     int patchBarY = bounds.getHeight() - patchBarHeight;
@@ -1018,9 +1126,15 @@ void PLANETMainGui::resized()
     loadPatchButton.setBounds(buttonMargin, buttonY, buttonWidth, buttonHeight);
     savePatchButton.setBounds(buttonMargin + buttonWidth + 10, buttonY, buttonWidth, buttonHeight);
 
-    int patchLabelX = buttonMargin + buttonWidth * 2 + 30;
-    int patchLabelWidth = bounds.getWidth() - patchLabelX - buttonMargin;
-    currentPatchLabel.setBounds(patchLabelX, buttonY, patchLabelWidth, buttonHeight);
+    // Patch name (fixed width, right after Save button)
+    int patchNameX = buttonMargin + buttonWidth * 2 + 20;
+    int patchNameWidth = 150;
+    currentPatchLabel.setBounds(patchNameX, buttonY, patchNameWidth, buttonHeight);
+
+    // Comment takes remaining space (leave 200px for version label on right)
+    int commentX = patchNameX + patchNameWidth + 10;
+    int commentWidth = bounds.getWidth() - commentX - 200;
+    patchCommentLabel.setBounds(commentX, buttonY, commentWidth, buttonHeight);
 
 }
 
@@ -1497,7 +1611,12 @@ void PLANETMainGui::savePatchButtonClicked()
 
                 // Update patch name display
                 currentPatchName = patchName;
+
+                // Store in processor for state save
+                processor->currentPatchName = patchName;
                 updatePatchNameDisplay(currentPatchName);
+                processor->currentPatchDescription = description;
+                updatePatchCommentDisplay(description);
             }
         }
         delete window;
@@ -1507,6 +1626,16 @@ void PLANETMainGui::savePatchButtonClicked()
 void PLANETMainGui::updatePatchNameDisplay(const juce::String& name)
 {
     currentPatchName = name;
-    currentPatchLabel.setText("Patch: " + currentPatchName, juce::dontSendNotification);
+    currentPatchLabel.setText(name, juce::dontSendNotification);
     repaint();
+}
+
+void PLANETMainGui::updatePatchCommentDisplay(const juce::String& comment)
+{
+    // Truncate for display (full comment preserved in patch file)
+    const int maxDisplayLength = 120;
+    if (comment.length() > maxDisplayLength)
+        patchCommentLabel.setText(comment.substring(0, maxDisplayLength) + "...", juce::dontSendNotification);
+    else
+        patchCommentLabel.setText(comment, juce::dontSendNotification);
 }
