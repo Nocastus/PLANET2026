@@ -130,6 +130,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
     markdown << "# ReleaseTime = 0.001 to 10.0\n";
     markdown << "# LFOShape = 1, 2, or 3 (Sine, Triangle, Square)\n";
     markdown << "# LFORate = 0.05 to 1000.0\n\n";
+    markdown << "# VelToHarmonic = -100 to 100\n";
 
     // Generate all 10 drawbar sections
     for (int i = 1; i <= 10; ++i) {
@@ -140,6 +141,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
             "k" + drawbarNum,
             "k" + drawbarNum + "EnvelopeAmount",
             "k" + drawbarNum + "LFOAmount",
+            "k" + drawbarNum + "VelToHarmonic",
             "input_f" + drawbarNum,
             "k" + drawbarNum + "AttackTime",
             "k" + drawbarNum + "DecayTime",
@@ -409,6 +411,7 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "LFORate"] = ParameterRange(0.05f, 1000.0f);
         ranges[prefix + "LFOAmount"] = ParameterRange(-5.0f, 5.0f);
         ranges["input_f" + juce::String(i)] = ParameterRange(0.5f, 30.0f);
+        ranges[prefix + "VelToHarmonic"] = ParameterRange(-100.0f, 100.0f);
     }
 
     return ranges;

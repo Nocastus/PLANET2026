@@ -291,7 +291,20 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 finalCoeff += lfoValue * globalParams[i].lfoAmount * lfoScale;
             }
 
-            stagedCoeffs[i] = finalCoeff;
+            // Apply per-drawbar velocity to harmonic scaling
+            float velScale = 1.0f + (noteVelocity - 0.5f) * 2.0f * (globalParams[i].velToHarmonic / 100.0f);
+
+            // Seed mechanism: at VelToHarmonic > 75%, add harmonic content at high velocities
+            // This allows velocity to "create" harmonics even when drawbar is at zero
+            float seed = 0.0f;
+            if (globalParams[i].velToHarmonic > 75.0f)
+            {
+                float seedStrength = (globalParams[i].velToHarmonic - 75.0f) / 25.0f;  // 0 at 75%, 1 at 100%
+                float velContribution = juce::jmax(0.0f, (noteVelocity - 0.5f) * 2.0f);  // 0 at vel 64, 1 at vel 127
+                seed = seedStrength * velContribution * 0.5f;  // Max seed coefficient = 0.5
+            }
+
+            stagedCoeffs[i] = finalCoeff * velScale + seed;
         }
 
         // Promote staged coefficients to active

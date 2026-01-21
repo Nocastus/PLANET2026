@@ -26,7 +26,8 @@ struct CoefficientParams {
     std::atomic<float>* lfoShapePtr = nullptr;
     std::atomic<float>* lfoRatePtr = nullptr;
     std::atomic<float>* lfoAmountPtr = nullptr;
-    std::atomic<float>* inputSpectralMultiplierPtr = nullptr;  // NEW: Input spectral multiplier
+    std::atomic<float>* inputSpectralMultiplierPtr = nullptr;  
+    std::atomic<float>* velToHarmonicPtr = nullptr;     // NEW: Per-drawbar velocity to harmonic
 
     // Active values (cached at zero-crossings)
     float coefficient = 0.0f;
@@ -40,6 +41,7 @@ struct CoefficientParams {
     float lfoAmount = 0.0f;
     float inputSpectralMultiplier = 1.0f;    // NEW: User input value (integer)
     float spectralMultiplier = 1.0f;        // NEW: Effective value (input + LFO)
+    float velToHarmonic = 0.0f;                         // NEW: -100 to +100
 
     // Initialize parameter pointers for this coefficient
     void initializePointers(juce::AudioProcessorValueTreeState& apvts, int coeffIndex) {
@@ -55,6 +57,7 @@ struct CoefficientParams {
         lfoRatePtr = apvts.getRawParameterValue(prefix + "LFORate");
         lfoAmountPtr = apvts.getRawParameterValue(prefix + "LFOAmount");
         inputSpectralMultiplierPtr = apvts.getRawParameterValue("input_f" + std::to_string(coeffIndex + 1));
+        velToHarmonicPtr = apvts.getRawParameterValue(prefix + "VelToHarmonic");
     }
 
     // Update active values from parameter pointers
@@ -69,6 +72,7 @@ struct CoefficientParams {
         if (lfoRatePtr) lfoRate = lfoRatePtr->load();
         if (lfoAmountPtr) lfoAmount = lfoAmountPtr->load();
         if (inputSpectralMultiplierPtr) inputSpectralMultiplier = std::round(inputSpectralMultiplierPtr->load() * 2.0f) / 2.0f; // Round to nearest 0.5
+        if (velToHarmonicPtr) velToHarmonic = velToHarmonicPtr->load();
     }
 
     // NEW: Update effective spectral multiplier with LFO modulation

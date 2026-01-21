@@ -32,9 +32,9 @@ public:
     int snapshotTargetLength = 0;
     bool snapshotCapturing = false;
 
-    //========Read MOD WHEEL to control BRILLIANCE
-
-    std::atomic<float> currentModWheelValue{ 0.0f };
+    // Mod wheel state for brilliance control
+    std::atomic<float> rawModWheelValue{ 0.5f };      // 0-1, MIDI 0-127 normalized, default center
+    std::atomic<bool> modWheelEngaged{ false };       // Has mod wheel "picked up" since patch load?
 
     //==============================================================================
     PLANETtest4AudioProcessor();
@@ -126,6 +126,7 @@ private:
 
     // Sustain pedal status tracking flag, false = off
     bool sustainPedalDown = false;
+    float lastRawModWheelValue = 0.5f;  // For detecting crossover through center (audio thread only)
 
     // Pitch wheel gubbins
     float currentPitchWheelValue = 0.0f;  // -1.0 to +1.0 range

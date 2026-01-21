@@ -11,13 +11,14 @@
 
 PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     juce::AudioProcessor* processor,
-    std::atomic<float>* modWheelPtr,
+    std::atomic<float>* rawModWheelPtr,
+    std::atomic<bool>* modWheelEngagedPtr,
     std::array<float, 2048>* waveformSnapshotPtr,
     std::atomic<int>* snapshotLengthPtr,
     std::atomic<bool>* snapshotReadyPtr,
     std::atomic<bool>* snapshotRequestPtr,
     std::atomic<bool>* waveformActivePtr)
-    : apvts(apvtsRef), audioProcessor(processor), modWheelValue(modWheelPtr)
+    : apvts(apvtsRef), audioProcessor(processor), rawModWheelValue(rawModWheelPtr), modWheelEngaged(modWheelEngagedPtr)
 {
     // Load custom fonts from embedded binary data
     auto regularTypeface = juce::Typeface::createSystemTypefaceFor(
@@ -152,6 +153,31 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envDepthLabel.setJustificationType(juce::Justification::centred);
     envDepthLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(envDepthLabel);
+
+    // Set up Velocity to Drawbar knob
+    velToDrawbarKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    velToDrawbarKnob.setRange(-100.0, 100.0, 1.0);
+    velToDrawbarKnob.setValue(0.0);
+    velToDrawbarKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    velToDrawbarKnob.setDoubleClickReturnValue(true, 0.0);
+    addAndMakeVisible(velToDrawbarKnob);
+    velToDrawbarKnob.setLookAndFeel(&ishtarLookAndFeel);
+
+    velToDrawbarLabel.setText("Vel to Drawbar", juce::dontSendNotification);
+    velToDrawbarLabel.setJustificationType(juce::Justification::centred);
+    velToDrawbarLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(velToDrawbarLabel);
+
+    velToDrawbarValue.setText("0", juce::dontSendNotification);
+    velToDrawbarValue.setJustificationType(juce::Justification::centred);
+    velToDrawbarValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    velToDrawbarValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    velToDrawbarValue.setEditable(true);
+    addAndMakeVisible(velToDrawbarValue);
+
+    velToDrawbarKnob.onValueChange = [this]() {
+        velToDrawbarValue.setText(juce::String((int)velToDrawbarKnob.getValue()), juce::dontSendNotification);
+        };
 
     envDepthValue.setText("0.00", juce::dontSendNotification);
     envDepthValue.setJustificationType(juce::Justification::centred);
@@ -602,6 +628,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(selectedFDisplay);
     styleLabel(envDepthLabel);
     styleLabel(envDepthValue, true);
+    styleLabel(velToDrawbarLabel);
+    styleLabel(velToDrawbarValue, true);
     styleLabel(velAmpLabel);
     styleLabel(velAmpValue, true);
     styleLabel(velBrillLabel);
@@ -664,6 +692,7 @@ PLANETMainGui::~PLANETMainGui()
     pitchTimeKnob.setLookAndFeel(nullptr);
     lfoSpeedKnob.setLookAndFeel(nullptr);
     lfoDepthKnob.setLookAndFeel(nullptr);
+    velToDrawbarKnob.setLookAndFeel(nullptr);
     velBrillKnob.setLookAndFeel(nullptr);
     velAttackKnob.setLookAndFeel(nullptr);
     envCurveKnob.setLookAndFeel(nullptr);
@@ -696,11 +725,19 @@ PLANETMainGui::~PLANETMainGui()
 
 void PLANETMainGui::timerCallback()
 {
-    if (modWheelValue != nullptr)
+    if (rawModWheelValue != nullptr && modWheelEngaged != nullptr)
     {
-        float baseBrilliance = (float)brillianceSlider.getValue();
-        float modOffset = modWheelValue->load();  // Now -0.5 to +0.5
-        float newEffective = juce::jlimit(0.0f, 1.0f, baseBrilliance + modOffset);
+        float S = (float)brillianceSlider.getValue();
+        float newEffective = S;  // Default to slider
+
+        if (modWheelEngaged->load())
+        {
+            float M = rawModWheelValue->load();
+            if (M < 0.5f)
+                newEffective = M * 2.0f * S;
+            else
+                newEffective = S + (M - 0.5f) * 2.0f * (1.0f - S);
+        }
 
         if (std::abs(newEffective - cachedEffectiveBrilliance) > 0.001f)
         {
@@ -751,6 +788,15 @@ void PLANETMainGui::updateDrawbarColors()
 
         // Store LFO state as a property for the custom LookAndFeel to read
         drawbarSliders[i].getProperties().set("hasActiveLFO", hasActiveLFO);
+
+        // Check Vel to Harmonic amount
+        juce::String velHarmParamID = "k" + juce::String(i + 1) + "VelToHarmonic";
+        float velHarmAmount = 0.0f;
+        if (auto* velHarmPtr = apvts.getRawParameterValue(velHarmParamID))
+            velHarmAmount = velHarmPtr->load();
+        bool hasActiveVelHarm = std::abs(velHarmAmount) > 0.1f;
+
+        drawbarSliders[i].getProperties().set("hasActiveVelHarm", hasActiveVelHarm);
 
         // Always trigger repaint to update visual state immediately
         drawbarSliders[i].repaint();
@@ -867,10 +913,17 @@ void PLANETMainGui::paint(juce::Graphics& g)
         int adsrGraphHeight = harmonicHeight - 80;
         int adsrGraphY = drawbarSectionHeight + 10;
         int adsrGraphWidth = adsrZoneWidth - adsrMargin * 2;
-        
+
         g.setColour(juce::Colours::black.withAlpha(0.3f));
-        g.fillRoundedRectangle((float)adsrMargin, (float)adsrGraphY, 
-                                (float)adsrGraphWidth, (float)adsrGraphHeight, 5.0f);
+        g.fillRoundedRectangle((float)adsrMargin, (float)adsrGraphY,
+            (float)adsrGraphWidth, (float)adsrGraphHeight, 5.0f);
+
+        // Draw DRAWBAR N watermark
+        g.setColour(juce::Colours::white.withAlpha(0.25f));
+        g.setFont(amarnaSemiBold.withHeight(36.0f));
+        juce::String watermarkText = "DRAWBAR " + juce::String(selectedDrawbar + 1);
+        g.drawText(watermarkText, adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight,
+            juce::Justification::centred, false);
         
         juce::Rectangle<int> envBounds(adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
         drawEnvelopeCurve(g, envBounds,
@@ -951,34 +1004,43 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setFont(amarnaSemiBold.withHeight(30.0f));
     g.drawText("ISHTAR", bounds.getWidth() - 320, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::right);
 
-    // Draw effective brilliance indicator
-    if (modWheelValue != nullptr && brillianceSliderBounds.getWidth() > 0)
+    // Draw effective brilliance indicator (only when mod wheel is engaged and not at center)
+    if (rawModWheelValue != nullptr && modWheelEngaged != nullptr && brillianceSliderBounds.getWidth() > 0)
     {
-        float baseBrilliance = (float)brillianceSlider.getValue();
-        float modWheel = modWheelValue->load();
-        
-        if (std::abs(modWheel) > 0.001f)
+        if (modWheelEngaged->load())
         {
-            float effectiveBrilliance = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheel);
+            float M = rawModWheelValue->load();
 
-            int sliderX = brillianceSliderBounds.getX();
-            int sliderWidth = brillianceSliderBounds.getWidth();
-            int sliderY = brillianceSliderBounds.getY();
-            int sliderHeight = brillianceSliderBounds.getHeight();
+            // Only show indicator when mod wheel is away from center
+            if (std::abs(M - 0.5f) > 0.01f)
+            {
+                float S = (float)brillianceSlider.getValue();
+                float effectiveBrilliance;
 
-            int baseX = sliderX + (int)(baseBrilliance * sliderWidth);
-            int effectiveX = sliderX + (int)(effectiveBrilliance * sliderWidth);
+                if (M < 0.5f)
+                    effectiveBrilliance = M * 2.0f * S;
+                else
+                    effectiveBrilliance = S + (M - 0.5f) * 2.0f * (1.0f - S);
 
-            g.setColour(accentColour.withAlpha(0.5f));
-            int barY = sliderY + sliderHeight / 2 - 3;
+                int sliderX = brillianceSliderBounds.getX();
+                int sliderWidth = brillianceSliderBounds.getWidth();
+                int sliderY = brillianceSliderBounds.getY();
+                int sliderHeight = brillianceSliderBounds.getHeight();
 
-            // Draw bar from base to effective (works for both directions)
-            int barLeft = juce::jmin(baseX, effectiveX);
-            int barRight = juce::jmax(baseX, effectiveX);
-            g.fillRect(barLeft, barY, barRight - barLeft, 6);
+                int baseX = sliderX + (int)(S * sliderWidth);
+                int effectiveX = sliderX + (int)(effectiveBrilliance * sliderWidth);
 
-            g.setColour(accentColour);
-            g.fillRect(effectiveX - 2, sliderY + 5, 4, sliderHeight - 10);
+                g.setColour(accentColour.withAlpha(0.5f));
+                int barY = sliderY + sliderHeight / 2 - 3;
+
+                // Draw bar from slider position to effective position
+                int barLeft = juce::jmin(baseX, effectiveX);
+                int barRight = juce::jmax(baseX, effectiveX);
+                g.fillRect(barLeft, barY, barRight - barLeft, 6);
+
+                g.setColour(accentColour);
+                g.fillRect(effectiveX - 2, sliderY + 5, 4, sliderHeight - 10);
+            }
         }
     }
     
@@ -1091,25 +1153,42 @@ void PLANETMainGui::resized()
     envDepthLabel.setBounds(envDepthX - 10, envDepthY + envDepthSliderHeight + 2, envDepthSliderWidth + 20, 18);
     envDepthValue.setBounds(envDepthX, envDepthY + envDepthSliderHeight + 20, envDepthSliderWidth, 22);
 
-    int fDisplayWidth = 70;
-    int fDisplayY = lfoZoneY + 20;
-    selectedFDisplay.setBounds(lfoZoneX + (lfoZoneWidth - fDisplayWidth) / 2, fDisplayY, fDisplayWidth, 32);
+    // Hide the old F display - now drawn as watermark in paint()
+    selectedFDisplay.setVisible(false);
 
-    int comboY = fDisplayY + 60;
+    // Triangle layout: Vel to Drawbar at apex, LFO Speed/Depth at base
+    int smallKnobSize = 60;
+    int smallKnobValueHeight = 18;
+
+    // Apex knob (Vel to Drawbar) - centered at top
+    int apexX = lfoZoneX + (lfoZoneWidth - smallKnobSize) / 2;
+    int apexY = lfoZoneY + 5;
+    velToDrawbarLabel.setBounds(apexX - 15, apexY, smallKnobSize + 30, 16);
+    velToDrawbarKnob.setBounds(apexX, apexY + 16, smallKnobSize, smallKnobSize);
+    velToDrawbarValue.setBounds(apexX, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+
+    // Base knobs (LFO Speed, LFO Depth) - spread below
+    int baseY = apexY + 16 + smallKnobSize + smallKnobValueHeight + 15;
+    int baseSpacing = (lfoZoneWidth - smallKnobSize * 2) / 3;
+    int base1X = lfoZoneX + baseSpacing;
+    int base2X = base1X + smallKnobSize + baseSpacing;
+
+    lfoSpeedLabel.setBounds(base1X, baseY, smallKnobSize, 16);
+    lfoSpeedKnob.setBounds(base1X, baseY + 16, smallKnobSize, smallKnobSize);
+
+    lfoDepthLabel.setBounds(base2X, baseY, smallKnobSize, 16);
+    lfoDepthKnob.setBounds(base2X, baseY + 16, smallKnobSize, smallKnobSize);
+
+    // LFO Shape combo below the base knobs
+    int comboY = baseY + 16 + smallKnobSize + 5;
     int comboWidth = (lfoZoneWidth - 30) / 2;
     lfoShapeLabel.setBounds(lfoZoneX + 10, comboY, comboWidth - 5, 22);
     lfoShapeCombo.setBounds(lfoZoneX + 10 + comboWidth, comboY, comboWidth, 22);
 
-    int knobY = comboY + 60;
-    int knobSpacing = (lfoZoneWidth - knobSize * 2) / 3;
-    int knob1X = lfoZoneX + knobSpacing;
-    int knob2X = knob1X + knobSize + knobSpacing;
-
-    lfoSpeedLabel.setBounds(knob1X, knobY, knobSize, 16);
-    lfoSpeedKnob.setBounds(knob1X, knobY + 16, knobSize, knobSize);
-
-    lfoDepthLabel.setBounds(knob2X, knobY, knobSize, 16);
-    lfoDepthKnob.setBounds(knob2X, knobY + 16, knobSize, knobSize);
+    // Define knob1X, knob2X, knobSize for Amplitude section below (legacy layout)
+    int knob1X = base1X;
+    int knob2X = base2X;
+    // knobSize already defined as 80, keep that for Amplitude zone centering
 
     // ======================== AMPLITUDE ADSR SECTION ========================
     int ampHeight = harmonicAndAmpHeight - harmonicHeight;
@@ -1505,9 +1584,8 @@ void PLANETMainGui::updateAdsrDisplay()
                                      juce::dontSendNotification);
     }
     
-    selectedFDisplay.setText("F" + fValueLabels[selectedDrawbar].getText(), 
-                              juce::dontSendNotification);
-    selectedFDisplay.setColour(juce::Label::textColourId, drawbarColours[selectedDrawbar]);
+    // Watermark is now drawn in paint(), just trigger repaint
+    repaint();
     
     bindToSelectedDrawbar();
 }
@@ -1525,7 +1603,8 @@ void PLANETMainGui::bindToSelectedDrawbar()
     lfoDepthAttachment.reset();
     lfoShapeAttachment.reset();
     envDepthAttachment.reset();
-    
+    velToDrawbarAttachment.reset();
+
     lfoSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "LFORate", lfoSpeedKnob);
     lfoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -1534,6 +1613,8 @@ void PLANETMainGui::bindToSelectedDrawbar()
         apvts, prefix + "LFOShape", lfoShapeCombo);
     envDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "EnvelopeAmount", envDepthKnob);
+    velToDrawbarAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, prefix + "VelToHarmonic", velToDrawbarKnob);
     
     if (auto* param = apvts.getParameter(currentHarmonicParamIDs[0]))
         adsrValues[selectedDrawbar][0] = param->convertFrom0to1(param->getValue());
@@ -1549,6 +1630,9 @@ void PLANETMainGui::bindToSelectedDrawbar()
     
     if (auto* param = apvts.getParameter(prefix + "EnvelopeAmount"))
         envDepthValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+
+    if (auto* param = apvts.getParameter(prefix + "VelToHarmonic"))
+        velToDrawbarValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 }
 
 void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newValue)

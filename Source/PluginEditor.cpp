@@ -14,7 +14,8 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     // Create the main GUI
     mainGui = std::make_unique<PLANETMainGui>(audioProcessor.parameters,
         &audioProcessor,
-        &audioProcessor.currentModWheelValue,
+        &audioProcessor.rawModWheelValue,
+        &audioProcessor.modWheelEngaged,
         &audioProcessor.waveformSnapshot,
         &audioProcessor.waveformSnapshotLength,
         &audioProcessor.waveformSnapshotReady,

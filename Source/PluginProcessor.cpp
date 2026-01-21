@@ -155,6 +155,18 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k9LFOAmount", "K9 LFO Amount", -5.0f, 5.0f, 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k10LFOAmount", "K10 LFO Amount", -5.0f, 5.0f, 0.0f),
 
+            // ======================== VELOCITY TO HARMONIC PARAMETERS (10 - NEW) ========================
+                std::make_unique<juce::AudioParameterFloat>("k1VelToHarmonic", "K1 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k2VelToHarmonic", "K2 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k3VelToHarmonic", "K3 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k4VelToHarmonic", "K4 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k5VelToHarmonic", "K5 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k6VelToHarmonic", "K6 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k7VelToHarmonic", "K7 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k8VelToHarmonic", "K8 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k9VelToHarmonic", "K9 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("k10VelToHarmonic", "K10 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
+
             // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10 - NEW) ========================
             std::make_unique<juce::AudioParameterFloat>("input_f1", "Input F1 Spectral Multiplier", 0.5f, 30.0f, 1.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f2", "Input F2 Spectral Multiplier", 0.5f, 30.0f, 2.0f),
@@ -458,9 +470,25 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // Update global parameters (shared by all voices)
     coefficients.updateAllActiveValues();
-    float baseBrilliance = brillianceParameter->load();
-    float modWheelBrilliance = currentModWheelValue.load();
-    float effectiveBrilliance = juce::jlimit(0.0f, 1.0f, baseBrilliance + modWheelBrilliance);
+    float sliderBrilliance = brillianceParameter->load();
+    float effectiveBrilliance = sliderBrilliance;  // Default to slider value
+
+    if (modWheelEngaged.load())
+    {
+        float M = rawModWheelValue.load();  // 0-1, center at 0.5
+        float S = sliderBrilliance;
+
+        if (M < 0.5f)
+        {
+            // Below center: interpolate from 0 (at MW=0) to S (at MW=0.5)
+            effectiveBrilliance = M * 2.0f * S;
+        }
+        else
+        {
+            // At/above center: interpolate from S (at MW=0.5) to 1 (at MW=1)
+            effectiveBrilliance = S + (M - 0.5f) * 2.0f * (1.0f - S);
+        }
+    }
 
     // Get envelope exponential parameters
     float currentExponentialControl = exponentialControlParameter->load();
@@ -494,7 +522,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
 
                 voiceManager.startNote(message.getNoteNumber(), velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
-                    velToAmplitude, velToBrilliance, baseBrilliance);
+                    velToAmplitude, velToBrilliance, brillianceParameter->load());
             }
             else
             {
@@ -524,19 +552,29 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 sustainPedalDown = newSustainState;
             }
 
-            // Handle mod wheel (CC #1)
+            // Handle mod wheel (CC #1) - brilliance control with soft takeover
             else if (message.getControllerNumber() == 1)
             {
-                currentModWheelValue.store(message.getControllerValue() / 127.0f);
+                float newRawValue = message.getControllerValue() / 127.0f;  // 0-1
+
+                // Check for engagement (crossing through center point 0.5)
+                if (!modWheelEngaged.load())
+                {
+                    bool crossedCenter = (lastRawModWheelValue < 0.5f && newRawValue >= 0.5f) ||
+                        (lastRawModWheelValue > 0.5f && newRawValue <= 0.5f);
+                    if (crossedCenter)
+                    {
+                        modWheelEngaged.store(true);
+                    }
+                }
+
+                lastRawModWheelValue = newRawValue;
+                rawModWheelValue.store(newRawValue);
             }
 
         }
-        // Handle mod wheel (CC #1) - bipolar, centered at 64
-        else if (message.getControllerNumber() == 1)
-        {
-            float bipolarValue = (message.getControllerValue() - 64) / 64.0f;  // -1 to +1
-            currentModWheelValue.store(bipolarValue * 0.5f);  // -0.5 to +0.5 brilliance offset
-        }
+
+
 
         else if (message.isPitchWheel())
         {
@@ -660,7 +698,22 @@ void PLANETtest4AudioProcessor::loadPatch(const juce::File& patchFile) {
             }
         }
 
+        // Reset VelToHarmonic parameters to defaults ONLY for old patches that don't have them
+        for (int i = 1; i <= 10; ++i)
+        {
+            juce::String paramID = "k" + juce::String(i) + "VelToHarmonic";
+            if (patch.parameters.count(paramID) == 0)  // Only reset if not in patch
+            {
+                if (auto* param = parameters.getParameter(paramID))
+                    param->setValueNotifyingHost(param->convertTo0to1(0.0f));
+            }
+        }
+
         patchManager.applyPatchToProcessor(patch, parameters);
+
+        // Reset mod wheel engagement for new patch
+        modWheelEngaged.store(false);
+        lastRawModWheelValue = 0.5f;
 
         // Store patch metadata in processor
         currentPatchName = patch.patchName;

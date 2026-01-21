@@ -14,14 +14,14 @@
 
 
 //==============================================================================
-// Custom LookAndFeel for drawbar sliders with LFO visual feedback
+// Custom LookAndFeel for drawbar sliders with LFO and VelToHarmonic visual feedback
 //==============================================================================
 class DrawbarLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height,
-                         float sliderPos, float minSliderPos, float maxSliderPos,
-                         const juce::Slider::SliderStyle style, juce::Slider& slider) override
+        float sliderPos, float minSliderPos, float maxSliderPos,
+        const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
         if (style == juce::Slider::LinearVertical)
         {
@@ -32,33 +32,83 @@ public:
             g.setColour(slider.findColour(juce::Slider::backgroundColourId));
             g.fillRect(juce::Rectangle<float>(trackLeft, (float)y, trackWidth, (float)height));
 
-            // Calculate thumb position (circular thumb like ADSR handles)
+            // Calculate thumb position
             auto sliderPosProportional = (float)slider.valueToProportionOfLength(slider.getValue());
             auto thumbCenterX = x + width * 0.5f;
             auto thumbCenterY = y + height * (1.0f - sliderPosProportional);
-            float thumbRadius = 10.0f;
+            float thumbRadius = 7.0f;
 
-            // Check if this slider has LFO active (stored as a property)
+            // Check modulation states
             bool hasLFO = slider.getProperties()["hasActiveLFO"];
+            bool hasVelHarm = slider.getProperties()["hasActiveVelHarm"];
 
-            // Draw thumb circle - filled with main color
-            g.setColour(slider.findColour(juce::Slider::thumbColourId));
-            g.fillEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
-                         thumbRadius * 2, thumbRadius * 2);
-
-            // If LFO is active, draw pale blue outline stroke
-            if (hasLFO)
+            if (hasVelHarm)
             {
-                g.setColour(juce::Colour(0x99ffffff));  // Pale blue (matches accent color)
-                g.drawEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
-                             thumbRadius * 2, thumbRadius * 2, 6.0f);  // 6px stroke
+                // Draw Ishtar star instead of circle (scaled up for visibility)
+                float starRadius = thumbRadius * 1.8f;
+                drawMiniIshtarStar(g, thumbCenterX, thumbCenterY, starRadius,
+                    slider.findColour(juce::Slider::thumbColourId), hasLFO);
+            }
+            else
+            {
+                // Draw standard circle thumb
+                g.setColour(slider.findColour(juce::Slider::thumbColourId));
+                g.fillEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
+                    thumbRadius * 2, thumbRadius * 2);
+
+                // If LFO is active, draw pale outline stroke (larger than thumb)
+                if (hasLFO)
+                {
+                    float outlineRadius = 10.0f;  // Original thumb size, now used just for LFO ring
+                    g.setColour(juce::Colour(0x99ffffff));
+                    g.drawEllipse(thumbCenterX - outlineRadius, thumbCenterY - outlineRadius,
+                        outlineRadius * 2, outlineRadius * 2, 3.0f);
+                }
             }
         }
         else
         {
-            // For non-vertical sliders, use default drawing
             LookAndFeel_V4::drawLinearSlider(g, x, y, width, height, sliderPos,
-                                              minSliderPos, maxSliderPos, style, slider);
+                minSliderPos, maxSliderPos, style, slider);
+        }
+    }
+
+private:
+    void drawMiniIshtarStar(juce::Graphics& g, float cx, float cy, float radius,
+        juce::Colour fillColour, bool hasLFO)
+    {
+        float outerRadius = radius;           // Ray tips extend to here
+        float orbitRadius = radius * 0.6f;    // Orbit ring sits inside the rays
+        float innerRadius = radius * 0.4f;
+
+        // Draw outer circle (like orbit) - sized to match normal thumb LFO ring
+        if (hasLFO)
+        {
+            g.setColour(juce::Colour(0x99ffffff));
+            g.drawEllipse(cx - orbitRadius, cy - orbitRadius,
+                orbitRadius * 2, orbitRadius * 2, 3.0f);
+        }
+
+        // Draw inner filled circle
+        g.setColour(fillColour);
+        g.fillEllipse(cx - innerRadius, cy - innerRadius,
+            innerRadius * 2, innerRadius * 2);
+
+        // Draw 8 rays
+        float rayStroke = 1.5f;
+        g.setColour(fillColour);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            float angle = i * juce::MathConstants<float>::pi / 4.0f;
+
+            // Ray from inner circle edge to outer circle edge
+            float innerX = cx + innerRadius * std::sin(angle);
+            float innerY = cy - innerRadius * std::cos(angle);
+            float outerX = cx + outerRadius * std::sin(angle);
+            float outerY = cy - outerRadius * std::cos(angle);
+
+            g.drawLine(innerX, innerY, outerX, outerY, rayStroke);
         }
     }
 };
@@ -73,7 +123,8 @@ class PLANETMainGui : public juce::Component,
 public:
     PLANETMainGui(juce::AudioProcessorValueTreeState& apvts,
         juce::AudioProcessor* processor = nullptr,
-        std::atomic<float>* modWheelPtr = nullptr,
+        std::atomic<float>* rawModWheelPtr = nullptr,
+        std::atomic<bool>* modWheelEngagedPtr = nullptr,
         std::array<float, 2048>* waveformSnapshotPtr = nullptr,
         std::atomic<int>* snapshotLengthPtr = nullptr,
         std::atomic<bool>* snapshotReadyPtr = nullptr,
@@ -183,6 +234,11 @@ private:
     juce::Label envDepthLabel;
     juce::Label envDepthValue;
 
+    // Velocity to Drawbar control (context-sensitive)
+    juce::Slider velToDrawbarKnob;
+    juce::Label velToDrawbarLabel;
+    juce::Label velToDrawbarValue;
+
     // Amplitude ADSR display
     std::array<juce::Label, 4> ampAdsrLabels;
     std::array<juce::Label, 4> ampAdsrValueEditors;
@@ -213,7 +269,8 @@ private:
     juce::Label brillianceMainLabel;
     
     // Mod wheel tracking
-    std::atomic<float>* modWheelValue = nullptr;
+    std::atomic<float>* rawModWheelValue = nullptr;
+    std::atomic<bool>* modWheelEngaged = nullptr;
     juce::Rectangle<int> brillianceSliderBounds;
     float cachedEffectiveBrilliance = 0.5f;
 
@@ -272,6 +329,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velToDrawbarAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };
