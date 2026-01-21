@@ -10,6 +10,8 @@
 #include <JuceHeader.h>
 #include "WaveformDisplay.h"
 #include <array>
+#include "IshtarLookAndFeel.h"
+
 
 //==============================================================================
 // Custom LookAndFeel for drawbar sliders with LFO visual feedback
@@ -140,7 +142,7 @@ private:
     static constexpr float leftWidthRatio = 0.67f;
     static constexpr float rightWidthRatio = 0.33f;
     static constexpr int patchBarHeight = 40;
-    static constexpr int drawbarSectionHeight = 200;
+    static constexpr int drawbarSectionHeight = 220;
 
     // Reference to APVTS
     juce::AudioProcessorValueTreeState& apvts;
@@ -151,6 +153,12 @@ private:
     std::array<juce::Label, 10> fValueLabels;
     int selectedDrawbar = 0;
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
+
+    IshtarLookAndFeel ishtarLookAndFeel;  // Custom rotary knob appearance
+
+    // Custom fonts
+    juce::Font amarnaRegular;
+    juce::Font amarnaSemiBold;
 
     // SliderAttachments for K1-K10 drawbars
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 10> drawbarAttachments;

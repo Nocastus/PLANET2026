@@ -100,8 +100,5 @@ void WaveformDisplay::paint(juce::Graphics& g)
         peakAmplitude = 1.0f;
     }
 
-    // Label
-    g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.drawText("WAVEFORM", bounds.getX() + 5, bounds.getY() + 5,
-        bounds.getWidth(), 20, juce::Justification::left);
+
 }

@@ -19,6 +19,23 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     std::atomic<bool>* waveformActivePtr)
     : apvts(apvtsRef), audioProcessor(processor), modWheelValue(modWheelPtr)
 {
+    // Load custom fonts from embedded binary data
+    auto regularTypeface = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::AmarnaRegular_ttf, BinaryData::AmarnaRegular_ttfSize);
+    auto semiBoldTypeface = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::AmarnaSemiBold_ttf, BinaryData::AmarnaSemiBold_ttfSize);
+
+    amarnaRegular = juce::Font(regularTypeface);
+    amarnaSemiBold = juce::Font(semiBoldTypeface);
+
+    // Helper to apply consistent font styling to labels
+    auto styleLabel = [this](juce::Label& label, bool isValue = false) {
+        if (isValue)
+            label.setFont(amarnaRegular.withHeight(18.0f));
+        else
+            label.setFont(amarnaSemiBold.withHeight(18.0f));
+        };
+
     // Connect waveform display to data source
     waveformDisplay.setDataSource(waveformSnapshotPtr, snapshotLengthPtr,
         snapshotReadyPtr, snapshotRequestPtr,
@@ -95,6 +112,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoSpeedKnob.setValue(4.0);
     lfoSpeedKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 18);
     addAndMakeVisible(lfoSpeedKnob);
+    lfoSpeedKnob.setLookAndFeel(&ishtarLookAndFeel);
 
     lfoSpeedLabel.setText("Speed", juce::dontSendNotification);
     lfoSpeedLabel.setJustificationType(juce::Justification::centred);
@@ -107,6 +125,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoDepthKnob.setValue(0.0);
     lfoDepthKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 18);
     addAndMakeVisible(lfoDepthKnob);
+    lfoDepthKnob.setLookAndFeel(&ishtarLookAndFeel);
 
     lfoDepthLabel.setText("Depth", juce::dontSendNotification);
     lfoDepthLabel.setJustificationType(juce::Justification::centred);
@@ -185,7 +204,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velBrillKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velBrillKnob.setDoubleClickReturnValue(true, 100.0);
     addAndMakeVisible(velBrillKnob);
-    velBrillLabel.setText("Vel Brill", juce::dontSendNotification);
+    velBrillKnob.setLookAndFeel(&ishtarLookAndFeel);
+    velBrillLabel.setText("Vel to Brill", juce::dontSendNotification);
     velBrillLabel.setJustificationType(juce::Justification::centred);
     velBrillLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(velBrillLabel);
@@ -203,7 +223,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAttackKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velAttackKnob.setDoubleClickReturnValue(true, 0.0);
     addAndMakeVisible(velAttackKnob);
-    velAttackLabel.setText("Vel Attk", juce::dontSendNotification);
+    velAttackKnob.setLookAndFeel(&ishtarLookAndFeel);
+    velAttackLabel.setText("Vel to Attk", juce::dontSendNotification);
     velAttackLabel.setJustificationType(juce::Justification::centred);
     velAttackLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(velAttackLabel);
@@ -222,6 +243,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envCurveKnob.setDoubleClickReturnValue(true, 0.5);
     envCurveKnob.onValueChange = [this]() { repaint(); };
     addAndMakeVisible(envCurveKnob);
+    envCurveKnob.setLookAndFeel(&ishtarLookAndFeel);
     envCurveLabel.setText("Env Curve", juce::dontSendNotification);
     envCurveLabel.setJustificationType(juce::Justification::centred);
     envCurveLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -240,6 +262,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     vintageKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     vintageKnob.setDoubleClickReturnValue(true, 0.0);
     addAndMakeVisible(vintageKnob);
+    vintageKnob.setLookAndFeel(&ishtarLookAndFeel);
     vintageLabel.setText("Vintage", juce::dontSendNotification);
     vintageLabel.setJustificationType(juce::Justification::centred);
     vintageLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -255,19 +278,20 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     
     // Helper lambda for setting up knobs consistently
     auto setupKnob = [this](juce::Slider& knob, juce::Label& label, const juce::String& name,
-                            double min, double max, double defaultVal) {
-        knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knob.setRange(min, max, 0.01);
-        knob.setValue(defaultVal);
-        knob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        knob.setDoubleClickReturnValue(true, defaultVal);
-        addAndMakeVisible(knob);
-        
-        label.setText(name, juce::dontSendNotification);
-        label.setJustificationType(juce::Justification::centred);
-        label.setColour(juce::Label::textColourId, juce::Colours::white);
-        addAndMakeVisible(label);
-    };
+        double min, double max, double defaultVal) {
+            knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+            knob.setRange(min, max, 0.01);
+            knob.setValue(defaultVal);
+            knob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+            knob.setDoubleClickReturnValue(true, defaultVal);
+            knob.setLookAndFeel(&ishtarLookAndFeel);  // Apply Ishtar knob design
+            addAndMakeVisible(knob);
+
+            label.setText(name, juce::dontSendNotification);
+            label.setJustificationType(juce::Justification::centred);
+            label.setColour(juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible(label);
+        };
     
     // Vibrato knobs
     setupKnob(vibratoRateKnob, vibratoRateLabel, "Rate", 0.5, 12.0, 5.0);
@@ -328,6 +352,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     setupValueLabel(punchValue, "0.00");
     setupValueLabel(punchFrequencyValue, "1800");
     setupValueLabel(brillianceValue, "0.50");
+    brillianceValue.setVisible(false);
+    brillianceMainLabel.setVisible(false);
     setupValueLabel(vibratoRateValue, "5.00");
     setupValueLabel(vibratoDepthValue, "0.00");
     setupValueLabel(vibratoFadeValue, "2.00");
@@ -559,6 +585,62 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
 
     addAndMakeVisible(waveformDisplay);
 
+    // Apply Amarna font to all labels
+    for (int i = 0; i < 10; ++i)
+        styleLabel(fValueLabels[i], true);
+
+    for (int i = 0; i < 4; ++i) {
+        styleLabel(adsrLabels[i]);
+        styleLabel(adsrValueEditors[i], true);
+        styleLabel(ampAdsrLabels[i]);
+        styleLabel(ampAdsrValueEditors[i], true);
+    }
+
+    styleLabel(lfoShapeLabel);
+    styleLabel(lfoSpeedLabel);
+    styleLabel(lfoDepthLabel);
+    styleLabel(selectedFDisplay);
+    styleLabel(envDepthLabel);
+    styleLabel(envDepthValue, true);
+    styleLabel(velAmpLabel);
+    styleLabel(velAmpValue, true);
+    styleLabel(velBrillLabel);
+    styleLabel(velBrillValue, true);
+    styleLabel(velAttackLabel);
+    styleLabel(velAttackValue, true);
+    styleLabel(envCurveLabel);
+    styleLabel(envCurveValue, true);
+    styleLabel(vintageLabel);
+    styleLabel(vintageValue, true);
+
+    // Right column labels
+    styleLabel(vibratoRateLabel);
+    styleLabel(vibratoDepthLabel);
+    styleLabel(vibratoFadeLabel);
+    styleLabel(vibratoRateValue, true);
+    styleLabel(vibratoDepthValue, true);
+    styleLabel(vibratoFadeValue, true);
+    styleLabel(pitchDistLabel);
+    styleLabel(pitchTimeLabel);
+    styleLabel(pitchDistValue, true);
+    styleLabel(pitchTimeValue, true);
+    styleLabel(brillianceMainLabel);
+    styleLabel(brillianceValue, true);
+    styleLabel(detuneAmountLabel);
+    styleLabel(detuneMixLabel);
+    styleLabel(warmthLabel);
+    styleLabel(punchLabel);
+    styleLabel(punchFrequencyLabel);
+    styleLabel(detuneAmountValue, true);
+    styleLabel(detuneMixValue, true);
+    styleLabel(warmthValue, true);
+    styleLabel(punchValue, true);
+    styleLabel(punchFrequencyValue, true);
+
+    // Patch bar
+    styleLabel(currentPatchLabel);
+    styleLabel(patchCommentLabel, true);
+
     setSize(1400, 800);
     updateDrawbarColors();
     startTimerHz(30);
@@ -573,6 +655,19 @@ PLANETMainGui::~PLANETMainGui()
     {
         drawbarSliders[i].setLookAndFeel(nullptr);
     }
+
+    // Reset LookAndFeel for rotary knobs
+    vibratoRateKnob.setLookAndFeel(nullptr);
+    vibratoDepthKnob.setLookAndFeel(nullptr);
+    vibratoFadeKnob.setLookAndFeel(nullptr);
+    pitchDistKnob.setLookAndFeel(nullptr);
+    pitchTimeKnob.setLookAndFeel(nullptr);
+    lfoSpeedKnob.setLookAndFeel(nullptr);
+    lfoDepthKnob.setLookAndFeel(nullptr);
+    velBrillKnob.setLookAndFeel(nullptr);
+    velAttackKnob.setLookAndFeel(nullptr);
+    envCurveKnob.setLookAndFeel(nullptr);
+    vintageKnob.setLookAndFeel(nullptr);
 
     apvts.removeParameterListener("ampEnvAttackTime", this);
     apvts.removeParameterListener("ampEnvDecayTime", this);
@@ -828,23 +923,34 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.fillRect(0, mainHeight, bounds.getWidth(), patchBarHeight);
 
     // ======================== SECTION LABELS ========================
-    
-    g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.setFont(16.0f);
-    
-    g.drawText("DRAWBARS", 0, 0, leftWidth, drawbarSectionHeight, juce::Justification::centred);
-    g.drawText("HARMONIC (per-drawbar)", 0, drawbarSectionHeight, leftWidth, harmonicHeight, juce::Justification::centred);
-    g.drawText("AMPLITUDE (global)", 0, drawbarSectionHeight + harmonicHeight, leftWidth, ampHeight, juce::Justification::centred);
-    
+
+    g.setColour(juce::Colours::white.withAlpha(0.7f));
+    g.setFont(amarnaSemiBold.withHeight(20.0f));
+
+    int labelHeight = 22;
+    int labelMargin = 1;
+
+    // Left column labels (centered at bottom of each zone)
+    g.drawText("DRAWBARS", 0, drawbarSectionHeight - labelHeight - labelMargin, leftWidth, labelHeight, juce::Justification::centred);
+    g.drawText("DRAWBAR ENVELOPE", 0, drawbarSectionHeight + harmonicHeight - labelHeight - labelMargin, leftWidth, labelHeight, juce::Justification::centred);
+    g.drawText("AMPLITUDE ENVELOPE", 0, mainHeight - labelHeight - labelMargin, leftWidth, labelHeight, juce::Justification::centred);
+
     int rightX = leftWidth;
     int rightContentHeight = mainHeight - drawbarSectionHeight;
     int rightSectionHeight = rightContentHeight / 4;
     int rightSectionY = drawbarSectionHeight;
-    
-    g.drawText("VIBRATO", rightX, rightSectionY, rightWidth, rightSectionHeight, juce::Justification::centred);
-    g.drawText("PITCH", rightX, rightSectionY + rightSectionHeight, rightWidth, rightSectionHeight, juce::Justification::centred);
-    g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 2, rightWidth, rightSectionHeight, juce::Justification::centred);
-    
+
+    // Right column labels (centered at bottom of each zone)
+    g.drawText("VIBRATO", rightX, rightSectionY + rightSectionHeight - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
+    g.drawText("PITCH ENVELOPE", rightX, rightSectionY + rightSectionHeight * 2 - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
+    g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 3 - 10 - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
+    g.drawText("EFFECTS", rightX, mainHeight - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
+
+    // ISHTAR name - bottom right of patch bar
+    g.setColour(accentColour.withAlpha(0.9f));
+    g.setFont(amarnaSemiBold.withHeight(30.0f));
+    g.drawText("ISHTAR", bounds.getWidth() - 320, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::right);
+
     // Draw effective brilliance indicator
     if (modWheelValue != nullptr && brillianceSliderBounds.getWidth() > 0)
     {
@@ -876,31 +982,43 @@ void PLANETMainGui::paint(juce::Graphics& g)
         }
     }
     
-    g.drawText("EFFECTS", rightX, rightSectionY + rightSectionHeight * 3, rightWidth, rightSectionHeight, juce::Justification::centred);
+    
 
-    // Draw bracket connecting Punch and Freq to show they're related
+    // Draw brackets connecting related effect controls
     {
         int rightContentWidth = bounds.getWidth() - leftWidth - 20;
         int effectsSliderSpacing = rightContentWidth / 5;
         int effectsSliderWidth = 55;
-        int effectsY = drawbarSectionHeight + rightSectionHeight * 3 + 5;
+        int effectsY = drawbarSectionHeight + rightSectionHeight * 3 + 7;
         int bracketY = effectsY + 15;  // Just below the labels
+        int bracketHeight = 5;
+        int bracketThickness = 2;
 
-        // Calculate center positions of Punch and Freq labels
+        // Calculate center positions for all effect sliders
+        int esx0 = leftWidth + 10 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+        int esx1 = leftWidth + 10 + effectsSliderSpacing + (effectsSliderSpacing - effectsSliderWidth) / 2;
         int esx3 = leftWidth + 10 + effectsSliderSpacing * 3 + (effectsSliderSpacing - effectsSliderWidth) / 2;
         int esx4 = leftWidth + 10 + effectsSliderSpacing * 4 + (effectsSliderSpacing - effectsSliderWidth) / 2;
+
+        int detuneCenter = esx0 + effectsSliderWidth / 2;
+        int mixCenter = esx1 + effectsSliderWidth / 2;
         int punchCenter = esx3 + effectsSliderWidth / 2;
         int freqCenter = esx4 + effectsSliderWidth / 2;
 
-        g.setColour(juce::Colours::white.withAlpha(0.4f));
+        g.setColour(juce::Colours::white.withAlpha(0.5f));
 
-        // Draw bracket: „¤„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„£
-        int bracketHeight = 4;
-        g.drawHorizontalLine(bracketY, (float)punchCenter, (float)freqCenter);
-        g.drawVerticalLine(punchCenter, (float)(bracketY - bracketHeight), (float)bracketY);
-        g.drawVerticalLine(freqCenter, (float)(bracketY - bracketHeight), (float)bracketY);
+        // Detune-Mix bracket
+        g.fillRect(detuneCenter, bracketY, mixCenter - detuneCenter, bracketThickness);
+        g.fillRect(detuneCenter, bracketY - bracketHeight, bracketThickness, bracketHeight);
+        g.fillRect(mixCenter - bracketThickness + 1, bracketY - bracketHeight, bracketThickness, bracketHeight);
+
+        // Punch-Freq bracket
+        g.fillRect(punchCenter, bracketY, freqCenter - punchCenter, bracketThickness);
+        g.fillRect(punchCenter, bracketY - bracketHeight, bracketThickness, bracketHeight);
+        g.fillRect(freqCenter - bracketThickness + 1, bracketY - bracketHeight, bracketThickness, bracketHeight);
     }
-    g.drawText("PATCH / PRESET", 0, mainHeight, bounds.getWidth(), patchBarHeight, juce::Justification::centred);
+
+    
 
     // ======================== DIVIDING LINES ========================
     
@@ -909,8 +1027,13 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawHorizontalLine(drawbarSectionHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight + harmonicHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight, (float)leftWidth, (float)bounds.getWidth());
-    for (int i = 1; i < 4; ++i)
+    // Right column dividers (Vibrato/Pitch and Pitch/Brilliance)
+    for (int i = 1; i < 3; ++i)
         g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i, (float)leftWidth, (float)bounds.getWidth());
+
+    // Brilliance/Effects divider (adjustable)<===============================================================================BRILLIANCE DIVIDER
+    int brillianceEffectsDividerY = drawbarSectionHeight + rightSectionHeight * 3 - 10;  // Adjust this offset
+    g.drawHorizontalLine(brillianceEffectsDividerY, (float)leftWidth, (float)bounds.getWidth());
     g.drawHorizontalLine(mainHeight, 0, (float)bounds.getWidth());
 }
 
@@ -940,7 +1063,7 @@ void PLANETMainGui::resized()
     int adsrGraphHeight = harmonicHeight - 80;
     int adsrGraphY = drawbarSectionHeight + 10;
     int adsrGraphWidth = adsrZoneWidth - 40;
-    int adsrLabelY = drawbarSectionHeight + adsrGraphHeight + 20;
+    int adsrLabelY = drawbarSectionHeight + adsrGraphHeight + 5;
     int adsrFieldWidth = 50;
     int adsrFieldHeight = 25;
     int adsrSpacing = (adsrZoneWidth - 40) / 4;
@@ -965,33 +1088,34 @@ void PLANETMainGui::resized()
     int envDepthY = adsrGraphY;
     int envDepthSliderHeight = adsrGraphHeight;
     envDepthKnob.setBounds(envDepthX, envDepthY, envDepthSliderWidth, envDepthSliderHeight);
-    envDepthLabel.setBounds(envDepthX - 10, envDepthY + envDepthSliderHeight + 5, envDepthSliderWidth + 20, 18);
-    envDepthValue.setBounds(envDepthX, envDepthY + envDepthSliderHeight + 25, envDepthSliderWidth, 22);
+    envDepthLabel.setBounds(envDepthX - 10, envDepthY + envDepthSliderHeight + 2, envDepthSliderWidth + 20, 18);
+    envDepthValue.setBounds(envDepthX, envDepthY + envDepthSliderHeight + 20, envDepthSliderWidth, 22);
 
     int fDisplayWidth = 70;
-    selectedFDisplay.setBounds(lfoZoneX + (lfoZoneWidth - fDisplayWidth) / 2, lfoZoneY, fDisplayWidth, 35);
+    int fDisplayY = lfoZoneY + 20;
+    selectedFDisplay.setBounds(lfoZoneX + (lfoZoneWidth - fDisplayWidth) / 2, fDisplayY, fDisplayWidth, 32);
 
-    int comboY = lfoZoneY + 45;
+    int comboY = fDisplayY + 60;
     int comboWidth = (lfoZoneWidth - 30) / 2;
-    lfoShapeLabel.setBounds(lfoZoneX + 10, comboY, comboWidth - 5, 25);
-    lfoShapeCombo.setBounds(lfoZoneX + 10 + comboWidth, comboY, comboWidth, 25);
+    lfoShapeLabel.setBounds(lfoZoneX + 10, comboY, comboWidth - 5, 22);
+    lfoShapeCombo.setBounds(lfoZoneX + 10 + comboWidth, comboY, comboWidth, 22);
 
-    int knobY = comboY + 45;
+    int knobY = comboY + 60;
     int knobSpacing = (lfoZoneWidth - knobSize * 2) / 3;
     int knob1X = lfoZoneX + knobSpacing;
     int knob2X = knob1X + knobSize + knobSpacing;
 
-    lfoSpeedLabel.setBounds(knob1X, knobY, knobSize, 18);
-    lfoSpeedKnob.setBounds(knob1X, knobY + 18, knobSize, knobSize);
+    lfoSpeedLabel.setBounds(knob1X, knobY, knobSize, 16);
+    lfoSpeedKnob.setBounds(knob1X, knobY + 16, knobSize, knobSize);
 
-    lfoDepthLabel.setBounds(knob2X, knobY, knobSize, 18);
-    lfoDepthKnob.setBounds(knob2X, knobY + 18, knobSize, knobSize);
+    lfoDepthLabel.setBounds(knob2X, knobY, knobSize, 16);
+    lfoDepthKnob.setBounds(knob2X, knobY + 16, knobSize, knobSize);
 
     // ======================== AMPLITUDE ADSR SECTION ========================
     int ampHeight = harmonicAndAmpHeight - harmonicHeight;
     int ampAdsrGraphHeight = ampHeight - 80;
     int ampAdsrGraphY = drawbarSectionHeight + harmonicHeight + 10;
-    int ampAdsrLabelY = ampAdsrGraphY + ampAdsrGraphHeight + 5;
+    int ampAdsrLabelY = ampAdsrGraphY + ampAdsrGraphHeight - 3;
 
     ampEnvBounds = juce::Rectangle<int>(20, ampAdsrGraphY, adsrGraphWidth, ampAdsrGraphHeight);
 
@@ -1002,32 +1126,33 @@ void PLANETMainGui::resized()
         ampAdsrValueEditors[i].setBounds(xPos, ampAdsrLabelY + 22, adsrFieldWidth, adsrFieldHeight);
     }
 
-    velAmpSlider.setBounds(envDepthX, ampAdsrGraphY, envDepthSliderWidth, ampAdsrGraphHeight);
-    velAmpLabel.setBounds(envDepthX - 10, ampAdsrGraphY + ampAdsrGraphHeight + 5, envDepthSliderWidth + 20, 18);
-    velAmpValue.setBounds(envDepthX, ampAdsrGraphY + ampAdsrGraphHeight + 25, envDepthSliderWidth, 22);
+    velAmpSlider.setBounds(envDepthX, ampAdsrGraphY, envDepthSliderWidth, ampAdsrGraphHeight + 5);
+    velAmpLabel.setBounds(envDepthX - 10, ampAdsrGraphY + ampAdsrGraphHeight + 8, envDepthSliderWidth + 20, 18);
+    velAmpValue.setBounds(envDepthX, ampAdsrGraphY + ampAdsrGraphHeight + 24, envDepthSliderWidth, 22);
 
     // 2x2 knob grid in Amplitude zone
     int ampKnobSize = 60;
-    int ampKnobValueHeight = 20;
-    int ampKnobStartY = drawbarSectionHeight + harmonicHeight + 10;
-    int ampKnobRowHeight = 18 + ampKnobSize + ampKnobValueHeight + 10;
+    int ampKnobValueHeight = 18;
+    int ampKnobStartY = drawbarSectionHeight + harmonicHeight + 30;
+    int ampKnobRowSpacing = 45;
+    int ampKnobRowHeight = 16 + ampKnobSize + ampKnobValueHeight + ampKnobRowSpacing;
 
-    velBrillLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 18);
-    velBrillKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
-    velBrillValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    velBrillLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 16);
+    velBrillKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16, ampKnobSize, ampKnobSize);
+    velBrillValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    velAttackLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 18);
-    velAttackKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18, ampKnobSize, ampKnobSize);
-    velAttackValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    velAttackLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 16);
+    velAttackKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16, ampKnobSize, ampKnobSize);
+    velAttackValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
     int row2Y = ampKnobStartY + ampKnobRowHeight;
-    envCurveLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 18);
-    envCurveKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 18, ampKnobSize, ampKnobSize);
-    envCurveValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    envCurveLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 16);
+    envCurveKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 16, ampKnobSize, ampKnobSize);
+    envCurveValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    vintageLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 18);
-    vintageKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 18, ampKnobSize, ampKnobSize);
-    vintageValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 18 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    vintageLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 16);
+    vintageKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 16, ampKnobSize, ampKnobSize);
+    vintageValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
@@ -1076,7 +1201,7 @@ void PLANETMainGui::resized()
     pitchTimeValue.setBounds(pkx1 + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     
     // Brilliance section
-    int brillianceY = waveformHeight + rightSectionHeight * 2 + 10;
+    int brillianceY = waveformHeight + rightSectionHeight * 2 + 35;
     int sliderMargin = 20;
     int brillValueWidth = 50;
     brillianceMainLabel.setBounds(rightX, brillianceY, rightContentWidth - brillValueWidth - 10, 18);
@@ -1085,10 +1210,10 @@ void PLANETMainGui::resized()
     brillianceSlider.setBounds(brillianceSliderBounds);
     
     // Effects section (5 sliders: Detune, Mix, Warmth, Punch, Freq)
-    int effectsY = waveformHeight + rightSectionHeight * 3 + 5;
+    int effectsY = waveformHeight + rightSectionHeight * 3 + 1;
     int effectsSliderWidth = 55;
     int effectsValueHeight = 20;
-    int effectsSliderHeight = rightSectionHeight - 58;  // Room for label + value
+    int effectsSliderHeight = rightSectionHeight - 68;  // Room for label + value
     int effectsSliderSpacing = rightContentWidth / 5;
 
     int esx0 = rightX + (effectsSliderSpacing - effectsSliderWidth) / 2;
