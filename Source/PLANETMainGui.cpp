@@ -111,7 +111,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoSpeedKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     lfoSpeedKnob.setRange(0.05, 20.0, 0.01);
     lfoSpeedKnob.setValue(4.0);
-    lfoSpeedKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 18);
+    lfoSpeedKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 0, 0);
     addAndMakeVisible(lfoSpeedKnob);
     lfoSpeedKnob.setLookAndFeel(&ishtarLookAndFeel);
 
@@ -124,7 +124,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoDepthKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     lfoDepthKnob.setRange(0.0, 5.0, 0.01);
     lfoDepthKnob.setValue(0.0);
-    lfoDepthKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 18);
+    lfoDepthKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 0, 0);
     addAndMakeVisible(lfoDepthKnob);
     lfoDepthKnob.setLookAndFeel(&ishtarLookAndFeel);
 
@@ -132,6 +132,21 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoDepthLabel.setJustificationType(juce::Justification::centred);
     lfoDepthLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(lfoDepthLabel);
+
+    // Set up LFO value labels
+    lfoSpeedValue.setText("4.00", juce::dontSendNotification);
+    lfoSpeedValue.setJustificationType(juce::Justification::centred);
+    lfoSpeedValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    lfoSpeedValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    lfoSpeedValue.setEditable(true);
+    addAndMakeVisible(lfoSpeedValue);
+
+    lfoDepthValue.setText("0.00", juce::dontSendNotification);
+    lfoDepthValue.setJustificationType(juce::Justification::centred);
+    lfoDepthValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    lfoDepthValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    lfoDepthValue.setEditable(true);
+    addAndMakeVisible(lfoDepthValue);
 
     // Set up selected F display
     selectedFDisplay.setText("F1", juce::dontSendNotification);
@@ -223,24 +238,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAmpValue.setEditable(true);
     addAndMakeVisible(velAmpValue);
 
-    // Set up Vel to Brilliance knob
-    velBrillKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    velBrillKnob.setRange(-100.0, 100.0, 1.0);
-    velBrillKnob.setValue(100.0);
-    velBrillKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    velBrillKnob.setDoubleClickReturnValue(true, 100.0);
-    addAndMakeVisible(velBrillKnob);
-    velBrillKnob.setLookAndFeel(&ishtarLookAndFeel);
-    velBrillLabel.setText("Vel to Brill", juce::dontSendNotification);
-    velBrillLabel.setJustificationType(juce::Justification::centred);
-    velBrillLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    addAndMakeVisible(velBrillLabel);
-    velBrillValue.setText("100", juce::dontSendNotification);
-    velBrillValue.setJustificationType(juce::Justification::centred);
-    velBrillValue.setColour(juce::Label::textColourId, juce::Colours::white);
-    velBrillValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
-    velBrillValue.setEditable(true);
-    addAndMakeVisible(velBrillValue);
+
 
     // Set up Vel to Attack knob
     velAttackKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -420,6 +418,12 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     pitchTimeKnob.onValueChange = [this]() {
         pitchTimeValue.setText(juce::String(pitchTimeKnob.getValue(), 2), juce::dontSendNotification);
         };
+    lfoSpeedKnob.onValueChange = [this]() {
+        lfoSpeedValue.setText(juce::String(lfoSpeedKnob.getValue(), 2), juce::dontSendNotification);
+        };
+    lfoDepthKnob.onValueChange = [this]() {
+        lfoDepthValue.setText(juce::String(lfoDepthKnob.getValue(), 2), juce::dontSendNotification);
+        };
 
 
 
@@ -462,8 +466,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // Amplitude section attachments
     velAmpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "velToAmplitude", velAmpSlider);
-    velBrillAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, "velToBrilliance", velBrillKnob);
+
     velAttackAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "velToAttackTime", velAttackKnob);
     envCurveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -560,7 +563,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
 
     // Register as listener for amplitude zone parameters
     apvts.addParameterListener("exponentialControl", this);
-    apvts.addParameterListener("velToBrilliance", this);
+
     apvts.addParameterListener("velToAmplitude", this);
     apvts.addParameterListener("velToAttackTime", this);
     apvts.addParameterListener("vintageAmount", this);
@@ -625,6 +628,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(lfoShapeLabel);
     styleLabel(lfoSpeedLabel);
     styleLabel(lfoDepthLabel);
+    styleLabel(lfoSpeedValue, true);
+    styleLabel(lfoDepthValue, true);
+
     styleLabel(selectedFDisplay);
     styleLabel(envDepthLabel);
     styleLabel(envDepthValue, true);
@@ -632,8 +638,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(velToDrawbarValue, true);
     styleLabel(velAmpLabel);
     styleLabel(velAmpValue, true);
-    styleLabel(velBrillLabel);
-    styleLabel(velBrillValue, true);
+
     styleLabel(velAttackLabel);
     styleLabel(velAttackValue, true);
     styleLabel(envCurveLabel);
@@ -693,7 +698,7 @@ PLANETMainGui::~PLANETMainGui()
     lfoSpeedKnob.setLookAndFeel(nullptr);
     lfoDepthKnob.setLookAndFeel(nullptr);
     velToDrawbarKnob.setLookAndFeel(nullptr);
-    velBrillKnob.setLookAndFeel(nullptr);
+    
     velAttackKnob.setLookAndFeel(nullptr);
     envCurveKnob.setLookAndFeel(nullptr);
     vintageKnob.setLookAndFeel(nullptr);
@@ -703,7 +708,7 @@ PLANETMainGui::~PLANETMainGui()
     apvts.removeParameterListener("ampEnvSustainLevel", this);
     apvts.removeParameterListener("ampEnvReleaseTime", this);
     apvts.removeParameterListener("exponentialControl", this);
-    apvts.removeParameterListener("velToBrilliance", this);
+  
     apvts.removeParameterListener("velToAmplitude", this);
     apvts.removeParameterListener("velToAttackTime", this);
     apvts.removeParameterListener("vintageAmount", this);
@@ -1159,6 +1164,7 @@ void PLANETMainGui::resized()
     // Triangle layout: Vel to Drawbar at apex, LFO Speed/Depth at base
     int smallKnobSize = 60;
     int smallKnobValueHeight = 18;
+    
 
     // Apex knob (Vel to Drawbar) - centered at top
     int apexX = lfoZoneX + (lfoZoneWidth - smallKnobSize) / 2;
@@ -1173,14 +1179,20 @@ void PLANETMainGui::resized()
     int base1X = lfoZoneX + baseSpacing;
     int base2X = base1X + smallKnobSize + baseSpacing;
 
+    lfoSpeedValue.setBounds(base1X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+    lfoDepthValue.setBounds(base2X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+
     lfoSpeedLabel.setBounds(base1X, baseY, smallKnobSize, 16);
     lfoSpeedKnob.setBounds(base1X, baseY + 16, smallKnobSize, smallKnobSize);
 
     lfoDepthLabel.setBounds(base2X, baseY, smallKnobSize, 16);
     lfoDepthKnob.setBounds(base2X, baseY + 16, smallKnobSize, smallKnobSize);
 
-    // LFO Shape combo below the base knobs
-    int comboY = baseY + 16 + smallKnobSize + 5;
+    // LFO Shape combo below the base knobs and their values
+
+    lfoSpeedValue.setBounds(base1X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+    lfoDepthValue.setBounds(base2X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+    int comboY = baseY + 16 + smallKnobSize + smallKnobValueHeight + 5;
     int comboWidth = (lfoZoneWidth - 30) / 2;
     lfoShapeLabel.setBounds(lfoZoneX + 10, comboY, comboWidth - 5, 22);
     lfoShapeCombo.setBounds(lfoZoneX + 10 + comboWidth, comboY, comboWidth, 22);
@@ -1209,29 +1221,30 @@ void PLANETMainGui::resized()
     velAmpLabel.setBounds(envDepthX - 10, ampAdsrGraphY + ampAdsrGraphHeight + 8, envDepthSliderWidth + 20, 18);
     velAmpValue.setBounds(envDepthX, ampAdsrGraphY + ampAdsrGraphHeight + 24, envDepthSliderWidth, 22);
 
-    // 2x2 knob grid in Amplitude zone
+    // Triangle layout in Amplitude zone: Vel to Attk at apex, Env Curve and Vintage at base
     int ampKnobSize = 60;
     int ampKnobValueHeight = 18;
-    int ampKnobStartY = drawbarSectionHeight + harmonicHeight + 30;
-    int ampKnobRowSpacing = 45;
-    int ampKnobRowHeight = 16 + ampKnobSize + ampKnobValueHeight + ampKnobRowSpacing;
 
-    velBrillLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 16);
-    velBrillKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16, ampKnobSize, ampKnobSize);
-    velBrillValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    // Apex knob (Vel to Attk) - centered at top
+    int ampApexX = lfoZoneX + (lfoZoneWidth - ampKnobSize) / 2;
+    int ampApexY = drawbarSectionHeight + harmonicHeight + 30;
+    velAttackLabel.setBounds(ampApexX - 10, ampApexY, ampKnobSize + 20, 16);
+    velAttackKnob.setBounds(ampApexX, ampApexY + 16, ampKnobSize, ampKnobSize);
+    velAttackValue.setBounds(ampApexX, ampApexY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    velAttackLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY, ampKnobSize, 16);
-    velAttackKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16, ampKnobSize, ampKnobSize);
-    velAttackValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, ampKnobStartY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    // Base knobs (Env Curve, Vintage) - spread below
+    int ampBaseY = ampApexY + 16 + ampKnobSize + ampKnobValueHeight + 15;
+    int ampBaseSpacing = (lfoZoneWidth - ampKnobSize * 2) / 3;
+    int ampBase1X = lfoZoneX + ampBaseSpacing;
+    int ampBase2X = ampBase1X + ampKnobSize + ampBaseSpacing;
 
-    int row2Y = ampKnobStartY + ampKnobRowHeight;
-    envCurveLabel.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 16);
-    envCurveKnob.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 16, ampKnobSize, ampKnobSize);
-    envCurveValue.setBounds(knob1X + (knobSize - ampKnobSize) / 2, row2Y + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    envCurveLabel.setBounds(ampBase1X, ampBaseY, ampKnobSize, 16);
+    envCurveKnob.setBounds(ampBase1X, ampBaseY + 16, ampKnobSize, ampKnobSize);
+    envCurveValue.setBounds(ampBase1X, ampBaseY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
-    vintageLabel.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y, ampKnobSize, 16);
-    vintageKnob.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 16, ampKnobSize, ampKnobSize);
-    vintageValue.setBounds(knob2X + (knobSize - ampKnobSize) / 2, row2Y + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    vintageLabel.setBounds(ampBase2X, ampBaseY, ampKnobSize, 16);
+    vintageKnob.setBounds(ampBase2X, ampBaseY + 16, ampKnobSize, ampKnobSize);
+    vintageValue.setBounds(ampBase2X, ampBaseY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
@@ -1667,10 +1680,7 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
         envCurveValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
         return;
     }
-    if (parameterID == "velToBrilliance") {
-        velBrillValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
-        return;
-    }
+
     if (parameterID == "velToAmplitude") {
         velAmpValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
         return;
@@ -1716,8 +1726,7 @@ void PLANETMainGui::refreshAllGUIValues()
     // Refresh amplitude zone values
     if (auto* param = apvts.getParameter("exponentialControl"))
         envCurveValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
-    if (auto* param = apvts.getParameter("velToBrilliance"))
-        velBrillValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+
     if (auto* param = apvts.getParameter("velToAmplitude"))
         velAmpValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("velToAttackTime"))

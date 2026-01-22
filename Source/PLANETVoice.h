@@ -109,7 +109,7 @@ public:
 
     // Voice control
     void startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount = 0.0f,
-        float velToAmplitude = 100.0f, float velToBrilliance = 100.0f, float brilliance = 0.5f);
+        float velToAmplitude = 100.0f, float brilliance = 0.5f);
     void stopNote(bool sustainPedalDown = false);  // KEEP ONLY THIS ONE
     void triggerRelease();  // New method for forced release
     bool isActive() const { return noteIsActive; }
@@ -131,7 +131,7 @@ public:
         float brilliance, double sampleRate,
         float pitchWheelOffset,
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
-        float velToAmplitude, float velToBrilliance, float velToAttackTime, float vintageAmount,
+        float velToAmplitude, float velToAttackTime, float vintageAmount,
         float pitchEnvDistance, float pitchAttackTime);
 
     // Voice identification

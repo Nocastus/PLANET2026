@@ -115,7 +115,7 @@ private:
 
     // ======================== VELOCITY SCALING PARAMETERS ========================
     std::atomic<float>* velToAmplitudeParameter = nullptr;
-    std::atomic<float>* velToBrillianceParameter = nullptr;
+  
     std::atomic<float>* velToAttackTimeParameter = nullptr;
     std::atomic<float>* vintageAmountParameter = nullptr;
 

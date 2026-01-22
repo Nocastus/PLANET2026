@@ -34,7 +34,7 @@ PLANETVoice::PLANETVoice()
 //==============================================================================
 
 void PLANETVoice::startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount,
-    float velToAmplitude, float velToBrilliance, float brilliance)
+    float velToAmplitude, float brilliance)
 {
     // [Existing initialization code...]
     currentNoteNumber = noteNumber;
@@ -154,7 +154,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float brilliance, double sampleRate,
     float pitchWheelOffset,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
-    float velToAmplitude, float velToBrilliance, float velToAttackTime, float vintageAmount,
+    float velToAmplitude, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime)
 {
     auto twoPi = 2.0 * juce::MathConstants<double>::pi;
@@ -310,9 +310,8 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         // Promote staged coefficients to active
         voiceCoeffGrid.promoteStaged();
 
-        // Update velocity-influenced brilliance (per-cycle for responsive control)
-        cachedVelocityBrilliance = juce::jlimit(0.0f, 1.0f,
-            brilliance + (noteVelocity - 0.63f) * (velToBrilliance / 100.0f));
+        // Cache brilliance value at cycle boundaries
+        cachedVelocityBrilliance = brilliance;
 
 
 

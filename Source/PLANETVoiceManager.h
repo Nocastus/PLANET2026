@@ -34,7 +34,7 @@ public:
 
     // Voice control
     void startNote(int noteNumber, float velocity, double sampleRate, float pitchWheelOffset = 0.0f, float vintageAmount = 0.0f,
-        float velToAmplitude = 100.0f, float velToBrilliance = 100.0f, float brilliance = 0.5f);
+        float velToAmplitude = 100.0f, float brilliance = 0.5f);
     void stopNote(int noteNumber, bool sustainPedalDown = false);  // Updated
     void releaseSustainedNotes();  // New method
     void stopAllNotes();
@@ -45,7 +45,7 @@ public:
         float brilliance, double sampleRate,
         float pitchWheelOffset,
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
-        float velToAmplitude, float velToBrilliance, float velToAttackTime, float vintageAmount,
+        float velToAmplitude, float velToAttackTime, float vintageAmount,
         float pitchEnvDistance, float pitchAttackTime);
 
     // Voice management

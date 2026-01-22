@@ -23,7 +23,7 @@ PLANETVoiceManager::PLANETVoiceManager()
 //==============================================================================
 
 void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sampleRate, float currentPitchWheelOffset, float vintageAmount,
-    float velToAmplitude, float velToBrilliance, float brilliance)
+    float velToAmplitude, float brilliance)
 {
     // [Existing voice finding/allocation code...]
     auto* existingVoice = findVoiceForNote(noteNumber);
@@ -37,7 +37,7 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
     }
 
     if (voice) {
-        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, velToBrilliance, brilliance);
+        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance);
 
         // Apply current pitch wheel state to new voice
         voice->setPitchOffset(currentPitchWheelOffset);
@@ -87,7 +87,7 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
     float brilliance, double sampleRate,
     float pitchWheelOffset,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
-    float velToAmplitude, float velToBrilliance, float velToAttackTime, float vintageAmount,
+    float velToAmplitude, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime)
 
 {  // Opening brace
@@ -102,7 +102,7 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
                 brilliance, sampleRate,
                 pitchWheelOffset,
                 vibratoRate, vibratoDepth, vibratoFadeIn,
-                velToAmplitude, velToBrilliance, velToAttackTime, vintageAmount,
+                velToAmplitude, velToAttackTime, vintageAmount,
                 pitchEnvDistance, pitchAttackTime);
 
             // Capture first voice for waveform display

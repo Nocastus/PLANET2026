@@ -97,7 +97,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
         patch);
 
     markdown << generateParameterSection("Velocity Response",
-        { "velToAmplitude", "velToBrilliance", "velToAttackTime", "vintageAmount" },
+        { "velToAmplitude", "velToAttackTime", "vintageAmount" },
         patch);
 
     markdown << generateParameterSection("Brilliance",
@@ -375,7 +375,7 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
 
     // Velocity Response
     ranges["velToAmplitude"] = ParameterRange(0.0f, 200.0f);
-    ranges["velToBrilliance"] = ParameterRange(-100.0f, 100.0f);
+    
     ranges["velToAttackTime"] = ParameterRange(0.0f, 100.0f);
     ranges["vintageAmount"] = ParameterRange(0.0f, 100.0f);
 

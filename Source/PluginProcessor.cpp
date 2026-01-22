@@ -181,7 +181,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
             // =========================VELOCITY SCALING PARAMETERS=========================================
             std::make_unique<juce::AudioParameterFloat>("velToAmplitude", "Vel->Amplitude", 0.0f, 200.0f, 100.0f),
-            std::make_unique<juce::AudioParameterFloat>("velToBrilliance", "Vel->Brilliance", -100.0f, 100.0f, 100.0f),
+        
             std::make_unique<juce::AudioParameterFloat>("velToAttackTime", "Vel->Attack Time", 0.0f, 100.0f, 0.0f),
             std::make_unique<juce::AudioParameterFloat>("vintageAmount", "Vintage Amount", 0.0f, 100.0f, 0.0f),
 
@@ -233,7 +233,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
     // ======================== INITIALIZE VELOCITY SCALING PARAMETER POINTERS ========================
     velToAmplitudeParameter = parameters.getRawParameterValue("velToAmplitude");
-    velToBrillianceParameter = parameters.getRawParameterValue("velToBrilliance");
+  
     velToAttackTimeParameter = parameters.getRawParameterValue("velToAttackTime");
 
     //======================== INITIALIZE VINTAGE PARAMETER POINTER ========================
@@ -502,7 +502,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // Get velocity scaling parameters
     float velToAmplitude = velToAmplitudeParameter->load();
-    float velToBrilliance = velToBrillianceParameter->load();
+   
     float velToAttackTime = velToAttackTimeParameter->load();
     float vintageAmount = vintageAmountParameter->load();
     float pitchEnvDistance = pitchEnvDistanceParameter->load();
@@ -522,7 +522,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
 
                 voiceManager.startNote(message.getNoteNumber(), velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
-                    velToAmplitude, velToBrilliance, brillianceParameter->load());
+                    velToAmplitude, brillianceParameter->load());
             }
             else
             {
@@ -620,7 +620,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             effectiveBrilliance, getSampleRate(),
             pitchWheelSemitones,
             vibratoRate, vibratoDepth, vibratoFadeIn,
-            velToAmplitude, velToBrilliance, velToAttackTime, vintageAmount,
+            velToAmplitude, velToAttackTime, vintageAmount,
             pitchEnvDistance, pitchAttackTime);
 
         // Waveform snapshot capture

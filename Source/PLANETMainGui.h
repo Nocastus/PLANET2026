@@ -228,6 +228,8 @@ private:
     juce::Slider lfoDepthKnob;
     juce::Label lfoShapeLabel, lfoSpeedLabel, lfoDepthLabel;
     juce::Label selectedFDisplay;
+    juce::Label lfoSpeedValue, lfoDepthValue; // JUST ADDED THESE - Now seeking clarification for next steps
+
 
     // Envelope depth control
     juce::Slider envDepthKnob;
@@ -250,9 +252,9 @@ private:
     juce::Label velAmpValue;
 
     // Amplitude zone knobs (2x2 grid)
-    juce::Slider velBrillKnob, velAttackKnob, envCurveKnob, vintageKnob;
-    juce::Label velBrillLabel, velAttackLabel, envCurveLabel, vintageLabel;
-    juce::Label velBrillValue, velAttackValue, envCurveValue, vintageValue;
+    juce::Slider velAttackKnob, envCurveKnob, vintageKnob;
+    juce::Label velAttackLabel, envCurveLabel, vintageLabel;
+    juce::Label velAttackValue, envCurveValue, vintageValue;
 
     // ======================== RIGHT COLUMN CONTROLS ========================
     
@@ -319,7 +321,7 @@ private:
     
     // Amplitude section attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAmpAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velBrillAttachment;
+    
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAttackAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> envCurveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vintageAttachment;
