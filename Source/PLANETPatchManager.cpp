@@ -407,7 +407,7 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "SustainLevel"] = ParameterRange(0.0f, 2.0f);
         ranges[prefix + "ReleaseTime"] = ParameterRange(0.001f, 10.0f);
         ranges[prefix + "EnvelopeAmount"] = ParameterRange(-5.0f, 20.0f);
-        ranges[prefix + "LFOShape"] = ParameterRange(1.0f, 3.0f);
+        ranges[prefix + "LFOShape"] = ParameterRange(1.0f, 4.0f);
         ranges[prefix + "LFORate"] = ParameterRange(0.05f, 1000.0f);
         ranges[prefix + "LFOAmount"] = ParameterRange(-5.0f, 5.0f);
         ranges["input_f" + juce::String(i)] = ParameterRange(0.5f, 30.0f);

@@ -298,6 +298,14 @@ private:
     juce::String currentPatchName;
     juce::Label patchCommentLabel;
 
+    // Master controls in patch bar
+    juce::Slider masterVolumeSlider;
+    juce::Label masterVolumeLabel;
+    juce::Label transposeLabel;
+    juce::Label transposeValue;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterVolumeAttachment;
+
     void loadPatchButtonClicked();
     void savePatchButtonClicked();
    

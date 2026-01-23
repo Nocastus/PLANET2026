@@ -383,10 +383,23 @@ float PLANETVoice::generateLFOWaveform(double phase, float shape)
     }
     case 3: // Square
         return (sineLUT.lookup(phase) >= 0.0f) ? 1.0f : -1.0f;
+    case 4: // Random (sample & hold)
+    {
+        // Generate new random value at each LFO cycle (when phase wraps)
+        // Use phase to detect cycle boundaries - output changes once per cycle
+        double normalizedPhase = phase / (2.0 * juce::MathConstants<double>::pi);
+        normalizedPhase = normalizedPhase - std::floor(normalizedPhase);
+
+        // Simple hash based on phase cycle count for deterministic randomness
+        uint32_t cycleCount = (uint32_t)(phase / (2.0 * juce::MathConstants<double>::pi));
+        uint32_t hash = cycleCount * 1664525u + 1013904223u;  // LCG constants
+        return ((hash & 0xFFFF) / 32767.5f) - 1.0f;  // -1 to +1
+    }
     default:
         return sineLUT.lookup(phase);
     }
 }
+
 
 float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel,
     double deltaTime, float attackTime, float decayTime,

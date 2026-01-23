@@ -8,7 +8,7 @@
 #include "PluginEditor.h"
 
 
-//==============================================================================
+//==============================================================================CONSTRUCTOR STARTS HERE
 // Here is the Constructor (THE BIG ONE - 101 parameters!)
 PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
@@ -109,16 +109,16 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
 
             // ======================== LFO SHAPE PARAMETERS (10) ========================
-            std::make_unique<juce::AudioParameterFloat>("k1LFOShape", "K1 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k2LFOShape", "K2 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k3LFOShape", "K3 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k4LFOShape", "K4 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k5LFOShape", "K5 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k6LFOShape", "K6 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k7LFOShape", "K7 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k8LFOShape", "K8 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k9LFOShape", "K9 LFO Shape", 1.0f, 3.0f, 1.0f),
-            std::make_unique<juce::AudioParameterFloat>("k10LFOShape", "K10 LFO Shape", 1.0f, 3.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k1LFOShape", "K1 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2LFOShape", "K2 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3LFOShape", "K3 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4LFOShape", "K4 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5LFOShape", "K5 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6LFOShape", "K6 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7LFOShape", "K7 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8LFOShape", "K8 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9LFOShape", "K9 LFO Shape", 1.0f, 4.0f, 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10LFOShape", "K10 LFO Shape", 1.0f, 4.0f, 1.0f),
 
             // ======================== LFO RATE PARAMETERS (10 - EXISTING) ========================
             // Using skew factor 0.2 to give more precision in the useful 0.05-10 Hz range
@@ -209,6 +209,10 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 std::make_unique<juce::AudioParameterFloat>("warmth", "Warmth", 0.0f, 1.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("punch", "Punch", 0.0f, 1.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("punchFrequency", "Punch Frequency", 500.0f, 5000.0f, 1800.0f),
+              
+            // ======================== MASTER CONTROLS ========================
+                std::make_unique<juce::AudioParameterFloat>("masterVolume", "Master Volume", 0.0f, 1.0f, 0.8f),
+                std::make_unique<juce::AudioParameterFloat>("transpose", "Transpose", -24.0f, 24.0f, 0.0f),
 
         })
 #endif
@@ -245,6 +249,10 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     warmthParameter = parameters.getRawParameterValue("warmth");
     punchParameter = parameters.getRawParameterValue("punch");
     punchFrequencyParameter = parameters.getRawParameterValue("punchFrequency");
+
+    // ======================== INITIALIZE MASTER CONTROL POINTERS ========================
+    masterVolumeParameter = parameters.getRawParameterValue("masterVolume");
+    transposeParameter = parameters.getRawParameterValue("transpose");
 
 
 
@@ -518,20 +526,28 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             float velocity = message.getVelocity() / 127.0f;
             if (velocity > 0.0f)
             {
+                // Apply transpose to incoming MIDI note
+                int transposedNote = message.getNoteNumber() + (int)transposeParameter->load();
+                transposedNote = juce::jlimit(0, 127, transposedNote);
+
                 // Convert current pitch wheel to semitones
                 float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
 
-                voiceManager.startNote(message.getNoteNumber(), velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
+                voiceManager.startNote(transposedNote, velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
                     velToAmplitude, brillianceParameter->load());
             }
             else
             {
-                voiceManager.stopNote(message.getNoteNumber(), sustainPedalDown);
+                int transposedNote = message.getNoteNumber() + (int)transposeParameter->load();
+                transposedNote = juce::jlimit(0, 127, transposedNote);
+                voiceManager.stopNote(transposedNote, sustainPedalDown);
             }
         }
         else if (message.isNoteOff())
         {
-            voiceManager.stopNote(message.getNoteNumber(), sustainPedalDown);
+            int transposedNote = message.getNoteNumber() + (int)transposeParameter->load();
+            transposedNote = juce::jlimit(0, 127, transposedNote);
+            voiceManager.stopNote(transposedNote, sustainPedalDown);
         }
         else if (message.isController())
         {
@@ -653,14 +669,18 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         // Process through effects chain
         auto stereoOutput = effects.processStereoSample(mixedSample);
 
-        // Apply to output channels with volume scaling
+        // Get master volume
+        float masterVol = masterVolumeParameter->load();
+
+        // Apply to output channels
+        // Note: Voice manager already applies 0.25 scaling for polyphony headroom
         if (totalNumOutputChannels >= 1) {
             auto* leftData = buffer.getWritePointer(0);
-            leftData[sample] = stereoOutput.first * 0.125f;
+            leftData[sample] = stereoOutput.first * masterVol;
         }
         if (totalNumOutputChannels >= 2) {
             auto* rightData = buffer.getWritePointer(1);
-            rightData[sample] = stereoOutput.second * 0.125f;
+            rightData[sample] = stereoOutput.second * masterVol;
         }
     }
 

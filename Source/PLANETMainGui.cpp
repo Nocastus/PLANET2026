@@ -99,6 +99,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoShapeCombo.addItem("Sine", 1);
     lfoShapeCombo.addItem("Triangle", 2);
     lfoShapeCombo.addItem("Square", 3);
+    lfoShapeCombo.addItem("Random", 4);
     lfoShapeCombo.setSelectedId(1);
     addAndMakeVisible(lfoShapeCombo);
 
@@ -567,6 +568,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     apvts.addParameterListener("velToAmplitude", this);
     apvts.addParameterListener("velToAttackTime", this);
     apvts.addParameterListener("vintageAmount", this);
+    apvts.addParameterListener("transpose", this);
 
     // Register as listener for envelope depth parameters (K1-K10)
     for (int i = 1; i <= 10; ++i)
@@ -611,6 +613,46 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     patchCommentLabel.setJustificationType(juce::Justification::centredLeft);
     patchCommentLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.6f));
     addAndMakeVisible(patchCommentLabel);
+
+    // Master volume slider (horizontal)
+    masterVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    masterVolumeSlider.setRange(0.0, 1.0, 0.01);
+    masterVolumeSlider.setValue(0.8);
+    masterVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    masterVolumeSlider.setDoubleClickReturnValue(true, 0.8);
+    addAndMakeVisible(masterVolumeSlider);
+
+    masterVolumeLabel.setText("Vol", juce::dontSendNotification);
+    masterVolumeLabel.setJustificationType(juce::Justification::centredRight);
+    masterVolumeLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.7f));
+    addAndMakeVisible(masterVolumeLabel);
+
+    // Transpose control (editable numeric)
+    transposeLabel.setText("Trans", juce::dontSendNotification);
+    transposeLabel.setJustificationType(juce::Justification::centredRight);
+    transposeLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.7f));
+    addAndMakeVisible(transposeLabel);
+
+    transposeValue.setText("0", juce::dontSendNotification);
+    transposeValue.setJustificationType(juce::Justification::centred);
+    transposeValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    transposeValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    transposeValue.setColour(juce::Label::outlineColourId, juce::Colours::grey);
+    transposeValue.setEditable(true);
+    addAndMakeVisible(transposeValue);
+
+    // Wire up transpose editing
+    transposeValue.onTextChange = [this]() {
+        int newVal = transposeValue.getText().getIntValue();
+        newVal = juce::jlimit(-24, 24, newVal);
+        if (auto* param = apvts.getParameter("transpose"))
+            param->setValueNotifyingHost(param->convertTo0to1((float)newVal));
+        transposeValue.setText(juce::String(newVal), juce::dontSendNotification);
+        };
+
+    // Attachments
+    masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "masterVolume", masterVolumeSlider);
 
     addAndMakeVisible(waveformDisplay);
 
@@ -673,6 +715,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // Patch bar
     styleLabel(currentPatchLabel);
     styleLabel(patchCommentLabel, true);
+    styleLabel(masterVolumeLabel);
+    styleLabel(transposeLabel);
+    styleLabel(transposeValue, true);
+
 
     setSize(1400, 800);
     updateDrawbarColors();
@@ -712,6 +758,7 @@ PLANETMainGui::~PLANETMainGui()
     apvts.removeParameterListener("velToAmplitude", this);
     apvts.removeParameterListener("velToAttackTime", this);
     apvts.removeParameterListener("vintageAmount", this);
+    apvts.removeParameterListener("transpose", this);
 
     // Remove listeners for envelope depth parameters (K1-K10)
     for (int i = 1; i <= 10; ++i)
@@ -1004,10 +1051,10 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 3 - 10 - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
     g.drawText("EFFECTS", rightX, mainHeight - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
 
-    // ISHTAR name - bottom right of patch bar
+    // ISHTAR name - aligned with left/right column divider
     g.setColour(accentColour.withAlpha(0.9f));
     g.setFont(amarnaSemiBold.withHeight(30.0f));
-    g.drawText("ISHTAR", bounds.getWidth() - 320, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::right);
+    g.drawText("ISHTAR", leftWidth + 10, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::left);
 
     // Draw effective brilliance indicator (only when mod wheel is engaged and not at center)
     if (rawModWheelValue != nullptr && modWheelEngaged != nullptr && brillianceSliderBounds.getWidth() > 0)
@@ -1348,10 +1395,23 @@ void PLANETMainGui::resized()
     int patchNameWidth = 150;
     currentPatchLabel.setBounds(patchNameX, buttonY, patchNameWidth, buttonHeight);
 
-    // Comment takes remaining space (leave 200px for version label on right)
+    // Comment takes space up to ISHTAR label
     int commentX = patchNameX + patchNameWidth + 10;
-    int commentWidth = bounds.getWidth() - commentX - 200;
+    int commentWidth = leftWidth - commentX - 10;
     patchCommentLabel.setBounds(commentX, buttonY, commentWidth, buttonHeight);
+
+    // ISHTAR name is drawn in paint() at leftWidth + 10
+    // Master controls to the right of ISHTAR
+    int masterControlsX = leftWidth + 120;  // After "ISHTAR" text
+
+    // Transpose: label + value box
+    transposeLabel.setBounds(masterControlsX, buttonY, 40, buttonHeight);
+    transposeValue.setBounds(masterControlsX + 42, buttonY + 2, 40, buttonHeight - 4);
+
+    // Volume: label + slider
+    int volX = masterControlsX + 100;
+    masterVolumeLabel.setBounds(volX, buttonY, 30, buttonHeight);
+    masterVolumeSlider.setBounds(volX + 32, buttonY + 4, 100, buttonHeight - 8);
 
 }
 
@@ -1691,6 +1751,10 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
     }
     if (parameterID == "vintageAmount") {
         vintageValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
+        return;
+    }
+    if (parameterID == "transpose") {
+        transposeValue.setText(juce::String((int)newValue), juce::dontSendNotification);
         return;
     }
 

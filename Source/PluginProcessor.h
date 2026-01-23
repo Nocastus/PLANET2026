@@ -148,6 +148,10 @@ private:
     std::atomic<float>* punchParameter = nullptr;
     std::atomic<float>* punchFrequencyParameter = nullptr;
 
+    // ======================== MASTER CONTROLS ========================
+    std::atomic<float>* masterVolumeParameter = nullptr;
+    std::atomic<float>* transposeParameter = nullptr;
+
 
 
 
