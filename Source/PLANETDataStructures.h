@@ -181,12 +181,17 @@ struct ModulationState {
     double envTime = 0.0;
     float envLevel = 0.0f;
     float releaseStartLevel = 0.0f;
+    float randomLfoValue = 0.0f;  // Stored value for sample-and-hold random LFO
 
     void reset() {
         lfoPhase = 0.0;
         envStage = EnvelopeStage::Attack;
         envTime = 0.0;
         envLevel = 0.0f;
+        // Generate initial random value
+        static uint32_t seed = 12345;
+        seed = seed * 1664525u + 1013904223u;
+        randomLfoValue = ((seed & 0xFFFF) / 32767.5f) - 1.0f;
     }
 };
 

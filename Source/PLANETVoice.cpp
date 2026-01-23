@@ -240,8 +240,13 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             if (globalParams[i].lfoAmount != 0.0f) {
                 double lfoPhaseAdvance = 2.0 * juce::MathConstants<double>::pi * globalParams[i].lfoRate * cycleDeltaTime;
                 coeffModStates[i].lfoPhase += lfoPhaseAdvance;
-                if (coeffModStates[i].lfoPhase >= twoPi)
+                if (coeffModStates[i].lfoPhase >= twoPi) {
                     coeffModStates[i].lfoPhase -= twoPi;
+                    // Generate new random value on phase wrap (for sample-and-hold)
+                    static uint32_t seed = 12345;
+                    seed = seed * 1664525u + 1013904223u;
+                    coeffModStates[i].randomLfoValue = ((seed & 0xFFFF) / 32767.5f) - 1.0f;
+                }
             }
         }
 
@@ -269,7 +274,14 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
 
             // Calculate LFO modulation with envelope-based fade-in
             if (globalParams[i].lfoAmount != 0.0f) {
-                float lfoValue = generateLFOWaveform(coeffModStates[i].lfoPhase, globalParams[i].lfoShape);
+                float lfoValue;
+                if ((int)globalParams[i].lfoShape == 4) {
+                    // Random: use stored sample-and-hold value
+                    lfoValue = coeffModStates[i].randomLfoValue;
+                }
+                else {
+                    lfoValue = generateLFOWaveform(coeffModStates[i].lfoPhase, globalParams[i].lfoShape);
+                }
 
                 // Scale LFO amount based on envelope stage for fade-in effect
                 // Attack = delay (LFO silent), Decay = fade-in, Sustain+ = full LFO
@@ -290,6 +302,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
 
                 finalCoeff += lfoValue * globalParams[i].lfoAmount * lfoScale;
             }
+        
 
             // Apply per-drawbar velocity to harmonic scaling
             float velScale = 1.0f + (noteVelocity - 0.5f) * 2.0f * (globalParams[i].velToHarmonic / 100.0f);
@@ -383,18 +396,8 @@ float PLANETVoice::generateLFOWaveform(double phase, float shape)
     }
     case 3: // Square
         return (sineLUT.lookup(phase) >= 0.0f) ? 1.0f : -1.0f;
-    case 4: // Random (sample & hold)
-    {
-        // Generate new random value at each LFO cycle (when phase wraps)
-        // Use phase to detect cycle boundaries - output changes once per cycle
-        double normalizedPhase = phase / (2.0 * juce::MathConstants<double>::pi);
-        normalizedPhase = normalizedPhase - std::floor(normalizedPhase);
-
-        // Simple hash based on phase cycle count for deterministic randomness
-        uint32_t cycleCount = (uint32_t)(phase / (2.0 * juce::MathConstants<double>::pi));
-        uint32_t hash = cycleCount * 1664525u + 1013904223u;  // LCG constants
-        return ((hash & 0xFFFF) / 32767.5f) - 1.0f;  // -1 to +1
-    }
+    case 4: // Random - handled externally, this is fallback
+        return 0.0f;
     default:
         return sineLUT.lookup(phase);
     }
