@@ -185,35 +185,6 @@ float PLANETEffects::WarmthProcessor::process(float input)
     return output;
 }
 
-// float PLANETEffects::WarmthProcessor::process(float input)
-//{
-    // Always apply low shelf
- //   float output = lowShelfFilter.processSample(input);
-
-    // Apply tape saturation starting from 50% (gradual introduction)
-//    if (warmthAmount > 0.5f)
-//    {
-//        // Saturation amount scales from 0-1 in upper half (50-100%)
-//        float saturationAmount = (warmthAmount - 0.5f) * 2.0f;
-
-        // Pre-emphasis
-        // output = preEmphasisFilter.processSample(output);
-
-        // Tape distortion with your adjusted drive (coefficient 1.2)
-  //      output = tapeDistortion(output, saturationAmount);
-
-        // De-emphasis
-        // output = deEmphasisFilter.processSample(output);
-
-        // Gain compensation: -3dB at 51% scaling to -10dB at 100%
- //       float compensationDB = -3.0f - (saturationAmount * 7.0f);
-  //      float compensationGain = juce::Decibels::decibelsToGain(compensationDB);
-   //     output *= compensationGain;
-  //  }
-
-//    return output;
-//}
-
 float PLANETEffects::WarmthProcessor::tapeDistortion(float input, float drive)
 {
     // Increased drive range: 1.0 - 5.0 (was 1.0 - 3.0)

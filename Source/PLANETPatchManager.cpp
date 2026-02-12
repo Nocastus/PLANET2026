@@ -129,7 +129,9 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
     markdown << "# SustainLevel = 0.0 to 2.0\n";
     markdown << "# ReleaseTime = 0.001 to 10.0\n";
     markdown << "# LFOShape = 1, 2, or 3 (Sine, Triangle, Square)\n";
-    markdown << "# LFORate = 0.05 to 1000.0\n\n";
+    markdown << "# LFORate = 0.05 to 1000.0\n";
+    markdown << "# LFOSync = 0 (Free) or 1 (Tempo Sync)\n";
+    markdown << "# LFOSyncDiv = 0-12 (4/1, 2/1, 1/1, 1/2., 1/2, 1/2T, 1/4., 1/4, 1/4T, 1/8., 1/8, 1/8T, 1/16)\n\n";
     markdown << "# VelToHarmonic = -100 to 100\n";
 
     // Generate all 10 drawbar sections
@@ -148,7 +150,9 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
             "k" + drawbarNum + "SustainLevel",
             "k" + drawbarNum + "ReleaseTime",
             "k" + drawbarNum + "LFOShape",
-            "k" + drawbarNum + "LFORate"
+            "k" + drawbarNum + "LFORate",
+            "k" + drawbarNum + "LFOSync",
+            "k" + drawbarNum + "LFOSyncDiv"
         };
 
         for (const auto& paramID : drawbarParams) {
@@ -412,6 +416,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "LFOAmount"] = ParameterRange(-5.0f, 5.0f);
         ranges["input_f" + juce::String(i)] = ParameterRange(0.5f, 30.0f);
         ranges[prefix + "VelToHarmonic"] = ParameterRange(-100.0f, 100.0f);
+        ranges[prefix + "LFOSync"] = ParameterRange(0.0f, 1.0f);
+        ranges[prefix + "LFOSyncDiv"] = ParameterRange(0.0f, 12.0f);
     }
 
     return ranges;
@@ -419,7 +425,7 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
 
 juce::String PLANETPatchManager::formatParameterValue(float value, const juce::String& parameterID) {
     // Integer parameters
-    if (parameterID.contains("LFOShape") || parameterID == "punchFrequency") {
+    if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv") || parameterID == "punchFrequency") {
         return juce::String((int)value);
     }
 

@@ -10,6 +10,24 @@
 #include <array>
 
 constexpr int NUM_COEFFICIENTS = 10;  // K1 through K10
+constexpr int NUM_SYNC_DIVISIONS = 13;
+
+// LFO Tempo Sync division lookup tables
+static constexpr float SYNC_DIVISION_BEATS[NUM_SYNC_DIVISIONS] = {
+    16.0f, 8.0f, 4.0f, 3.0f, 2.0f, 1.3333f, 1.5f, 1.0f, 0.6667f, 0.75f, 0.5f, 0.3333f, 0.25f
+};
+
+static const char* const SYNC_DIVISION_NAMES[NUM_SYNC_DIVISIONS] = {
+    "4/1", "2/1", "1/1", "1/2.", "1/2", "1/2T", "1/4.", "1/4", "1/4T", "1/8.", "1/8", "1/8T", "1/16"
+};
+
+// Convert sync division index + BPM to LFO rate in Hz
+inline float syncDivisionToHz(float divIndex, double bpm) {
+    int idx = juce::jlimit(0, NUM_SYNC_DIVISIONS - 1, (int)divIndex);
+    float beatsPerCycle = SYNC_DIVISION_BEATS[idx];
+    float secondsPerCycle = beatsPerCycle * (60.0f / (float)bpm);
+    return 1.0f / secondsPerCycle;
+}
 
 //==============================================================================
 // SINGLE COEFFICIENT PARAMETER SET
@@ -27,7 +45,9 @@ struct CoefficientParams {
     std::atomic<float>* lfoRatePtr = nullptr;
     std::atomic<float>* lfoAmountPtr = nullptr;
     std::atomic<float>* inputSpectralMultiplierPtr = nullptr;  
-    std::atomic<float>* velToHarmonicPtr = nullptr;     // NEW: Per-drawbar velocity to harmonic
+    std::atomic<float>* velToHarmonicPtr = nullptr;     // Per-drawbar velocity to harmonic
+    std::atomic<float>* lfoSyncPtr = nullptr;            // LFO tempo sync on/off (0=free, 1=synced)
+    std::atomic<float>* lfoSyncDivPtr = nullptr;         // LFO sync division index (0-12)
 
     // Active values (cached at zero-crossings)
     float coefficient = 0.0f;
@@ -41,7 +61,9 @@ struct CoefficientParams {
     float lfoAmount = 0.0f;
     float inputSpectralMultiplier = 1.0f;    // NEW: User input value (integer)
     float spectralMultiplier = 1.0f;        // NEW: Effective value (input + LFO)
-    float velToHarmonic = 0.0f;                         // NEW: -100 to +100
+    float velToHarmonic = 0.0f;                         // -100 to +100
+    float lfoSync = 0.0f;                               // 0=free, 1=synced to tempo
+    float lfoSyncDiv = 7.0f;                            // Sync division index (default 7 = 1/4 note)
 
     // Initialize parameter pointers for this coefficient
     void initializePointers(juce::AudioProcessorValueTreeState& apvts, int coeffIndex) {
@@ -58,6 +80,8 @@ struct CoefficientParams {
         lfoAmountPtr = apvts.getRawParameterValue(prefix + "LFOAmount");
         inputSpectralMultiplierPtr = apvts.getRawParameterValue("input_f" + std::to_string(coeffIndex + 1));
         velToHarmonicPtr = apvts.getRawParameterValue(prefix + "VelToHarmonic");
+        lfoSyncPtr = apvts.getRawParameterValue(prefix + "LFOSync");
+        lfoSyncDivPtr = apvts.getRawParameterValue(prefix + "LFOSyncDiv");
     }
 
     // Update active values from parameter pointers
@@ -73,6 +97,8 @@ struct CoefficientParams {
         if (lfoAmountPtr) lfoAmount = lfoAmountPtr->load();
         if (inputSpectralMultiplierPtr) inputSpectralMultiplier = std::round(inputSpectralMultiplierPtr->load() * 2.0f) / 2.0f; // Round to nearest 0.5
         if (velToHarmonicPtr) velToHarmonic = velToHarmonicPtr->load();
+        if (lfoSyncPtr) lfoSync = lfoSyncPtr->load();
+        if (lfoSyncDivPtr) lfoSyncDiv = lfoSyncDivPtr->load();
     }
 
     // NEW: Update effective spectral multiplier with LFO modulation

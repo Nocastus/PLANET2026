@@ -132,6 +132,10 @@ private:
     float currentPitchWheelValue = 0.0f;  // -1.0 to +1.0 range
     float pitchWheelRange = 2.0f;         // }2 semitones (standard)
 
+    // DAW tempo for LFO sync
+    double currentBPM = 120.0;
+    double currentBeatPosition = 0.0;  // Current position in beats from DAW transport
+
     // for Vibrato:
     std::atomic<float>* vibratoRateParameter = nullptr;        // Hz
     std::atomic<float>* vibratoDepthParameter = nullptr;       // Semitones
@@ -156,16 +160,6 @@ private:
 
 
     // ======================== ENVELOPE STATE VARIABLES (NEW) ===================================================================================================================================================
-
-
-
-    // Helper functions for LFO and envelope processing
-    float generateLFOWaveform(double phase, float shape);
-    float processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel, double deltaTime,
-        float attackTime, float decayTime, float sustainLevel, float releaseTime, bool noteOn);
-
-    // Phase distortion function (uses active coefficients including envelope + LFO modulation)
-    double applyPhaseDistortion(double normalizedPhase);
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETtest4AudioProcessor)

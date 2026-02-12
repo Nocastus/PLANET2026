@@ -88,7 +88,8 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
     float pitchWheelOffset,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
-    float pitchEnvDistance, float pitchAttackTime)
+    float pitchEnvDistance, float pitchAttackTime,
+    double bpm, double beatPosition)
 
 {  // Opening brace
     float mixedSample = 0.0f;
@@ -103,7 +104,8 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
                 pitchWheelOffset,
                 vibratoRate, vibratoDepth, vibratoFadeIn,
                 velToAmplitude, velToAttackTime, vintageAmount,
-                pitchEnvDistance, pitchAttackTime);
+                pitchEnvDistance, pitchAttackTime,
+                bpm, beatPosition);
 
             // Capture first voice for waveform display
             if (!firstVoiceCaptured) {
@@ -155,16 +157,6 @@ bool PLANETVoiceManager::getFirstVoiceCycleStart() const
         }
     }
     return false;
-}
-
-void PLANETVoiceManager::clearFinishedVoices()
-{
-    // Clean up voices that should be removed (envelope finished, etc.)
-    for (auto& voice : voices) {
-        if (voice.shouldBeRemoved()) {
-            // Voice will naturally become inactive
-        }
-    }
 }
 
 //==============================================================================

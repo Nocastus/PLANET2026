@@ -86,10 +86,7 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
         modState.envLevel = 0.0f;
     }
 
-    // NEW: Add these lines just before the closing brace }
     cachedVelocityAmplitude = std::pow(velocity, velToAmplitude / 100.0f);
-    // Cache only the velocity scaling component (once per note)
-    // cachedVelocityBrillianceOffset = (velocity - 0.63f) * (velToBrilliance / 100.0f);
 
 }
 
@@ -155,7 +152,8 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float pitchWheelOffset,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
-    float pitchEnvDistance, float pitchAttackTime)
+    float pitchEnvDistance, float pitchAttackTime,
+    double bpm, double beatPosition)
 {
     auto twoPi = 2.0 * juce::MathConstants<double>::pi;
     cycleStartFlag = false;
@@ -212,7 +210,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         // Calculate vibrato contribution (use LUT for performance)
         const auto& sineLUT = SineLUT::getInstance();
         float vibratoLFOValue = sineLUT.lookup(vibratoState.lfoPhase);
-        float effectiveVibratoDepth = vibratoDepth * vibratoState.fadeInLevel * modWheelScale;
+        float effectiveVibratoDepth = vibratoDepth * vibratoState.fadeInLevel;
         float vibratoOffset = vibratoLFOValue * effectiveVibratoDepth;
 
         // ======================== PITCH ATTACK ENVELOPE ========================
@@ -247,17 +245,39 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         // Recalculate cycleDeltaTime with new modulated frequency
         cycleDeltaTime = 1.0 / currentFrequency;
 
-        // Advance K coefficient LFO phases (using same logic as vibrato)
+        // Advance K coefficient LFO phases
         for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
             if (globalParams[i].lfoAmount != 0.0f) {
-                double lfoPhaseAdvance = 2.0 * juce::MathConstants<double>::pi * globalParams[i].lfoRate * cycleDeltaTime;
-                coeffModStates[i].lfoPhase += lfoPhaseAdvance;
-                if (coeffModStates[i].lfoPhase >= twoPi) {
-                    coeffModStates[i].lfoPhase -= twoPi;
-                    // Generate new random value on phase wrap (for sample-and-hold)
-                    static uint32_t seed = 12345;
-                    seed = seed * 1664525u + 1013904223u;
-                    coeffModStates[i].randomLfoValue = ((seed & 0xFFFF) / 32767.5f) - 1.0f;
+
+                if (globalParams[i].lfoSync > 0.5f && bpm > 0.0) {
+                    // SYNC MODE: Calculate phase directly from DAW beat position
+                    // This locks the LFO to barlines regardless of time signature
+                    int divIdx = juce::jlimit(0, NUM_SYNC_DIVISIONS - 1, (int)globalParams[i].lfoSyncDiv);
+                    float beatsPerCycle = SYNC_DIVISION_BEATS[divIdx];
+                    double cyclePosition = std::fmod(beatPosition / beatsPerCycle, 1.0);
+                    if (cyclePosition < 0.0) cyclePosition += 1.0;  // Handle negative beat positions
+                    double newPhase = cyclePosition * twoPi;
+
+                    // Detect phase wrap for random LFO sample-and-hold
+                    if (newPhase < coeffModStates[i].lfoPhase - juce::MathConstants<double>::pi) {
+                        static uint32_t seed = 12345;
+                        seed = seed * 1664525u + 1013904223u;
+                        coeffModStates[i].randomLfoValue = ((seed & 0xFFFF) / 32767.5f) - 1.0f;
+                    }
+
+                    coeffModStates[i].lfoPhase = newPhase;
+                }
+                else {
+                    // FREE MODE: Accumulate phase at Hz rate (original behaviour)
+                    double lfoPhaseAdvance = twoPi * globalParams[i].lfoRate * cycleDeltaTime;
+                    coeffModStates[i].lfoPhase += lfoPhaseAdvance;
+                    if (coeffModStates[i].lfoPhase >= twoPi) {
+                        coeffModStates[i].lfoPhase -= twoPi;
+                        // Generate new random value on phase wrap (for sample-and-hold)
+                        static uint32_t seed = 12345;
+                        seed = seed * 1664525u + 1013904223u;
+                        coeffModStates[i].randomLfoValue = ((seed & 0xFFFF) / 32767.5f) - 1.0f;
+                    }
                 }
             }
         }

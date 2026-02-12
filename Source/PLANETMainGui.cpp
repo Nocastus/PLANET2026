@@ -103,10 +103,28 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoShapeCombo.setSelectedId(1);
     addAndMakeVisible(lfoShapeCombo);
 
-    lfoShapeLabel.setText("LFO Shape", juce::dontSendNotification);
+    lfoShapeLabel.setText("Shape", juce::dontSendNotification);
     lfoShapeLabel.setJustificationType(juce::Justification::centredRight);
     lfoShapeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(lfoShapeLabel);
+
+    // Set up LFO sync dropdown (Free / Sync)
+    lfoSyncCombo.addItem("Free", 1);
+    lfoSyncCombo.addItem("Sync", 2);
+    lfoSyncCombo.setSelectedId(1);
+    lfoSyncCombo.onChange = [this]() {
+        bool syncOn = (lfoSyncCombo.getSelectedId() == 2);
+        if (syncOn != currentSyncMode) {
+            currentSyncMode = syncOn;
+            updateLfoSyncMode();
+        }
+    };
+    addAndMakeVisible(lfoSyncCombo);
+
+    lfoSyncLabel.setText("Tempo", juce::dontSendNotification);
+    lfoSyncLabel.setJustificationType(juce::Justification::centredRight);
+    lfoSyncLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(lfoSyncLabel);
 
     // Set up LFO speed knob
     lfoSpeedKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -1235,19 +1253,22 @@ void PLANETMainGui::resized()
     lfoDepthLabel.setBounds(base2X, baseY, smallKnobSize, 16);
     lfoDepthKnob.setBounds(base2X, baseY + 16, smallKnobSize, smallKnobSize);
 
-    // LFO Shape combo below the base knobs and their values
+    // LFO Shape and Sync combos below the base knobs and their values
 
     lfoSpeedValue.setBounds(base1X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
     lfoDepthValue.setBounds(base2X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
     int comboY = baseY + 16 + smallKnobSize + smallKnobValueHeight + 5;
-    int comboWidth = (lfoZoneWidth - 30) / 2;
-    lfoShapeLabel.setBounds(lfoZoneX + 10, comboY, comboWidth - 5, 22);
-    lfoShapeCombo.setBounds(lfoZoneX + 10 + comboWidth, comboY, comboWidth, 22);
+    int comboHalfWidth = (lfoZoneWidth - 30) / 2;
+    int comboLabelW = 40;
 
-    // Define knob1X, knob2X, knobSize for Amplitude section below (legacy layout)
-    int knob1X = base1X;
-    int knob2X = base2X;
-    // knobSize already defined as 80, keep that for Amplitude zone centering
+    // Shape combo (left half)
+    lfoShapeLabel.setBounds(lfoZoneX + 5, comboY, comboLabelW, 22);
+    lfoShapeCombo.setBounds(lfoZoneX + 5 + comboLabelW, comboY, comboHalfWidth - comboLabelW + 5, 22);
+
+    // Sync combo (right half)
+    int syncX = lfoZoneX + 10 + comboHalfWidth;
+    lfoSyncLabel.setBounds(syncX, comboY, comboLabelW, 22);
+    lfoSyncCombo.setBounds(syncX + comboLabelW, comboY, comboHalfWidth - comboLabelW + 5, 22);
 
     // ======================== AMPLITUDE ADSR SECTION ========================
     int ampHeight = harmonicAndAmpHeight - harmonicHeight;
@@ -1672,22 +1693,35 @@ void PLANETMainGui::bindToSelectedDrawbar()
     currentHarmonicParamIDs[2] = prefix + "SustainLevel";
     currentHarmonicParamIDs[3] = prefix + "ReleaseTime";
     
+    // CRITICAL: Reset attachments BEFORE creating new ones
     lfoSpeedAttachment.reset();
+    lfoSyncDivAttachment.reset();
     lfoDepthAttachment.reset();
     lfoShapeAttachment.reset();
+    lfoSyncAttachment.reset();
     envDepthAttachment.reset();
     velToDrawbarAttachment.reset();
 
-    lfoSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        apvts, prefix + "LFORate", lfoSpeedKnob);
+    // Read sync state for the newly selected drawbar BEFORE creating attachments
+    bool syncOn = false;
+    if (auto* syncParam = apvts.getRawParameterValue(prefix + "LFOSync"))
+        syncOn = syncParam->load() > 0.5f;
+    currentSyncMode = syncOn;
+
+    // Create non-speed attachments
     lfoDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "LFOAmount", lfoDepthKnob);
     lfoShapeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         apvts, prefix + "LFOShape", lfoShapeCombo);
+    lfoSyncAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        apvts, prefix + "LFOSync", lfoSyncCombo);
     envDepthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "EnvelopeAmount", envDepthKnob);
     velToDrawbarAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "VelToHarmonic", velToDrawbarKnob);
+
+    // Bind speed knob to correct parameter based on sync mode
+    updateLfoSyncMode();
     
     if (auto* param = apvts.getParameter(currentHarmonicParamIDs[0]))
         adsrValues[selectedDrawbar][0] = param->convertFrom0to1(param->getValue());
@@ -1706,6 +1740,56 @@ void PLANETMainGui::bindToSelectedDrawbar()
 
     if (auto* param = apvts.getParameter(prefix + "VelToHarmonic"))
         velToDrawbarValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+}
+
+void PLANETMainGui::updateLfoSyncMode()
+{
+    juce::String prefix = "k" + juce::String(selectedDrawbar + 1);
+
+    // Always detach speed knob first
+    lfoSpeedAttachment.reset();
+    lfoSyncDivAttachment.reset();
+
+    if (currentSyncMode) {
+        // SYNC MODE: Speed knob becomes division selector (0-12, integer steps)
+        lfoSpeedKnob.setRange(0.0, 12.0, 1.0);
+        lfoSpeedKnob.setSkewFactor(1.0);  // Linear for discrete steps
+
+        // Bind to sync division parameter
+        lfoSyncDivAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            apvts, prefix + "LFOSyncDiv", lfoSpeedKnob);
+
+        lfoSpeedLabel.setText("Div", juce::dontSendNotification);
+
+        // Update value label to show division name
+        lfoSpeedKnob.onValueChange = [this]() {
+            int divIndex = juce::jlimit(0, NUM_SYNC_DIVISIONS - 1, (int)lfoSpeedKnob.getValue());
+            lfoSpeedValue.setText(SYNC_DIVISION_NAMES[divIndex], juce::dontSendNotification);
+        };
+
+        // Set initial value display
+        int divIndex = juce::jlimit(0, NUM_SYNC_DIVISIONS - 1, (int)lfoSpeedKnob.getValue());
+        lfoSpeedValue.setText(SYNC_DIVISION_NAMES[divIndex], juce::dontSendNotification);
+    }
+    else {
+        // FREE MODE: Speed knob is Hz rate (original behaviour)
+        lfoSpeedKnob.setRange(0.05, 20.0, 0.01);
+        lfoSpeedKnob.setSkewFactor(0.5);  // More precision in low range
+
+        // Bind to LFO rate parameter
+        lfoSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            apvts, prefix + "LFORate", lfoSpeedKnob);
+
+        lfoSpeedLabel.setText("Speed", juce::dontSendNotification);
+
+        // Update value label to show Hz
+        lfoSpeedKnob.onValueChange = [this]() {
+            lfoSpeedValue.setText(juce::String(lfoSpeedKnob.getValue(), 2), juce::dontSendNotification);
+        };
+
+        // Set initial value display
+        lfoSpeedValue.setText(juce::String(lfoSpeedKnob.getValue(), 2), juce::dontSendNotification);
+    }
 }
 
 void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newValue)

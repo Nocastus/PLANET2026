@@ -224,11 +224,14 @@ private:
 
     // Harmonic LFO controls
     juce::ComboBox lfoShapeCombo;
+    juce::ComboBox lfoSyncCombo;
     juce::Slider lfoSpeedKnob;
     juce::Slider lfoDepthKnob;
-    juce::Label lfoShapeLabel, lfoSpeedLabel, lfoDepthLabel;
+    juce::Label lfoShapeLabel, lfoSyncLabel, lfoSpeedLabel, lfoDepthLabel;
     juce::Label selectedFDisplay;
-    juce::Label lfoSpeedValue, lfoDepthValue; // JUST ADDED THESE - Now seeking clarification for next steps
+    juce::Label lfoSpeedValue, lfoDepthValue;
+    bool currentSyncMode = false;  // Track whether speed knob is in sync mode
+    void updateLfoSyncMode();      // Switch speed knob between Hz and sync division modes
 
 
     // Envelope depth control
@@ -339,6 +342,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoDepthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoSyncAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSyncDivAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velToDrawbarAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)

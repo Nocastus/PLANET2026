@@ -46,11 +46,11 @@ public:
         float pitchWheelOffset,
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
-        float pitchEnvDistance, float pitchAttackTime);
+        float pitchEnvDistance, float pitchAttackTime,
+        double bpm, double beatPosition);
 
     // Voice management
     int getActiveVoiceCount() const;
-    void clearFinishedVoices();
 
 private:
     // Voice pool

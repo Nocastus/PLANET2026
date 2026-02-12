@@ -167,7 +167,42 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 std::make_unique<juce::AudioParameterFloat>("k9VelToHarmonic", "K9 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("k10VelToHarmonic", "K10 Vel To Harmonic", -100.0f, 100.0f, 0.0f),
 
-            // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10 - NEW) ========================
+            // ======================== LFO TEMPO SYNC ON/OFF (10) ========================
+            std::make_unique<juce::AudioParameterFloat>("k1LFOSync", "K1 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2LFOSync", "K2 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3LFOSync", "K3 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4LFOSync", "K4 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5LFOSync", "K5 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6LFOSync", "K6 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7LFOSync", "K7 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8LFOSync", "K8 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9LFOSync", "K9 LFO Sync", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10LFOSync", "K10 LFO Sync", 0.0f, 1.0f, 0.0f),
+
+            // ======================== LFO SYNC DIVISION (10) ========================
+            // Index 0-12: 4/1, 2/1, 1/1, 1/2., 1/2, 1/2T, 1/4., 1/4, 1/4T, 1/8., 1/8, 1/8T, 1/16
+            std::make_unique<juce::AudioParameterFloat>("k1LFOSyncDiv", "K1 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2LFOSyncDiv", "K2 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3LFOSyncDiv", "K3 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4LFOSyncDiv", "K4 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5LFOSyncDiv", "K5 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6LFOSyncDiv", "K6 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7LFOSyncDiv", "K7 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8LFOSyncDiv", "K8 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9LFOSyncDiv", "K9 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10LFOSyncDiv", "K10 LFO Sync Div",
+                juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
+
+            // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("input_f1", "Input F1 Spectral Multiplier", 0.5f, 30.0f, 1.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f2", "Input F2 Spectral Multiplier", 0.5f, 30.0f, 2.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f3", "Input F3 Spectral Multiplier", 0.5f, 30.0f, 3.0f),
@@ -372,98 +407,6 @@ bool PLANETtest4AudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
 
 
 
-// Helper function to generate LFO waveforms
-float PLANETtest4AudioProcessor::generateLFOWaveform(double phase, float shape)
-{
-    int shapeInt = (int)shape;
-    switch (shapeInt)
-    {
-    case 1: // Sine
-        return std::sin(phase);
-    case 2: // Triangle
-    {
-        double normalizedPhase = phase / (2.0 * juce::MathConstants<double>::pi);
-        normalizedPhase = normalizedPhase - std::floor(normalizedPhase); // 0-1 range
-        if (normalizedPhase < 0.5)
-            return (float)(4.0 * normalizedPhase - 1.0); // -1 to +1
-        else
-            return (float)(3.0 - 4.0 * normalizedPhase); // +1 to -1
-    }
-    case 3: // Square
-        return (std::sin(phase) >= 0.0f) ? 1.0f : -1.0f;
-    default:
-        return std::sin(phase); // Default to sine
-    }
-}
-
-// Helper function to process individual envelope
-float PLANETtest4AudioProcessor::processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel,
-    double deltaTime, float attackTime, float decayTime, float sustainLevel, float releaseTime, bool noteOn)
-{
-  
-
-    switch (stage)
-    {
-    case EnvelopeStage::Attack:
-        envTime += deltaTime;
-        if (envTime >= attackTime)
-        {
-            envLevel = 1.0f;
-            envTime = 0.0;
-            stage = EnvelopeStage::Decay;
-        }
-        else
-        {
-            envLevel = (float)(envTime / attackTime);
-        }
-        break;
-
-    case EnvelopeStage::Decay:
-        envTime += deltaTime;
-        if (envTime >= decayTime)
-        {
-            envLevel = sustainLevel;
-            envTime = 0.0;
-            stage = EnvelopeStage::Sustain;
-        }
-        else
-        {
-            float progress = (float)(envTime / decayTime);
-            envLevel = 1.0f + progress * (sustainLevel - 1.0f);
-        }
-        break;
-
-    case EnvelopeStage::Sustain:
-        envLevel = sustainLevel;
-        if (!noteOn)
-        {
-            envTime = 0.0;
-            stage = EnvelopeStage::Release;
-        }
-        break;
-
-    case EnvelopeStage::Release:
-        envTime += deltaTime;
-        if (envTime >= releaseTime)
-        {
-            envLevel = 0.0f;
-            stage = EnvelopeStage::Idle;
-        }
-        else
-        {
-            float progress = (float)(envTime / releaseTime);
-            envLevel = sustainLevel * (1.0f - progress);
-        }
-        break;
-
-    case EnvelopeStage::Idle:
-        envLevel = 0.0f;
-        break;
-    }
-
-    return envLevel;
-}
-
 //==============================================Process Block ===============================
 
 void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -475,6 +418,17 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Clear any output channels that don't contain input data
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, buffer.getNumSamples());
+
+    // Read DAW tempo and beat position for LFO sync
+    if (auto* playHead = getPlayHead()) {
+        auto posInfo = playHead->getPosition();
+        if (posInfo.hasValue()) {
+            if (posInfo->getBpm().hasValue())
+                currentBPM = *posInfo->getBpm();
+            if (posInfo->getPpqPosition().hasValue())
+                currentBeatPosition = *posInfo->getPpqPosition();
+        }
+    }
 
     // Update global parameters (shared by all voices)
     coefficients.updateAllActiveValues();
@@ -631,13 +585,17 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // ======================== GENERATE POLYPHONIC AUDIO ========================
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
+        // Advance beat position per sample for sub-block accuracy
+        double beatPositionForSample = currentBeatPosition + (sample * currentBPM / (60.0 * getSampleRate()));
+
         float mixedSample = voiceManager.processNextSample(coefficients,
             ampAttackTime, ampDecayTime, ampSustainLevel, ampReleaseTime,
             effectiveBrilliance, getSampleRate(),
             pitchWheelSemitones,
             vibratoRate, vibratoDepth, vibratoFadeIn,
             velToAmplitude, velToAttackTime, vintageAmount,
-            pitchEnvDistance, pitchAttackTime);
+            pitchEnvDistance, pitchAttackTime,
+            currentBPM, beatPositionForSample);
 
         // Waveform snapshot capture
         if (snapshotCapturing)
@@ -687,9 +645,6 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // Update waveform display state
     waveformActive.store(voiceManager.getActiveVoiceCount() > 0);
 
-    // Clean up finished voices
-    voiceManager.clearFinishedVoices();
-
 
 
 }
@@ -718,14 +673,33 @@ void PLANETtest4AudioProcessor::loadPatch(const juce::File& patchFile) {
             }
         }
 
-        // Reset VelToHarmonic parameters to defaults ONLY for old patches that don't have them
+        // Reset parameters to defaults ONLY for old patches that don't have them
         for (int i = 1; i <= 10; ++i)
         {
-            juce::String paramID = "k" + juce::String(i) + "VelToHarmonic";
-            if (patch.parameters.count(paramID) == 0)  // Only reset if not in patch
+            juce::String prefix = "k" + juce::String(i);
+
+            // VelToHarmonic (default 0)
+            juce::String velParamID = prefix + "VelToHarmonic";
+            if (patch.parameters.count(velParamID) == 0)
             {
-                if (auto* param = parameters.getParameter(paramID))
+                if (auto* param = parameters.getParameter(velParamID))
                     param->setValueNotifyingHost(param->convertTo0to1(0.0f));
+            }
+
+            // LFOSync (default 0 = Free)
+            juce::String syncParamID = prefix + "LFOSync";
+            if (patch.parameters.count(syncParamID) == 0)
+            {
+                if (auto* param = parameters.getParameter(syncParamID))
+                    param->setValueNotifyingHost(param->convertTo0to1(0.0f));
+            }
+
+            // LFOSyncDiv (default 7 = 1/4 note)
+            juce::String divParamID = prefix + "LFOSyncDiv";
+            if (patch.parameters.count(divParamID) == 0)
+            {
+                if (auto* param = parameters.getParameter(divParamID))
+                    param->setValueNotifyingHost(param->convertTo0to1(7.0f));
             }
         }
 

@@ -132,7 +132,8 @@ public:
         float pitchWheelOffset,
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
-        float pitchEnvDistance, float pitchAttackTime);
+        float pitchEnvDistance, float pitchAttackTime,
+        double bpm, double beatPosition);
 
     // Voice identification
     int getNoteNumber() const { return currentNoteNumber; }
@@ -140,15 +141,8 @@ public:
     bool getCycleStartFlag() const { return cycleStartFlag; }
     float getVelocity() const { return noteVelocity; }
 
-    // Mod wheel hook (for future implementation)
-    void setModWheelScale(float scale) { modWheelScale = juce::jlimit(0.0f, 1.0f, scale); }
-
     //Setter for Envelope exponential curve control
     void setExponentialControl(float value) { exponentialControl = value; }
-
-
-   
-
 
 private:
 
@@ -168,21 +162,12 @@ private:
     VibratoState vibratoState;
 
 
-
-
-
-
-
-
-    // NEW: Cache expensive velocity calculations (add after debugLastVelocityBrilliance)
+    // Cache expensive velocity calculations
     float cachedVelocityAmplitude = 1.0f;
     float cachedVelocityBrilliance = 0.5f;
 
     //Exponential envelope amount
     float exponentialControl = 0.5f;  // Now a member variable instead of constant
-
-    // Mod wheel hook (for future implementation)
-    float modWheelScale = 1.0f;             // 0-1, controlled by mod wheel (future)
 
     // Voice identity & state
     int currentNoteNumber = -1;
