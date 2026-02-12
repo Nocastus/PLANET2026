@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
     PLANETVoice.cpp - Individual Voice Implementation
   ==============================================================================
@@ -216,9 +216,21 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         float vibratoOffset = vibratoLFOValue * effectiveVibratoDepth;
 
         // ======================== PITCH ATTACK ENVELOPE ========================
-        float pitchEnvValue = processEnvelope(pitchEnvStage, pitchEnvTime, pitchEnvLevel, cycleDeltaTime,
-            pitchAttackTime, 0.1f, 1.0f, 0.1f,
-            noteIsActive, 0.0f, 0.5f);  // Attack to correct pitch, then stay there
+                // Simple one-shot envelope using smoothstep (reaches exactly 1.0, no jump)
+        if (pitchAttackTime <= 0.001f) {
+            pitchEnvLevel = 1.0f;
+        }
+        else if (pitchEnvLevel < 1.0f) {
+            pitchEnvTime += cycleDeltaTime;
+            if (pitchEnvTime >= pitchAttackTime) {
+                pitchEnvLevel = 1.0f;
+            }
+            else {
+                float t = (float)(pitchEnvTime / pitchAttackTime);
+                pitchEnvLevel = t * t * (3.0f - 2.0f * t);  // Smoothstep: 3t² - 2t³
+            }
+        }
+        float pitchEnvValue = pitchEnvLevel;
 
         // ======================== PITCH OFFSET ACCUMULATOR ========================
         // Reset and accumulate all pitch modulation sources
