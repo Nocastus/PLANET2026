@@ -1,4 +1,4 @@
-﻿/*
+/*
   ==============================================================================
     PLANETVoice.cpp - Individual Voice Implementation
   ==============================================================================
@@ -214,7 +214,13 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         float vibratoOffset = vibratoLFOValue * effectiveVibratoDepth;
 
         // ======================== PITCH ATTACK ENVELOPE ========================
-                // Simple one-shot envelope using smoothstep (reaches exactly 1.0, no jump)
+        // Normalised finite-duration exponential: keeps the musical exponential sweep
+        // (fast initial movement, graceful slow-in) but is scaled to reach EXACTLY 1.0
+        // at t = pitchAttackTime, so the pitch lands perfectly in tune with no residual
+        // detune on held notes (the flaw of a plain asymptotic exponential).
+        //   level(t01) = (1 - e^(-k*t01)) / (1 - e^(-k)),  t01 = elapsed / duration in [0,1]
+        // k controls curvature: higher = more "exponential" feel. Tune by ear.
+        constexpr float kPitchEnvCurve = 5.0f;
         if (pitchAttackTime <= 0.001f) {
             pitchEnvLevel = 1.0f;
         }
@@ -224,8 +230,9 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 pitchEnvLevel = 1.0f;
             }
             else {
-                float t = (float)(pitchEnvTime / pitchAttackTime);
-                pitchEnvLevel = t * t * (3.0f - 2.0f * t);  // Smoothstep: 3t² - 2t³
+                float t01 = (float)(pitchEnvTime / pitchAttackTime);
+                pitchEnvLevel = (1.0f - std::exp(-kPitchEnvCurve * t01))
+                              / (1.0f - std::exp(-kPitchEnvCurve));
             }
         }
         float pitchEnvValue = pitchEnvLevel;
