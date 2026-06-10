@@ -101,6 +101,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoShapeCombo.addItem("Square", 3);
     lfoShapeCombo.addItem("Random", 4);
     lfoShapeCombo.setSelectedId(1);
+    lfoShapeCombo.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    lfoShapeCombo.setMouseClickGrabsKeyboardFocus(false);  // clicking must not steal focus either (keypad Enter -> Cubase)
     addAndMakeVisible(lfoShapeCombo);
 
     lfoShapeLabel.setText("Shape", juce::dontSendNotification);
@@ -119,6 +121,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
             updateLfoSyncMode();
         }
     };
+    lfoSyncCombo.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    lfoSyncCombo.setMouseClickGrabsKeyboardFocus(false);  // clicking must not steal focus either (keypad Enter -> Cubase)
     addAndMakeVisible(lfoSyncCombo);
 
     lfoSyncLabel.setText("Tempo", juce::dontSendNotification);
@@ -605,10 +609,12 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // ======================== PATCH MANAGEMENT UI SETUP ========================
     loadPatchButton.setButtonText("Load");
     loadPatchButton.onClick = [this] { loadPatchButtonClicked(); };
+    loadPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
     addAndMakeVisible(loadPatchButton);
 
     savePatchButton.setButtonText("Save");
     savePatchButton.onClick = [this] { savePatchButtonClicked(); };
+    savePatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
     addAndMakeVisible(savePatchButton);
 
     // Get patch metadata from processor if available
@@ -737,6 +743,14 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(transposeLabel);
     styleLabel(transposeValue, true);
 
+    // ---- DAW keyboard pass-through ----
+    // When any editable value field finishes editing, release keyboard focus so the host
+    // (Cubase) regains transport keys (e.g. keypad Enter for play). Applied to every Label
+    // child, so it covers all current and future editable value fields. Harmless on
+    // non-editable labels (onEditorHide never fires for them).
+    for (auto* child : getChildren())
+        if (auto* lbl = dynamic_cast<juce::Label*>(child))
+            lbl->onEditorHide = [lbl] { lbl->giveAwayKeyboardFocus(); };
 
     setSize(1400, 800);
     updateDrawbarColors();

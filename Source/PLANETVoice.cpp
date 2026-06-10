@@ -486,8 +486,11 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             float curvedProgress;
             // Apply exponential curve for decay (concave)
             if (curveAmount > 0.001f) {
-                float curveFactor = 1.0f + curveAmount * 6.0f;
-                curvedProgress = FastMath::fastExpDecay(curveFactor * linearProgress);
+                float k = 1.0f + curveAmount * 6.0f;
+                // Normalised decaying exponential: exactly 1.0 at progress 0, exactly 0.0 at
+                // progress 1, so the curve lands cleanly on sustain with no discontinuity.
+                float ek = std::exp(-k);
+                curvedProgress = (std::exp(-k * linearProgress) - ek) / (1.0f - ek);
             }
             else {
                 curvedProgress = 1.0f - linearProgress;  // Linear fallback
@@ -518,8 +521,13 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             float curvedProgress;
             // Apply exponential curve for release (concave)
             if (curveAmount > 0.001f) {
-                float curveFactor = 1.0f + curveAmount * 6.0f;
-                curvedProgress = FastMath::fastExpDecay(curveFactor * linearProgress);
+                float k = 1.0f + curveAmount * 6.0f;
+                // Normalised decaying exponential: exactly 1.0 at progress 0, exactly 0.0 at
+                // progress 1. The old fastExpDecay(k*progress) ended at e^(-k) (well above 0,
+                // and the Padé approximation actually rises again for k > ~4.4), so the tail
+                // snapped to silence when the stage flipped to Idle. Normalising kills the cliff.
+                float ek = std::exp(-k);
+                curvedProgress = (std::exp(-k * linearProgress) - ek) / (1.0f - ek);
             }
             else {
                 curvedProgress = 1.0f - linearProgress;  // Linear fallback

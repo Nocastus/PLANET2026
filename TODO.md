@@ -73,7 +73,47 @@ DAW operation while the editor is open.
 **Likely cause:** classic JUCE/VST3 issue — the editor window (and/or its child components)
 grabs and *consumes* keystrokes, so unhandled keys never bubble back up to the host. The
 behaviour is host- and format-dependent (VST3 vs AU vs standalone; Cubase/Live/Reaper/FL all
-differ), so expect to test against the target DAW(s) specifically.
+differ), so expect to test against the target DAW(s) specifically. **Target host: Cubase** (VST3;
+Gerard's main DAW, picky about VST compatibility). JamStix exhibits the same issue — confirms this
+is the generic JUCE/VST focus model, not specific to our code.
+
+**Grounded findings (9 Jun 2026), from the JUCE source:** Sliders/knobs already use
+`setWantsKeyboardFocus(false)` (juce_Slider.cpp:1461) — never the culprit. The focus-holders are
+`Button`/`TextButton` (true), `ComboBox` (true when label non-editable), and the many **editable
+`Label`** value fields (true). No focus management existed in our code.
+
+**Status — Layer 1 DONE (9 Jun 2026), awaiting Cubase test:** added `setWantsKeyboardFocus(false)`
+to the Load/Save buttons and both LFO combos in `PLANETMainGui.cpp` (mouse-operated, don't need
+focus). Editable value labels deliberately left as-is (they need focus only while typing).
+**Test protocol in Cubase** — try transport (space/cycle) in 3 states: (1) after clicking the
+plugin background, (2) after clicking a knob/button, (3) after typing into a numeric field + Return.
+- If only (3) fails → editable labels are the remaining offender. Targeted fix: on each editable
+  label, `onEditorHide` → move focus back to the editor / `giveAwayKeyboardFocus()` so it doesn't
+  linger. (Could centralise in the label-setup helper.)
+- If (1) or (2) still fail → Layer 1 insufficient, escalate to Layer 2 (native Win32 key
+  forwarding to the host window).
+
+**Round-1 Cubase test results (9 Jun 2026):** Spacebar (start/stop) ✅ consistent. Numeric 1/2
+(left/right locator) ✅ consistent, even after keypad input into ISHTAR. Load/Save ✅ no ill
+effects. **Remaining:** keypad **Enter** (play) works until you (a) type into a numeric field —
+then it does nothing, or (b) use an LFO dropdown — then it re-opens the dropdown. So: editable
+labels and combos still hold focus / consume Enter, exactly the predicted hole.
+
+**Round-2 fix (9 Jun 2026, awaiting test):** in `PLANETMainGui.cpp` —
+(1) combos also get `setMouseClickGrabsKeyboardFocus(false)` (the `setWantsKeyboardFocus(false)`
+alone didn't stop the *click* focusing them, hence Enter re-opened the popup);
+(2) constructor-end loop sets `onEditorHide = [lbl]{ lbl->giveAwayKeyboardFocus(); }` on every
+Label child, so finishing a value edit releases focus back to the host. Re-test keypad Enter
+after typing a value and after using a dropdown. If a combo still re-opens on Enter, next step is
+to subclass ComboBox and give away focus in `focusGained`. If the editable-label case persists,
+Layer 2 (native key forwarding) is the fallback.
+
+**Round-2 Cubase test results (9 Jun 2026):** Numeric-field case ✅ FIXED — keypad Enter plays
+after typing a value. **Still open:** the LFO combo still opens on keypad Enter while ISHTAR has
+focus (the `setMouseClickGrabsKeyboardFocus(false)` wasn't enough — focus is being restored to the
+combo some other way, likely when the popup dismisses). **Next step (not yet done):** subclass
+`ComboBox`, override `focusGained` to immediately `giveAwayKeyboardFocus()`, and use that subclass
+for `lfoShapeCombo`/`lfoSyncCombo`. Everything else in the focus work is confirmed working in Cubase.
 
 **Directions to investigate (cheapest first):**
 1. **Audit keyboard-focus ownership.** Call `setWantsKeyboardFocus(false)` on the top-level
@@ -156,6 +196,44 @@ table lookup. Options to evaluate: fixed microtuning tables, Scala `.scl`/`.kbm`
 MTS / MTS-ESP support. Keep the integration point isolated so a fork is easy to maintain.
 
 ---
+
+## Recently fixed (awaiting ear test)
+- **Amp/coefficient envelope release tail snapped to silence** — ✅ fixed 9 Jun 2026 in
+  [`Source/PLANETVoice.cpp`](Source/PLANETVoice.cpp) `processEnvelope()`. The Decay and Release
+  curves used `FastMath::fastExpDecay(k·progress)` (= `e^(-x)`), which never reached 0 and, worse,
+  rose again for `k > ~4.4` due to the Padé approximation — so the tail was still at 15–30% level
+  when the stage flipped to Idle and snapped to silence. Replaced with a normalised `std::exp`
+  curve that hits exactly 1.0→0.0 across the stage. Shared engine, so it also fixes all 10
+  per-drawbar envelopes. **Follow-up:** the Attack case has the same structure (`fastExpAttack(k)`
+  ends at `1 - e^(-k)` then snaps up to 1.0) — small/masked at the transient peak so left as-is;
+  normalise it too if any attack click shows up.
+  - *If the two per-sample `std::exp` calls ever flag on CPU:* two viable levers.
+    (a) **Incremental exp** — precompute `step = exp(-k·sampleDelta/releaseTime)` once at stage
+    start, then `expTerm *= step` per sample (one multiply, no per-sample exp, full per-sample
+    smoothness). (b) **Per-cycle amp envelope** — the synth is phase distortion and the output is
+    *exactly 0* at every cycle boundary (`sin(0)=0`, see PLANETVoice.cpp:413/384), so updating the
+    gain at the zero crossing is click-free, same as the coefficient grid already does. Caveat:
+    per-cycle ties the envelope's time resolution to the note period, which quantises **fast
+    attacks at low pitch** (a 3 ms attack < one 20 ms cycle at 50 Hz) and makes attack timing
+    pitch-dependent — so keep Attack per-sample and run only Decay/Sustain/Release per-cycle.
+    NB: neither is high-value — the real per-sample cost is the 10-tap `applyPhaseDistortion`
+    loop (must stay per-sample), not the envelope.
+
+## Parked / decided against (for now)
+- **Skip null drawbars in `applyPhaseDistortion`** — *parked 9 Jun 2026, possibly permanently.*
+  Proposed: `if (activeCoeffs[i] == 0.0f) continue;` in the per-sample 10-tap loop to skip the
+  sine lookup for null drawbars (those with no env/LFO/seed). **Decided not to do it now.** It
+  only lowers *average* cost (sparse patches), not the **worst case** (all 10 up at full
+  polyphony is unchanged) — and a real-time/hardware budget is set by the worst case, so it
+  doesn't help "does it fit on the target?". It also trades away **consistent CPU load across
+  patches**, which we consider a feature (predictable voice budgeting). The edit is trivial and
+  fully reversible, so there's no cost to deferring it to an actual hardware-port moment, when
+  we'd profile on the real target anyway.
+  - *If the ceiling ever becomes the real constraint, use a worst-case lever instead:*
+    (1) **SIMD the 10-tap distortion loop** — lowers the worst case AND keeps load consistent
+    across patches (best fit for our goals; most work, platform-specific); (2) cheaper LUT
+    (drop interpolation / smaller table) — uniform saving; (3) fewer coefficients, sound
+    permitting. The null-skip is the *wrong* lever for the ceiling.
 
 ## Housekeeping
 - Working tree has a trivial uncommitted BOM-removal in `PLANETVoice.cpp` (line 1) — commit or discard.
