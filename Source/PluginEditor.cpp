@@ -25,7 +25,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     addAndMakeVisible(*mainGui);
 
     // Version label
-    versionLabel.setText("v0.4.0", juce::dontSendNotification);
+    versionLabel.setText("v0.5.0-life", juce::dontSendNotification);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey.withAlpha(0.6f));
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setFont(juce::Font(11.0f));

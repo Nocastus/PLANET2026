@@ -109,7 +109,7 @@ public:
 
     // Voice control
     void startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount = 0.0f,
-        float velToAmplitude = 100.0f, float brilliance = 0.5f);
+        float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0);
     void stopNote(bool sustainPedalDown = false);  // KEEP ONLY THIS ONE
     void triggerRelease();  // New method for forced release
     bool isActive() const { return noteIsActive; }
@@ -189,8 +189,18 @@ private:
     // Per-voice modulation states (K1-K10 independent evolution)
     ModulationStateArray coeffModStates;
 
-    // Per-voice LFO phases  
+    // Per-voice LFO phases
     std::array<double, NUM_COEFFICIENTS> lfoPhases;
+
+    // ======================== LIFE FEATURE STATE ========================
+    // Stage 1: each modulator carries its own accumulated phase instead of deriving it
+    // from the carrier (f*x). This is what allows non-integer / time-varying multipliers
+    // without a per-cycle discontinuity. With integer multipliers and detuneRatio == 1,
+    // modPhases[i] tracks f*x (mod 2pi) exactly, so existing patches are unchanged.
+    std::array<double, NUM_COEFFICIENTS> modPhases;
+    // Stage 2: per-drawbar static detune as a frequency ratio (2^(cents/1200)), derived
+    // from the LIFE seed at note-on. 1.0 == no detune (the pitch-anchored default).
+    std::array<double, NUM_COEFFICIENTS> detuneRatio;
 
     // Per-voice amplitude envelope
     EnvelopeStage ampEnvStage = EnvelopeStage::Idle;

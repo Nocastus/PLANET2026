@@ -118,6 +118,8 @@ private:
   
     std::atomic<float>* velToAttackTimeParameter = nullptr;
     std::atomic<float>* vintageAmountParameter = nullptr;
+    std::atomic<float>* lifeAmountParameter = nullptr;
+    std::atomic<float>* lifeSeedParameter = nullptr;
 
 
     // ======================== SYNTHESIS VARIABLES ========================

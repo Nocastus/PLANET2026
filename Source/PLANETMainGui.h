@@ -254,10 +254,19 @@ private:
     juce::Label velAmpLabel;
     juce::Label velAmpValue;
 
-    // Amplitude zone knobs (2x2 grid)
-    juce::Slider velAttackKnob, envCurveKnob, vintageKnob;
-    juce::Label velAttackLabel, envCurveLabel, vintageLabel;
-    juce::Label velAttackValue, envCurveValue, vintageValue;
+    // Amplitude / Character zone knobs (2x2 grid: Vel->Attk, Env Curve / Vintage, Life)
+    juce::Slider velAttackKnob, envCurveKnob, vintageKnob, lifeKnob;
+    juce::Label velAttackLabel, envCurveLabel, vintageLabel, lifeLabel;
+    juce::Label velAttackValue, envCurveValue, vintageValue, lifeValue;
+
+    // LIFE seed: editable readout (type to recall) + Star-of-Ishtar "re-cast" button.
+    juce::Label seedLabel, seedValue;
+    juce::ShapeButton rerollButton { "reroll", juce::Colour(0xff6ab0ff),
+                                     juce::Colour(0xffaad4ff), juce::Colour(0xffffffff) };
+    // Bolt anchors (set in resized) + flash level (0..1, pulsed on re-cast, decayed in timer).
+    juce::Rectangle<int> lifeKnobBounds, seedModuleBounds;
+    float boltFlash = 0.0f;
+    void rerollSeed();
 
     // ======================== RIGHT COLUMN CONTROLS ========================
     
@@ -336,6 +345,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velAttackAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> envCurveAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vintageAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lifeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> envDepthAttachment;
     
     // Context-sensitive attachments

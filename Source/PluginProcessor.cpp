@@ -220,6 +220,12 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("velToAttackTime", "Vel->Attack Time", 0.0f, 100.0f, 0.0f),
             std::make_unique<juce::AudioParameterFloat>("vintageAmount", "Vintage Amount", 0.0f, 100.0f, 0.0f),
 
+            // ======================== LIFE PARAMETERS ========================
+            // LIFE: master depth for per-partial micro-motion (doublet beating / drift).
+            // LIFE SEED: the "luthier seed" - deterministic per-drawbar character, saved with patch.
+            std::make_unique<juce::AudioParameterFloat>("lifeAmount", "Life", 0.0f, 100.0f, 0.0f),
+            std::make_unique<juce::AudioParameterInt>("lifeSeed", "Life Seed", 0, 9999, 4271),
+
             // ======================== VIBRATO PARAMETERS ============================================
             std::make_unique<juce::AudioParameterFloat>("vibratoRate", "Vibrato Rate", 0.5f, 12.0f, 5.0f),
             std::make_unique<juce::AudioParameterFloat>("vibratoDepth", "Vibrato Depth", 0.0f, 2.0f, 0.0f),
@@ -277,6 +283,8 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
     //======================== INITIALIZE VINTAGE PARAMETER POINTER ========================
     vintageAmountParameter = parameters.getRawParameterValue("vintageAmount");
+    lifeAmountParameter = parameters.getRawParameterValue("lifeAmount");
+    lifeSeedParameter = parameters.getRawParameterValue("lifeSeed");
 
     // ======================== INITIALIZE EFFECTS PARAMETER POINTERS ========================
     detuneAmountParameter = parameters.getRawParameterValue("detuneAmount");
@@ -467,6 +475,8 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
    
     float velToAttackTime = velToAttackTimeParameter->load();
     float vintageAmount = vintageAmountParameter->load();
+    float lifeAmount = lifeAmountParameter->load();
+    int lifeSeed = (int)lifeSeedParameter->load();
     float pitchEnvDistance = pitchEnvDistanceParameter->load();
     float pitchAttackTime = pitchEnvTimeParameter->load();
 
@@ -488,7 +498,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
 
                 voiceManager.startNote(transposedNote, velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
-                    velToAmplitude, brillianceParameter->load());
+                    velToAmplitude, brillianceParameter->load(), lifeAmount, lifeSeed);
             }
             else
             {

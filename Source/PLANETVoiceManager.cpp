@@ -23,7 +23,7 @@ PLANETVoiceManager::PLANETVoiceManager()
 //==============================================================================
 
 void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sampleRate, float currentPitchWheelOffset, float vintageAmount,
-    float velToAmplitude, float brilliance)
+    float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed)
 {
     // [Existing voice finding/allocation code...]
     auto* existingVoice = findVoiceForNote(noteNumber);
@@ -37,7 +37,7 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
     }
 
     if (voice) {
-        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance);
+        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance, lifeAmount, lifeSeed);
 
         // Apply current pitch wheel state to new voice
         voice->setPitchOffset(currentPitchWheelOffset);

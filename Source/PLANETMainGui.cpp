@@ -321,6 +321,64 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     vintageValue.setEditable(true);
     addAndMakeVisible(vintageValue);
 
+    // ======================== LIFE knob (clone of Vintage idiom) ========================
+    lifeKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    lifeKnob.setRange(0.0, 100.0, 1.0);
+    lifeKnob.setValue(0.0);
+    lifeKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    lifeKnob.setDoubleClickReturnValue(true, 0.0);
+    addAndMakeVisible(lifeKnob);
+    lifeKnob.setLookAndFeel(&ishtarLookAndFeel);
+    lifeLabel.setText("Life", juce::dontSendNotification);
+    lifeLabel.setJustificationType(juce::Justification::centred);
+    lifeLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ad0ff));
+    addAndMakeVisible(lifeLabel);
+    lifeValue.setText("0", juce::dontSendNotification);
+    lifeValue.setJustificationType(juce::Justification::centred);
+    lifeValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    lifeValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    lifeValue.setEditable(true);
+    addAndMakeVisible(lifeValue);
+
+    // ======================== LIFE SEED readout + re-cast button ========================
+    seedLabel.setText("SEED", juce::dontSendNotification);
+    seedLabel.setJustificationType(juce::Justification::centredRight);
+    seedLabel.setColour(juce::Label::textColourId, juce::Colour(0xff7e84a8));
+    addAndMakeVisible(seedLabel);
+
+    seedValue.setJustificationType(juce::Justification::centred);
+    seedValue.setColour(juce::Label::textColourId, juce::Colour(0xffe8ecff));
+    seedValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    seedValue.setEditable(true);
+    addAndMakeVisible(seedValue);
+    // Typing a seed recalls a specific "instrument".
+    seedValue.onTextChange = [this]
+    {
+        if (auto* p = apvts.getParameter("lifeSeed"))
+        {
+            int v = juce::jlimit(0, 9999, seedValue.getText().getIntValue());
+            p->setValueNotifyingHost(p->convertTo0to1((float)v));
+        }
+    };
+
+    // Re-cast button: an 8-pointed Star of Ishtar. Click = draw a new luthier seed.
+    {
+        juce::Path star;
+        const float outer = 1.0f, inner = 0.42f;
+        for (int k = 0; k < 16; ++k)
+        {
+            const float r = (k % 2 == 0) ? outer : inner;
+            const float a = juce::MathConstants<float>::pi * k / 8.0f;
+            const float px = std::sin(a) * r, py = -std::cos(a) * r;
+            if (k == 0) star.startNewSubPath(px, py);
+            else        star.lineTo(px, py);
+        }
+        star.closeSubPath();
+        rerollButton.setShape(star, false, true, false);
+    }
+    rerollButton.onClick = [this] { rerollSeed(); };
+    addAndMakeVisible(rerollButton);
+
     // ======================== RIGHT COLUMN CONTROLS ========================
     
     // Helper lambda for setting up knobs consistently
@@ -496,6 +554,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "exponentialControl", envCurveKnob);
     vintageAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "vintageAmount", vintageKnob);
+    lifeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "lifeAmount", lifeKnob);
     
     // Initial binding to selected drawbar (K1)
     bindToSelectedDrawbar();
@@ -590,6 +650,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     apvts.addParameterListener("velToAmplitude", this);
     apvts.addParameterListener("velToAttackTime", this);
     apvts.addParameterListener("vintageAmount", this);
+    apvts.addParameterListener("lifeAmount", this);
+    apvts.addParameterListener("lifeSeed", this);
     apvts.addParameterListener("transpose", this);
 
     // Register as listener for envelope depth parameters (K1-K10)
@@ -711,6 +773,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(envCurveValue, true);
     styleLabel(vintageLabel);
     styleLabel(vintageValue, true);
+    styleLabel(lifeLabel);
+    styleLabel(lifeValue, true);
+    styleLabel(seedValue, true);
 
     // Right column labels
     styleLabel(vibratoRateLabel);
@@ -780,6 +845,7 @@ PLANETMainGui::~PLANETMainGui()
     velAttackKnob.setLookAndFeel(nullptr);
     envCurveKnob.setLookAndFeel(nullptr);
     vintageKnob.setLookAndFeel(nullptr);
+    lifeKnob.setLookAndFeel(nullptr);
 
     apvts.removeParameterListener("ampEnvAttackTime", this);
     apvts.removeParameterListener("ampEnvDecayTime", this);
@@ -790,6 +856,8 @@ PLANETMainGui::~PLANETMainGui()
     apvts.removeParameterListener("velToAmplitude", this);
     apvts.removeParameterListener("velToAttackTime", this);
     apvts.removeParameterListener("vintageAmount", this);
+    apvts.removeParameterListener("lifeAmount", this);
+    apvts.removeParameterListener("lifeSeed", this);
     apvts.removeParameterListener("transpose", this);
 
     // Remove listeners for envelope depth parameters (K1-K10)
@@ -830,7 +898,27 @@ void PLANETMainGui::timerCallback()
         }
     }
 
+    // Decay the lightning-bolt flash after a re-cast (the "spark of life").
+    if (boltFlash > 0.0f)
+    {
+        boltFlash *= 0.78f;
+        if (boltFlash < 0.01f) boltFlash = 0.0f;
+        if (!lifeKnobBounds.isEmpty() && !seedModuleBounds.isEmpty())
+            repaint(lifeKnobBounds.getUnion(seedModuleBounds).expanded(12));
+    }
+
     updateDrawbarColors();
+}
+
+void PLANETMainGui::rerollSeed()
+{
+    if (auto* p = apvts.getParameter("lifeSeed"))
+    {
+        // Draw a fresh "luthier seed" and let it save with the patch.
+        int newSeed = juce::Random::getSystemRandom().nextInt({ 0, 10000 });
+        p->setValueNotifyingHost(p->convertTo0to1((float)newSeed));
+    }
+    boltFlash = 1.0f;   // fire the spark
 }
 
 void PLANETMainGui::updateDrawbarColors()
@@ -1038,6 +1126,37 @@ void PLANETMainGui::paint(juce::Graphics& g)
                           ampAdsrValues[0], ampAdsrValues[1], ampAdsrValues[2], ampAdsrValues[3],
                           (float)envCurveKnob.getValue(),
                           juce::Colours::white, accentColour);
+    }
+
+    // ======================== LIFE: spark-of-life lightning bolt ========================
+    // A bolt arcs from the Life knob down into the SEED readout - the seed is what the
+    // spark "creates". It flashes brighter for a moment on each re-cast (boltFlash).
+    if (!lifeKnobBounds.isEmpty() && !seedModuleBounds.isEmpty())
+    {
+        juce::Point<float> S((float)lifeKnobBounds.getX() - 3.0f,
+                             (float)lifeKnobBounds.getBottom() - 16.0f);
+        juce::Point<float> E((float)seedModuleBounds.getCentreX(),
+                             (float)seedModuleBounds.getY() - 1.0f);
+
+        juce::Point<float> d = E - S;
+        juce::Point<float> perp(-d.y, d.x);
+        if (auto plen = perp.getDistanceFromOrigin(); plen > 0.0f) perp /= plen;
+        const float J = 7.0f;   // zigzag notch amplitude
+
+        juce::Path bolt;
+        bolt.startNewSubPath(S);
+        bolt.lineTo(S + d * 0.28f + perp * ( J));
+        bolt.lineTo(S + d * 0.46f + perp * (-J));
+        bolt.lineTo(S + d * 0.72f + perp * ( J * 0.6f));
+        bolt.lineTo(E);
+
+        // faint wide underlay (fake glow), then a bright thin core
+        g.setColour(accentColour.withAlpha(0.16f + 0.40f * boltFlash));
+        g.strokePath(bolt, juce::PathStrokeType(5.0f + 4.0f * boltFlash,
+                     juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(0xffcfe6ff).withAlpha(0.55f + 0.45f * boltFlash));
+        g.strokePath(bolt, juce::PathStrokeType(2.2f,
+                     juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
     }
 
     // ======================== RIGHT SIDE ========================
@@ -1303,30 +1422,44 @@ void PLANETMainGui::resized()
     velAmpLabel.setBounds(envDepthX - 10, ampAdsrGraphY + ampAdsrGraphHeight + 8, envDepthSliderWidth + 20, 18);
     velAmpValue.setBounds(envDepthX, ampAdsrGraphY + ampAdsrGraphHeight + 24, envDepthSliderWidth, 22);
 
-    // Triangle layout in Amplitude zone: Vel to Attk at apex, Env Curve and Vintage at base
+    // Character zone: 2x2 square sharing the LFO base columns (ampBase1X/ampBase2X line up
+    // with LFO Speed/Depth above). Envelope-shaping on top (Vel->Attk, Env Curve),
+    // analog-character on the bottom (Vintage, Life). SEED + re-cast sit centred below,
+    // joined to Life by a lightning bolt drawn in paint().
     int ampKnobSize = 60;
     int ampKnobValueHeight = 18;
+    int ampLabelGap = 18;   // a touch more air between label and knob than before
+    int ampBlockH = ampLabelGap + ampKnobSize + ampKnobValueHeight;
 
-    // Apex knob (Vel to Attk) - centered at top
-    int ampApexX = lfoZoneX + (lfoZoneWidth - ampKnobSize) / 2;
-    int ampApexY = drawbarSectionHeight + harmonicHeight + 30;
-    velAttackLabel.setBounds(ampApexX - 10, ampApexY, ampKnobSize + 20, 16);
-    velAttackKnob.setBounds(ampApexX, ampApexY + 16, ampKnobSize, ampKnobSize);
-    velAttackValue.setBounds(ampApexX, ampApexY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
-
-    // Base knobs (Env Curve, Vintage) - spread below
-    int ampBaseY = ampApexY + 16 + ampKnobSize + ampKnobValueHeight + 15;
     int ampBaseSpacing = (lfoZoneWidth - ampKnobSize * 2) / 3;
-    int ampBase1X = lfoZoneX + ampBaseSpacing;
-    int ampBase2X = ampBase1X + ampKnobSize + ampBaseSpacing;
+    int ampCol1X = lfoZoneX + ampBaseSpacing;
+    int ampCol2X = ampCol1X + ampKnobSize + ampBaseSpacing;
 
-    envCurveLabel.setBounds(ampBase1X, ampBaseY, ampKnobSize, 16);
-    envCurveKnob.setBounds(ampBase1X, ampBaseY + 16, ampKnobSize, ampKnobSize);
-    envCurveValue.setBounds(ampBase1X, ampBaseY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    int ampRow1Y = drawbarSectionHeight + harmonicHeight + 26;
+    int ampRow2Y = ampRow1Y + ampBlockH + 12;
 
-    vintageLabel.setBounds(ampBase2X, ampBaseY, ampKnobSize, 16);
-    vintageKnob.setBounds(ampBase2X, ampBaseY + 16, ampKnobSize, ampKnobSize);
-    vintageValue.setBounds(ampBase2X, ampBaseY + 16 + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    auto placeKnob = [&](juce::Label& lbl, juce::Slider& knob, juce::Label& val, int cx, int cy)
+    {
+        lbl.setBounds(cx, cy, ampKnobSize, 16);
+        knob.setBounds(cx, cy + ampLabelGap, ampKnobSize, ampKnobSize);
+        val.setBounds(cx, cy + ampLabelGap + ampKnobSize, ampKnobSize, ampKnobValueHeight);
+    };
+
+    placeKnob(velAttackLabel, velAttackKnob, velAttackValue, ampCol1X, ampRow1Y);
+    placeKnob(envCurveLabel,  envCurveKnob,  envCurveValue,  ampCol2X, ampRow1Y);
+    placeKnob(vintageLabel,   vintageKnob,   vintageValue,   ampCol1X, ampRow2Y);
+    placeKnob(lifeLabel,      lifeKnob,      lifeValue,      ampCol2X, ampRow2Y);
+
+    lifeKnobBounds = lifeKnob.getBounds();
+
+    // SEED module, centred under the square: [SEED] [number] [* re-cast]
+    int seedModW = 150, seedModH = 24;
+    int seedModX = lfoZoneX + (lfoZoneWidth - seedModW) / 2;
+    int seedModY = ampRow2Y + ampBlockH + 10;
+    seedLabel.setBounds(seedModX, seedModY, 38, seedModH);
+    seedValue.setBounds(seedModX + 40, seedModY, 62, seedModH);
+    rerollButton.setBounds(seedModX + 110, seedModY + 1, seedModH - 2, seedModH - 2);
+    seedModuleBounds = juce::Rectangle<int>(seedModX, seedModY, seedModW, seedModH);
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
@@ -1851,6 +1984,14 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
         vintageValue.setText(juce::String(newValue, 2), juce::dontSendNotification);
         return;
     }
+    if (parameterID == "lifeAmount") {
+        lifeValue.setText(juce::String((int)newValue), juce::dontSendNotification);
+        return;
+    }
+    if (parameterID == "lifeSeed") {
+        seedValue.setText(juce::String((int)newValue), juce::dontSendNotification);
+        return;
+    }
     if (parameterID == "transpose") {
         transposeValue.setText(juce::String((int)newValue), juce::dontSendNotification);
         return;
@@ -1895,6 +2036,10 @@ void PLANETMainGui::refreshAllGUIValues()
         velAttackValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("vintageAmount"))
         vintageValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("lifeAmount"))
+        lifeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("lifeSeed"))
+        seedValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 
     // Refresh harmonic envelope values for currently selected drawbar
     bindToSelectedDrawbar();

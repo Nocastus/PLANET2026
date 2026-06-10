@@ -34,7 +34,7 @@ PLANETVoice::PLANETVoice()
 //==============================================================================
 
 void PLANETVoice::startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount,
-    float velToAmplitude, float brilliance)
+    float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed)
 {
     // [Existing initialization code...]
     currentNoteNumber = noteNumber;
@@ -64,6 +64,32 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     totalPitchOffset = 0.0f;
     currentAngle = 0.0;
 
+    // ======================== LIFE: per-strike setup ========================
+    // Each modulator's accumulated phase starts at 0 (Stage 1). Detune defaults to 1.0
+    // (no detune) so that with LIFE off the synthesis is identical to the old engine.
+    modPhases.fill(0.0);
+    detuneRatio.fill(1.0);
+
+    if (lifeAmount > 0.0f)
+    {
+        // Stage 2/5: deterministic per-drawbar "luthier" detune drawn from the patch seed.
+        // Reseeding from lifeSeed alone (not the voice/note) means every strike of this
+        // patch shares the same inharmonic fingerprint - the instrument's character.
+        std::mt19937 lifeGen((uint32_t)lifeSeed);
+        std::uniform_real_distribution<float> spread(-1.0f, 1.0f);
+
+        constexpr float C_MAX = 12.0f;  // max detune in cents at full LIFE (tune by ear)
+        const float depth = lifeAmount / 100.0f;
+
+        for (int i = 0; i < NUM_COEFFICIENTS; ++i)
+        {
+            // weight(i): ~0 on drawbar 1 ramping to 1.0 on drawbar 10, so low partials stay
+            // pitch-anchored and the shimmer lives in the upper partials (physically correct).
+            const float w = std::pow(i / 9.0f, 1.5f);
+            const float cents = depth * w * C_MAX * spread(lifeGen);
+            detuneRatio[i] = std::pow(2.0, cents / 1200.0);
+        }
+    }
 
     // Reset vibrato state for new note
     vibratoState.reset();
@@ -400,7 +426,8 @@ bool PLANETVoice::shouldBeRemoved() const
 double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmount,
     const CoefficientArray& globalParams)
 {
-    auto x = normalizedPhase * 2.0 * juce::MathConstants<double>::pi;
+    constexpr double twoPi = 2.0 * juce::MathConstants<double>::pi;
+    auto x = normalizedPhase * twoPi;
     auto activeCoeffs = voiceCoeffGrid.getActiveCoefficients();
 
     // Get sine LUT instance for fast lookup
@@ -409,8 +436,20 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
     auto distortedPhase = x;
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
-        auto f = globalParams[i].inputSpectralMultiplier;  // Direct usage - no LFO needed
-        distortedPhase += k * sineLUT.lookup(f * x);  // Use LUT instead of std::sin
+
+        // Stage 1: read this modulator from its own phase accumulator rather than from
+        // f*x. With integer f and detuneRatio==1 the accumulator equals f*x (mod 2pi),
+        // so output is unchanged; with detune it stays continuous across the carrier wrap.
+        distortedPhase += k * sineLUT.lookup(modPhases[i]);
+
+        // Advance the accumulator by this modulator's effective rate (use-then-advance, so
+        // sample 0 uses phase 0 exactly like the old f*x form). angleDelta already tracks
+        // vibrato / pitch-wheel / pitch-envelope, so those follow for free.
+        const double fEff = globalParams[i].inputSpectralMultiplier * detuneRatio[i];
+        modPhases[i] += fEff * angleDelta;
+        // Multipliers go up to 30, so fEff*angleDelta can exceed 2pi on high notes;
+        // a while-wrap stays correct where the spec's single subtraction would not.
+        while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
     }
 
     return distortedPhase;
