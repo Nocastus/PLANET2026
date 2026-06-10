@@ -195,6 +195,33 @@ mainline. Replace the hardcoded equal-temperament formula at `PLANETVoice.cpp:44
 table lookup. Options to evaluate: fixed microtuning tables, Scala `.scl`/`.kbm` import, or
 MTS / MTS-ESP support. Keep the integration point isolated so a fork is easy to maintain.
 
+### F3. Classic-waveform presets via phase-distortion fitting (saw / square / pulse)
+The engine is `output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — i.e. each drawbar is a PM operator
+(ratio `fᵢ` = F field, depth `Kᵢ` = drawbar fader). Goal: compute `(fᵢ, Kᵢ)` sets that
+reproduce sawtooth, square, and pulse, and ship them as `.md` presets.
+- **Theory:** Jacobi–Anger gives `sin(x + K·sin(f·x)) = Σₙ Jₙ(K)·sin((1+nf)x)`. So `f=1` →
+  all harmonics (saw/brass family), `f=2` → odd harmonics only (square/triangle family);
+  integer multipliers only (non-integer = inharmonic). Bessel ripple + cross-modulation mean the
+  exact `1/n` amplitudes need numerical fitting, not a closed form.
+- **Method (offline):** model the engine in Python → FFT one cycle to read its harmonics →
+  `scipy.optimize.least_squares` to solve the 10 `Kᵢ` against the target harmonic series
+  (saw `1/n`; square `1/n` odd; pulse(d) `(2/nπ)sin(nπd)`) → emit `(fᵢ, Kᵢ)` straight into a
+  patch. Maps 1:1 onto the F fields + drawbar faders.
+- **Notes:** brilliance scales all Kᵢ, so one fitted preset gives a free sine→waveform morph on
+  the brilliance knob. Expect convincing "saw-like/square-like" tones, not textbook band-limited
+  classics (usually more organic). Watch aliasing up high — fit ~10–16 harmonics. Gerard already
+  has a convincing square by hand, so the manual approach works; the fitter automates/refines it.
+- **Deliverable:** Python fitter + ready-to-load saw / square / pulse(50%) / pulse(25%) `.md`
+  presets, plus printed F-and-K tables for hand-dialling. **Queued for next session.**
+
+### F4. Simulate filter sweeps with the drawbar envelopes
+Idea (Gerard): each drawbar has its own envelope, so per-drawbar envelope depths/times across the
+harmonic series can emulate a filter's time-varying gain at each harmonic — e.g. a lowpass sweep =
+upper drawbars attack later / decay faster than lower ones. With 10 drawbars you approximate the
+filter's harmonic-gain envelope in 10 bands. Natural pairing with F3: start from a fitted saw/square,
+then shape per-drawbar envelopes to match a sweeping filter's per-harmonic gain over time. Worth
+exploring how close 10 bands can get (resonance peak = boost the band at the cutoff). **Next session.**
+
 ---
 
 ## Recently fixed (awaiting ear test)
