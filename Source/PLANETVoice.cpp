@@ -65,31 +65,61 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     currentAngle = 0.0;
 
     // ======================== LIFE: per-strike setup ========================
-    // Each modulator's accumulated phase starts at 0 (Stage 1). Detune defaults to 1.0
-    // (no detune) so that with LIFE off the synthesis is identical to the old engine.
+    // Stage 3 doublets: each drawbar's partial is two components split by a small ratio
+    // (the two vibration polarizations of a struck string), whose interference makes the
+    // partial beat. The instrument's character (per-drawbar split scale and energy share)
+    // is drawn deterministically from the patch seed - same seed, same instrument - while
+    // each strike lands at a random point in every partial's beat cycle, so repeated
+    // notes differ like repeated plucks of a real string.
     modPhases.fill(0.0);
-    detuneRatio.fill(1.0);
+    modPhasesB.fill(0.0);
+    doubletRatioA.fill(1.0);
+    doubletRatioB.fill(1.0);
+    doubletEngaged.fill(false);
 
-    if (lifeAmount > 0.0f)
     {
-        // Stage 2/5: deterministic per-drawbar "luthier" detune drawn from the patch seed.
-        // Reseeding from lifeSeed alone (not the voice/note) means every strike of this
-        // patch shares the same inharmonic fingerprint - the instrument's character.
         std::mt19937 lifeGen((uint32_t)lifeSeed);
-        std::uniform_real_distribution<float> spread(-1.0f, 1.0f);
+        std::uniform_real_distribution<float> u01(0.0f, 1.0f);
 
-        constexpr float C_MAX = 12.0f;  // max detune in cents at full LIFE (tune by ear)
-        const float depth = lifeAmount / 100.0f;
+        // Per-strike randomness: a cheap LCG advanced across note-ons. Deliberately NOT
+        // the Vintage hash (stable per voice+note) - strikes must differ, not repeat.
+        lifeNoiseState += (uint32_t)noteNumber * 2654435761u;
+        auto strikeRand = [this]() {
+            lifeNoiseState = lifeNoiseState * 1664525u + 1013904223u;
+            return (float)(lifeNoiseState >> 8) * (1.0f / 16777216.0f);   // [0,1)
+        };
 
+        // Voicing constants (dev panel when wired, defaults otherwise):
+        // beatDepth pulls every partial's energy split toward 0.5 (deeper beat nulls);
+        // strikeSpread scales how much each strike perturbs that split.
+        const float beatDepth    = lifeVoicing ? lifeVoicing->beatDepth.load()    : LifeVoicingParams::kDefaultBeatDepth;
+        const float strikeSpread = lifeVoicing ? lifeVoicing->strikeSpread.load() : LifeVoicingParams::kDefaultStrikeSpread;
+        const float sSpread   = (1.0f - beatDepth) * 0.45f;
+        const float jitterAmp = strikeSpread * 0.25f;
+
+        // Character is drawn even when LIFE is 0 so a mid-note knob-up can engage the
+        // doublets live; until engagement it changes nothing (single path, ratios 1.0).
         for (int i = 0; i < NUM_COEFFICIENTS; ++i)
         {
-            // weight(i): ~0 on drawbar 1 ramping to 1.0 on drawbar 10, so low partials stay
-            // pitch-anchored and the shimmer lives in the upper partials (physically correct).
-            const float w = std::pow(i / 9.0f, 1.5f);
-            const float cents = depth * w * C_MAX * spread(lifeGen);
-            detuneRatio[i] = std::pow(2.0, cents / 1200.0);
+            doubletUnit[i] = 0.3f + 0.7f * u01(lifeGen);                       // seeded split scale
+            const float sBase = 0.5f + (2.0f * u01(lifeGen) - 1.0f) * sSpread; // seeded energy share
+            doubletMixB[i] = juce::jlimit(0.05f, 0.95f,
+                                          sBase + 2.0f * jitterAmp * (strikeRand() - 0.5f));
+        }
+
+        if (lifeAmount > 0.0f)
+        {
+            for (int i = 1; i < NUM_COEFFICIENTS; ++i)   // i=0: fundamental stays locked
+            {
+                doubletEngaged[i] = true;
+                // Random relative phase = random point in this partial's beat cycle:
+                // some strikes start at the null (partial blooms in late), some at the peak.
+                modPhasesB[i] = (double)strikeRand() * 2.0 * juce::MathConstants<double>::pi;
+            }
         }
     }
+
+    updateLifeRatios(lifeAmount);
 
     // Reset vibrato state for new note
     vibratoState.reset();
@@ -114,6 +144,60 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
 
     cachedVelocityAmplitude = std::pow(velocity, velToAmplitude / 100.0f);
 
+}
+
+// Recompute the per-drawbar doublet rate ratios from the current LIFE depth.
+// Called at note-on and then once per carrier cycle, so the LIFE knob (and, later,
+// Brilliance-dependent weighting) acts on held notes in real time. Phases are
+// continuous and rates only change at the cycle boundary, so retuning is click-free.
+void PLANETVoice::updateLifeRatios(float lifeAmount)
+{
+    // Voicing constants come from the dev panel when present (atomics on the
+    // processor); fall back to the struct defaults when not wired up.
+    const float cMax = lifeVoicing ? lifeVoicing->splitCeiling.load() : LifeVoicingParams::kDefaultSplitCeiling;
+    const float resp = lifeVoicing ? lifeVoicing->response.load()     : LifeVoicingParams::kDefaultResponse;
+    const float tilt = lifeVoicing ? lifeVoicing->tilt.load()         : LifeVoicingParams::kDefaultTilt;
+
+    const float depth01 = juce::jlimit(0.0f, 1.0f, lifeAmount * 0.01f);
+    const float depth = depth01 > 0.0f ? std::pow(depth01, resp) : 0.0f;
+
+    for (int i = 1; i < NUM_COEFFICIENTS; ++i)   // i=0: fundamental stays locked
+    {
+        // weight(i): bi-directional tilt across the 9 movable drawbars (i = 1..9; i=0 is the
+        // locked fundamental). tilt = 0 -> flat (every partial weighted equally); tilt > 0 ->
+        // top-weighted (shimmer up top); tilt < 0 -> bottom-weighted (counters the fact that
+        // high partials beat faster for a fixed cents offset - beat rate ~ frequency). Normalised
+        // so the favoured end is always 1.0, which keeps the Split-ceiling (cMax) calibration
+        // meaningful in either direction. NB: overall LIFE energy rises as |tilt| -> 0 (flat puts
+        // every partial at full cMax), so expect to re-trim Split ceiling when changing tilt.
+        const float x = (i - 1) / 8.0f;   // 0..1 across drawbars 2..10
+        const float w = std::exp(tilt * (x - 0.5f) - std::abs(tilt) * 0.5f);
+        const float c = depth * w * doubletUnit[i] * cMax;
+
+        if (c <= 0.0f)
+        {
+            // Engaged drawbars keep both components running at the carrier rate so a knob
+            // sweep through zero stays continuous; never-engaged drawbars remain on the
+            // single-accumulator path (bit-identical to LIFE off).
+            doubletRatioA[i] = 1.0;
+            doubletRatioB[i] = 1.0;
+            continue;
+        }
+
+        if (!doubletEngaged[i])
+        {
+            // LIFE turned up mid-note: start the pair in phase (beat begins at its peak)
+            // so the modulator value doesn't step.
+            doubletEngaged[i] = true;
+            modPhasesB[i] = modPhases[i];
+        }
+
+        // Half the split each way as a ratio: the pair stays centred on f (geometric
+        // mean), so the partial's perceived pitch doesn't shift - it only beats.
+        const double r = std::pow(2.0, (double)c / 2400.0);
+        doubletRatioA[i] = r;
+        doubletRatioB[i] = 1.0 / r;
+    }
 }
 
 // Modulate phase angle to create pitch offsets
@@ -179,6 +263,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime,
+    float lifeAmount,
     double bpm, double beatPosition)
 {
     auto twoPi = 2.0 * juce::MathConstants<double>::pi;
@@ -388,6 +473,9 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         // Promote staged coefficients to active
         voiceCoeffGrid.promoteStaged();
 
+        // LIFE: refresh doublet ratios at the cycle boundary (live knob response)
+        updateLifeRatios(lifeAmount);
+
         // Cache brilliance value at cycle boundaries
         cachedVelocityBrilliance = brilliance;
 
@@ -436,20 +524,34 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
     auto distortedPhase = x;
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
+        const double f = globalParams[i].inputSpectralMultiplier;
 
-        // Stage 1: read this modulator from its own phase accumulator rather than from
-        // f*x. With integer f and detuneRatio==1 the accumulator equals f*x (mod 2pi),
-        // so output is unchanged; with detune it stays continuous across the carrier wrap.
-        distortedPhase += k * sineLUT.lookup(modPhases[i]);
-
-        // Advance the accumulator by this modulator's effective rate (use-then-advance, so
-        // sample 0 uses phase 0 exactly like the old f*x form). angleDelta already tracks
-        // vibrato / pitch-wheel / pitch-envelope, so those follow for free.
-        const double fEff = globalParams[i].inputSpectralMultiplier * detuneRatio[i];
-        modPhases[i] += fEff * angleDelta;
-        // Multipliers go up to 30, so fEff*angleDelta can exceed 2pi on high notes;
-        // a while-wrap stays correct where the spec's single subtraction would not.
-        while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
+        if (doubletEngaged[i])
+        {
+            // Stage 3 doublet: two components either side of f, energy-shared by s.
+            // Their interference makes this partial beat - and because the split is a
+            // fixed ratio, partial n beats n times faster than the fundamental.
+            // s = 0.5 beats through a true null; away from 0.5 it beats shallower with
+            // a slight pitch wobble. Both are wanted flavours.
+            const float sB = doubletMixB[i];
+            distortedPhase += k * ((1.0f - sB) * sineLUT.lookup(modPhases[i])
+                                 + sB          * sineLUT.lookup(modPhasesB[i]));
+            modPhases[i]  += f * doubletRatioA[i] * angleDelta;
+            modPhasesB[i] += f * doubletRatioB[i] * angleDelta;
+            while (modPhases[i]  >= twoPi) modPhases[i]  -= twoPi;
+            while (modPhasesB[i] >= twoPi) modPhasesB[i] -= twoPi;
+        }
+        else
+        {
+            // Single-accumulator path (Stage 1): use-then-advance, so with integer f
+            // this equals sin(f*x) exactly and LIFE-off patches are unchanged.
+            // angleDelta already tracks vibrato / pitch-wheel / pitch-envelope.
+            distortedPhase += k * sineLUT.lookup(modPhases[i]);
+            modPhases[i] += f * angleDelta;
+            // Multipliers go up to 30, so f*angleDelta can exceed 2pi on high notes;
+            // a while-wrap stays correct where a single subtraction would not.
+            while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
+        }
     }
 
     return distortedPhase;
@@ -502,8 +604,13 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             float linearProgress = (float)(envTime / attackTime);
             // Apply exponential curve for attack (convex)
             if (curveAmount > 0.001f) {
-                float curveFactor = 1.0f + curveAmount * 6.0f;
-                envLevel = FastMath::fastExpAttack(curveFactor * linearProgress);
+                float k = 1.0f + curveAmount * 6.0f;
+                // Normalised rising exponential: exactly 0.0 at progress 0, exactly 1.0 at
+                // progress 1, so the attack lands on full level with no discontinuity.
+                // (The old form ended at 1 - e^(-k) and snapped up to 1.0 - an audible
+                // click at the attack/decay boundary, worst at low curve amounts.)
+                float ek = std::exp(-k);
+                envLevel = (1.0f - std::exp(-k * linearProgress)) / (1.0f - ek);
             }
             else {
                 envLevel = linearProgress;  // Linear fallback

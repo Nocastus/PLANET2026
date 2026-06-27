@@ -23,6 +23,12 @@ public:
     void setPitchWheelOffset(float offsetInSemitones, double sampleRate);
     void setExponentialControl(float value);
 
+    // LIFE voicing dev scaffold: hand every voice a pointer to the processor's
+    // tunable constants (lifetimes match - processor owns both).
+    void setLifeVoicingParams(const LifeVoicingParams* p) {
+        for (auto& voice : voices) voice.setLifeVoicingParams(p);
+    }
+
     PLANETVoice* getFirstActiveVoice();  // For debug info
 
     float getFirstVoiceFrequency() const;
@@ -47,6 +53,7 @@ public:
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
         float pitchEnvDistance, float pitchAttackTime,
+        float lifeAmount,
         double bpm, double beatPosition);
 
     // Voice management

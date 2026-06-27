@@ -252,7 +252,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 std::make_unique<juce::AudioParameterFloat>("punchFrequency", "Punch Frequency", 500.0f, 5000.0f, 1800.0f),
               
             // ======================== MASTER CONTROLS ========================
-                std::make_unique<juce::AudioParameterFloat>("masterVolume", "Master Volume", 0.0f, 1.0f, 0.8f),
+                std::make_unique<juce::AudioParameterFloat>("masterVolume", "Master Volume", 0.0f, 1.0f, 0.64f),
                 std::make_unique<juce::AudioParameterFloat>("transpose", "Transpose", -24.0f, 24.0f, 0.0f),
 
         })
@@ -285,6 +285,9 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     vintageAmountParameter = parameters.getRawParameterValue("vintageAmount");
     lifeAmountParameter = parameters.getRawParameterValue("lifeAmount");
     lifeSeedParameter = parameters.getRawParameterValue("lifeSeed");
+
+    // Give voices access to the LIFE voicing dev constants
+    voiceManager.setLifeVoicingParams(&lifeVoicing);
 
     // ======================== INITIALIZE EFFECTS PARAMETER POINTERS ========================
     detuneAmountParameter = parameters.getRawParameterValue("detuneAmount");
@@ -605,6 +608,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             vibratoRate, vibratoDepth, vibratoFadeIn,
             velToAmplitude, velToAttackTime, vintageAmount,
             pitchEnvDistance, pitchAttackTime,
+            lifeAmount,
             currentBPM, beatPositionForSample);
 
         // Waveform snapshot capture

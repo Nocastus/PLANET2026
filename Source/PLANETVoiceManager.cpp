@@ -89,6 +89,7 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime,
+    float lifeAmount,
     double bpm, double beatPosition)
 
 {  // Opening brace
@@ -105,6 +106,7 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
                 vibratoRate, vibratoDepth, vibratoFadeIn,
                 velToAmplitude, velToAttackTime, vintageAmount,
                 pitchEnvDistance, pitchAttackTime,
+                lifeAmount,
                 bpm, beatPosition);
 
             // Capture first voice for waveform display

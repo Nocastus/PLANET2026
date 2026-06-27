@@ -111,6 +111,7 @@ public:
     void startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount = 0.0f,
         float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0);
     void stopNote(bool sustainPedalDown = false);  // KEEP ONLY THIS ONE
+    void setLifeVoicingParams(const LifeVoicingParams* p) { lifeVoicing = p; }
     void triggerRelease();  // New method for forced release
     bool isActive() const { return noteIsActive; }
     bool shouldBeRemoved() const;
@@ -133,6 +134,7 @@ public:
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
         float pitchEnvDistance, float pitchAttackTime,
+        float lifeAmount,
         double bpm, double beatPosition);
 
     // Voice identification
@@ -195,12 +197,25 @@ private:
     // ======================== LIFE FEATURE STATE ========================
     // Stage 1: each modulator carries its own accumulated phase instead of deriving it
     // from the carrier (f*x). This is what allows non-integer / time-varying multipliers
-    // without a per-cycle discontinuity. With integer multipliers and detuneRatio == 1,
+    // without a per-cycle discontinuity. With integer multipliers and no doublet engaged,
     // modPhases[i] tracks f*x (mod 2pi) exactly, so existing patches are unchanged.
     std::array<double, NUM_COEFFICIENTS> modPhases;
-    // Stage 2: per-drawbar static detune as a frequency ratio (2^(cents/1200)), derived
-    // from the LIFE seed at note-on. 1.0 == no detune (the pitch-anchored default).
-    std::array<double, NUM_COEFFICIENTS> detuneRatio;
+
+    // Stage 3 doublets: each partial is two components (two "polarizations" of a struck
+    // string) split by a small ratio about f; their interference is the per-partial beat.
+    // Because the split is a ratio (not Hz), partial n beats n times faster than the
+    // fundamental - the signature of a real instrument. Character (split scale, energy
+    // share) is drawn from the LIFE seed; ratios are refreshed once per carrier cycle by
+    // updateLifeRatios() so the LIFE knob acts on held notes in real time.
+    std::array<double, NUM_COEFFICIENTS> modPhasesB;     // lower component's phase
+    std::array<double, NUM_COEFFICIENTS> doubletRatioA;  // upper component, 2^(+c/2400)
+    std::array<double, NUM_COEFFICIENTS> doubletRatioB;  // lower component, 2^(-c/2400)
+    std::array<float,  NUM_COEFFICIENTS> doubletMixB;    // s: lower component's energy share
+    std::array<float,  NUM_COEFFICIENTS> doubletUnit;    // seeded per-drawbar split scale [0.3,1]
+    std::array<bool,   NUM_COEFFICIENTS> doubletEngaged; // per-note gate; engages, never disengages
+    uint32_t lifeNoiseState = 0x12345678;                // per-strike RNG (LCG), advances across notes
+    const LifeVoicingParams* lifeVoicing = nullptr;      // dev-tunable constants (null = defaults)
+    void updateLifeRatios(float lifeAmount);
 
     // Per-voice amplitude envelope
     EnvelopeStage ampEnvStage = EnvelopeStage::Idle;

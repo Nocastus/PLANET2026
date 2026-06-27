@@ -202,6 +202,14 @@ PLANETPatch PLANETPatchManager::createPatchFromProcessor(
 
 void PLANETPatchManager::applyPatchToProcessor(const PLANETPatch& patch,
                                                 juce::AudioProcessorValueTreeState& apvts) {
+    // A patch describes the COMPLETE instrument state. Parameters the file doesn't
+    // mention (typically ones added to ISHTAR after the patch was saved, e.g. LIFE)
+    // must return to their defaults - not silently keep whatever the previous setup
+    // left behind, which made old "static" patches inherit the prior patch's Life.
+    for (auto* param : apvts.processor.getParameters())
+        if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*>(param))
+            parameter->setValueNotifyingHost(parameter->getDefaultValue());
+
     // Apply all parameter values from the patch to the processor
     for (const auto& [paramID, actualValue] : patch.parameters) {
         // Get parameter and convert actual value to normalized

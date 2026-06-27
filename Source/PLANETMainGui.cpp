@@ -376,8 +376,87 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         star.closeSubPath();
         rerollButton.setShape(star, false, true, false);
     }
-    rerollButton.onClick = [this] { rerollSeed(); };
+    // Plain click = re-cast the seed; shift-click = toggle the dev voicing panel.
+    rerollButton.onClick = [this]
+    {
+        if (juce::ModifierKeys::getCurrentModifiers().isShiftDown())
+            toggleVoicingPanel();
+        else
+            rerollSeed();
+    };
     addAndMakeVisible(rerollButton);
+
+    // ======================== LIFE VOICING dev panel ========================
+    {
+        // Sliders 0/1 are the ridge controls: Intensity = ceiling, Ratio = response/ceiling.
+        // The engine still reads splitCeiling + response, which we recompute from these two.
+        const char* vNames[NUM_VOICING_SLIDERS] = { "Intensity", "Ratio", "Tilt", "Beat depth", "Strike spread" };
+        const double vMins[NUM_VOICING_SLIDERS] = { 0.5,  0.05,  -3.0, 0.0, 0.0 };
+        const double vMaxs[NUM_VOICING_SLIDERS] = { 24.0, 0.40,   3.0, 1.0, 1.0 };
+        const double vSteps[NUM_VOICING_SLIDERS] = { 0.1, 0.0025, 0.01, 0.01, 0.01 };
+        const double vDefs[NUM_VOICING_SLIDERS] = {
+            LifeVoicingParams::kDefaultSplitCeiling, LifeVoicingParams::kDefaultRatio,
+            LifeVoicingParams::kDefaultTilt, LifeVoicingParams::kDefaultBeatDepth,
+            LifeVoicingParams::kDefaultStrikeSpread };
+
+        for (int i = 0; i < NUM_VOICING_SLIDERS; ++i)
+        {
+            auto& s = voicingSliders[i];
+            s.setSliderStyle(juce::Slider::LinearHorizontal);
+            s.setRange(vMins[i], vMaxs[i], vSteps[i]);
+            s.setValue(vDefs[i], juce::dontSendNotification);
+            s.setDoubleClickReturnValue(true, vDefs[i]);
+            s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 55, 18);
+            s.onValueChange = [this, i]
+            {
+                if (lifeVoicingParams == nullptr) return;
+                const float v = (float)voicingSliders[i].getValue();
+                switch (i)
+                {
+                    // Intensity (ceiling) and Ratio both drive response = ratio * ceiling.
+                    case 0:
+                    case 1:
+                    {
+                        const float ceiling = (float)voicingSliders[0].getValue();
+                        const float ratio   = (float)voicingSliders[1].getValue();
+                        lifeVoicingParams->splitCeiling.store(ceiling);
+                        lifeVoicingParams->response.store(juce::jlimit(0.1f, 8.0f, ratio * ceiling));
+                        break;
+                    }
+                    case 2: lifeVoicingParams->tilt.store(v);         break;
+                    case 3: lifeVoicingParams->beatDepth.store(v);    break;
+                    case 4: lifeVoicingParams->strikeSpread.store(v); break;
+                }
+            };
+            voicingPanel.addAndMakeVisible(s);
+
+            auto& l = voicingSliderLabels[i];
+            l.setText(vNames[i], juce::dontSendNotification);
+            l.setColour(juce::Label::textColourId, juce::Colours::orange);
+            l.setFont(juce::Font(13.0f));
+            voicingPanel.addAndMakeVisible(l);
+
+            l.setBounds(10, 28 + i * 34, 100, 20);
+            s.setBounds(112, 28 + i * 34, 208, 22);
+        }
+
+        voicingSnapshotButton.onClick = [this] { saveVoicingSnapshot(); };
+        voicingPanel.addAndMakeVisible(voicingSnapshotButton);
+        voicingSnapshotButton.setBounds(10, 28 + NUM_VOICING_SLIDERS * 34, 90, 24);
+
+        // Close (x) in the top-right corner - panel is 330px wide (see resized()).
+        voicingCloseButton.setColour(juce::TextButton::textColourOffId, juce::Colours::orange);
+        voicingCloseButton.onClick = [this] { voicingPanel.setVisible(false); };
+        voicingPanel.addAndMakeVisible(voicingCloseButton);
+        voicingCloseButton.setBounds(330 - 26, 4, 22, 22);
+
+        voicingSavedLabel.setColour(juce::Label::textColourId, juce::Colours::orange.withAlpha(0.8f));
+        voicingSavedLabel.setFont(juce::Font(12.0f));
+        voicingPanel.addAndMakeVisible(voicingSavedLabel);
+        voicingSavedLabel.setBounds(106, 28 + NUM_VOICING_SLIDERS * 34, 214, 24);
+
+        addChildComponent(voicingPanel);   // added invisible; shift-click the star to show
+    }
 
     // ======================== RIGHT COLUMN CONTROLS ========================
     
@@ -921,6 +1000,59 @@ void PLANETMainGui::rerollSeed()
     boltFlash = 1.0f;   // fire the spark
 }
 
+void PLANETMainGui::setLifeVoicingParams(LifeVoicingParams* p)
+{
+    lifeVoicingParams = p;
+    if (p == nullptr) return;
+    // The processor's atomics outlive the editor: when the window reopens, show the
+    // values that are actually in force, not the slider defaults.
+    const float ceiling = p->splitCeiling.load();
+    const float ratio   = ceiling > 0.0f ? p->response.load() / ceiling : LifeVoicingParams::kDefaultRatio;
+    voicingSliders[0].setValue(ceiling, juce::dontSendNotification);  // Intensity
+    voicingSliders[1].setValue(ratio,   juce::dontSendNotification);  // Ratio = response/ceiling
+    voicingSliders[2].setValue(p->tilt.load(),         juce::dontSendNotification);
+    voicingSliders[3].setValue(p->beatDepth.load(),    juce::dontSendNotification);
+    voicingSliders[4].setValue(p->strikeSpread.load(), juce::dontSendNotification);
+}
+
+void PLANETMainGui::toggleVoicingPanel()
+{
+    voicingPanel.setVisible(!voicingPanel.isVisible());
+    if (voicingPanel.isVisible())
+        voicingPanel.toFront(false);
+}
+
+void PLANETMainGui::saveVoicingSnapshot()
+{
+    auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                   .getChildFile("PLANET2026").getChildFile("VoicingSnapshots");
+    dir.createDirectory();
+    auto now = juce::Time::getCurrentTime();
+    auto file = dir.getChildFile("voicing_" + now.formatted("%Y%m%d_%H%M%S") + ".txt");
+
+    // Capture the patch context alongside the voicing constants - a voicing only
+    // means something relative to the patch and LIFE/seed it was judged against.
+    juce::String s;
+    s << "ISHTAR LIFE voicing snapshot  " << now.toString(true, true) << "\n";
+    s << "patch = " << currentPatchLabel.getText() << "\n\n";
+    for (int i = 0; i < NUM_VOICING_SLIDERS; ++i)
+        s << voicingSliderLabels[i].getText() << " = "
+          << juce::String(voicingSliders[i].getValue(), 4) << "\n";
+    // Intensity/Ratio are the ridge controls; record the derived response = ratio * ceiling.
+    s << "(derived response = "
+      << juce::String(voicingSliders[0].getValue() * voicingSliders[1].getValue(), 3) << ")\n";
+    s << "\n";
+    for (auto* id : { "lifeAmount", "lifeSeed", "brilliance" })
+        if (auto* p = apvts.getParameter(id))
+            s << id << " = " << juce::String(p->convertFrom0to1(p->getValue()), 3) << "\n";
+    s << "\nnotes: \n";
+
+    if (file.replaceWithText(s))
+        voicingSavedLabel.setText("saved: " + file.getFileName(), juce::dontSendNotification);
+    else
+        voicingSavedLabel.setText("SAVE FAILED", juce::dontSendNotification);
+}
+
 void PLANETMainGui::updateDrawbarColors()
 {
     for (int i = 0; i < 10; ++i)
@@ -1460,6 +1592,9 @@ void PLANETMainGui::resized()
     seedValue.setBounds(seedModX + 40, seedModY, 62, seedModH);
     rerollButton.setBounds(seedModX + 110, seedModY + 1, seedModH - 2, seedModH - 2);
     seedModuleBounds = juce::Rectangle<int>(seedModX, seedModY, seedModW, seedModH);
+
+    // Dev voicing panel: floats over the harmonic-envelope zone when toggled
+    voicingPanel.setBounds(20, drawbarSectionHeight + 20, 330, 240);
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;

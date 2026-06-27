@@ -36,6 +36,10 @@ public:
     std::atomic<float> rawModWheelValue{ 0.5f };      // 0-1, MIDI 0-127 normalized, default center
     std::atomic<bool> modWheelEngaged{ false };       // Has mod wheel "picked up" since patch load?
 
+    // LIFE voicing dev scaffold (see PLANETDataStructures.h) - written by the dev
+    // panel in the GUI, read per-cycle by the voices. Not part of saved state.
+    LifeVoicingParams lifeVoicing;
+
     //==============================================================================
     PLANETtest4AudioProcessor();
     ~PLANETtest4AudioProcessor() override;

@@ -1,5 +1,5 @@
 # PLANET2026 — To-Do / Working Notes
-**Living task list.** Last updated: 9 June 2026
+**Living task list.** Last updated: 26 June 2026
 
 > The dated `*.md` files in this folder (`VERSION_0.4.0_MERGE_COMPLETE.md`,
 > `BUG_FIXES_v0.4.1.md`, etc.) are historical changelogs from January 2026 and are
@@ -133,7 +133,31 @@ for `lfoShapeCombo`/`lfoSyncCombo`. Everything else in the focus work is confirm
 and the cycle key operate the transport as normal; patch-name and F-value text fields still
 accept typing when clicked.
 
-### 3. Version string is stale
+### 3. Sample-accurate MIDI timing (notes trigger early)
+**Found 12 Jun 2026 (Gerard, quantized-export test):** exported audio lands slightly *ahead* of
+the beat. Not latency reporting (we report 0; no `setLatencySamples` anywhere). Cause: the MIDI
+loop in `PluginProcessor.cpp` `processBlock` (~line 488) processes all events *before* the render
+loop and ignores `metadata.samplePosition` — so every note-on sounds from sample 0 of its buffer,
+i.e. early by its intra-block offset (up to one buffer, ~12 ms at 512/44.1k). Imperceptible live
+(reads as snappy response), systematic on export. **Fix:** standard split-block processing — walk
+MIDI events in sample order, render audio in segments between events, apply each event at its true
+offset. Also fixes pitch-wheel/CC block-start quantization. Restructures the main processBlock loop.
+
+### 3c. Rename project PLANET2026 → ISHTAR in Projucer (wrong display name in Cubase)
+**Found 26 Jun 2026 (Gerard):** the built `.vst3` still shows the wrong display name in Cubase's
+plug-in list — it reads `PLANET2026`, not `ISHTAR`. Fix at source in Projucer (`PLANET2026.jucer`):
+update the project name / plugin name fields so the generated plugin advertises **ISHTAR** to the host.
+- Check all the relevant Projucer fields: **Project Name**, and under the VST3/plugin settings the
+  **Plugin Name**, **Plugin Code**, **Plugin Manufacturer**, and the **VST3 Category** — the host
+  display name comes from the plugin metadata, not the project name alone.
+- After re-saving from Projucer, the generated files/IDs may change; rebuild clean. Cubase caches the
+  plug-in list, so a rescan (and possibly clearing the old `.vst3` from the install dir) will be needed
+  for the new name to appear. Watch out for the old PLANET2026 entry lingering as a duplicate.
+- **Decide:** rename only the host-facing display name, or also rename the `.jucer`/project files and
+  source folder on disk? Display name is the minimum to fix the symptom; a full rename is tidier but
+  touches more (build paths, install scripts). Confirm scope with Gerard before doing the full rename.
+
+### 3b. Version string is stale
 [`Source/PluginEditor.cpp:28`](Source/PluginEditor.cpp#L28) still reads `"v0.4.0"` despite the
 v0.4.1 bug-fix work and everything since (master volume, transpose, random LFO, tempo-sync LFO).
 Bump it to reflect reality before the next release build.
@@ -150,6 +174,52 @@ Infrastructure is in place — `updateDrawbarColors()` sets a `hasActiveLFO` pro
 drawbar slider — but nothing renders it. Needs a custom `LookAndFeel` that reads the property
 and draws an indicator (e.g. pulsing border) on `drawLinearSliderThumb()`. See
 `BUG_FIXES_v0.4.1.md` Bug #2 for the original write-up.
+
+---
+
+### 6. UI refinements from the Claude Design mockup (reviewed 26 Jun 2026)
+Source: Claude Design mockup + `ISHTAR Claude Design notes.txt` + Gerard's notes. The mockup is a
+reference, not gospel — several things are better in the current build. Items below are the agreed
+keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLookAndFeel`.
+
+**Adopt (clear wins):**
+- **a. Drawbar palette → "Palette 03".** Replace `drawbarColours[10]` (`PLANETMainGui.h:181`) with:
+  `#ff9886 #ae6100 #d7b946 #638519 #64d599 #008f89 #33cdf8 #3779c5 #b3adff #985baa`.
+  Trivial constant swap. Knock-on: `selectedFDisplay` text colour + any per-drawbar tinting follow
+  automatically since they read from this array.
+- **b. KEEP current drawbar thumb design — reject the mockup's solid rectangles.** The mockup author
+  didn't realise the thumb shape encodes function (circle vs Ishtar-star = VelToHarm; pale ring = active
+  LFO; see `DrawbarLookAndFeel::drawLinearSlider`, `PLANETMainGui.h:23`). No change — documented so we
+  don't "fix" it later.
+- **c. Shrink the Ishtar star inside its orbit.** Currently the star rays and the orbit circle share
+  `outerRadius` (`IshtarLookAndFeel.cpp:18,46,63`), so ray tips touch the orbit. Make the star smaller
+  than the orbit so the orbit ring clearly sits *outside* the points. Keep our star shape (Gerard
+  prefers it to the mockup's). Implementation: introduce a star-scale ratio (<1) applied to the star's
+  `outerRadius` while the orbit/indicator radius stays put. Easy, low-risk.
+- **d. Zone labels → top-left of each zone** (currently bottom-centre, `PLANETMainGui.cpp:1301-1314`).
+  Watch for collisions with controls that sit at the top of a zone; may need small top padding per zone.
+- **e. Drawbar-Envelope label becomes dynamic + coloured.** Make the "DRAWBAR ENVELOPE" header read
+  e.g. "DRAWBAR 4 ENVELOPE" in that drawbar's highlight colour (`drawbarColours[selectedDrawbar]`), and
+  **remove** the faint "DRAWBAR N" watermark inside the graph (`PLANETMainGui.cpp:1204-1208`). The
+  coloured header replaces what the watermark was doing, better. Pairs with (a) and (d).
+- **f. Move "ISHTAR" wordmark to top-left of the window** in the Amarna font, instead of the bottom
+  patch bar (`PLANETMainGui.cpp:1316-1319`). ⚠ Most layout-invasive: zones currently start at y=0 with
+  no title strip. Either overlay the wordmark in the DRAWBARS zone's new top-left label area, or add a
+  slim title strip and push content down. Decide approach before building; do this one last.
+
+**Feasible, worth a spike:**
+- **g. "Comet-tail" value indicator on the star knobs.** A fading arc/trail behind the orbiting
+  indicator from start-angle to current value. Definitely doable in JUCE (draw a gradient-stroked
+  `Path` arc in `drawOrbitingIndicator`). Nice-to-have polish; build after a-f land and ear/eye-test it.
+
+**Global-scope accent colour — DECIDED 26 Jun 2026: steel grey.**
+- **h. Global accent = steel grey (~`#8a93a3`, tune by eye).** Used for *global* elements (the global
+  Amplitude Envelope curve, global section accents). Chosen over antique-gold `#bba357` because gold sat
+  too close to drawbar 3's `#d7b946` (two-golds collision). Steel grey reads as neutral/"global" and is
+  distinct from every Palette-03 hue. Implement as a single named constant so it's easy to fine-tune.
+
+**Sequencing:** a → c → d → e → b(no-op) → h(once decided) → f (layout) → g (polish). a/c/d/e/h are
+small, independent edits; f is the only structural one.
 
 ---
 
@@ -231,9 +301,10 @@ exploring how close 10 bands can get (resonance peak = boost the band at the cut
   rose again for `k > ~4.4` due to the Padé approximation — so the tail was still at 15–30% level
   when the stage flipped to Idle and snapped to silence. Replaced with a normalised `std::exp`
   curve that hits exactly 1.0→0.0 across the stage. Shared engine, so it also fixes all 10
-  per-drawbar envelopes. **Follow-up:** the Attack case has the same structure (`fastExpAttack(k)`
-  ends at `1 - e^(-k)` then snaps up to 1.0) — small/masked at the transient peak so left as-is;
-  normalise it too if any attack click shows up.
+  per-drawbar envelopes. **Follow-up ✅ done 12 Jun 2026:** the Attack case had the same structure
+  (`fastExpAttack(k)` ends at `1 - e^(-k)` then snaps up to 1.0) and the predicted click did show
+  up in testing (~attackTime into the note, worst at low Env Curve where the snap is up to ~20%).
+  Normalised the same way as Decay; fixes amp + all 10 drawbar envelope attacks.
   - *If the two per-sample `std::exp` calls ever flag on CPU:* two viable levers.
     (a) **Incremental exp** — precompute `step = exp(-k·sampleDelta/releaseTime)` once at stage
     start, then `expTerm *= step` per sample (one multiply, no per-sample exp, full per-sample

@@ -108,6 +108,31 @@ struct CoefficientParams {
 };
 
 //==============================================================================
+// LIFE VOICING (dev scaffold): tuning constants for the Life doublet engine,
+// exposed to a temporary dev panel so the voicing can be found by ear.
+// Deliberately NOT APVTS parameters - not saved in patches, not automatable,
+// invisible to the host. Once the values are settled they get hard-coded and
+// this struct (plus the panel) can be removed or left as a hidden tool.
+//==============================================================================
+struct LifeVoicingParams {
+    // Intensity/Ratio reparameterisation (27 Jun): the dev panel now drives ceiling and
+    // response together along the ear-found ridge response = ratio * ceiling. The engine
+    // still reads splitCeiling + response directly; the GUI computes them from the ridge.
+    static constexpr float kDefaultSplitCeiling = 16.0f;    // C_MAX cents at LIFE=100 ("Intensity") - ear-locked 27 Jun
+    static constexpr float kDefaultRatio        = 0.15f;    // response/ceiling (ear-locked 27 Jun, just under the 0.1875 ridge for a touch more body)
+    static constexpr float kDefaultResponse     = kDefaultRatio * kDefaultSplitCeiling;  // = 2.4
+    static constexpr float kDefaultTilt         = -1.0f;   // bi-directional weight: 0 flat, >0 top-weighted, <0 bottom-weighted (ear-locked 27 Jun)
+    static constexpr float kDefaultBeatDepth    = 0.5f;   // 1 = every partial beats through a full null
+    static constexpr float kDefaultStrikeSpread = 0.4f;   // per-strike energy-split jitter scale
+
+    std::atomic<float> splitCeiling { kDefaultSplitCeiling };
+    std::atomic<float> response     { kDefaultResponse };
+    std::atomic<float> tilt         { kDefaultTilt };
+    std::atomic<float> beatDepth    { kDefaultBeatDepth };
+    std::atomic<float> strikeSpread { kDefaultStrikeSpread };
+};
+
+//==============================================================================
 // COEFFICIENT ARRAY MANAGER
 //==============================================================================
 

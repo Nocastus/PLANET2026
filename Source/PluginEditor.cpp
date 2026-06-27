@@ -24,6 +24,9 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
 
     addAndMakeVisible(*mainGui);
 
+    // Wire the LIFE voicing dev panel to the processor's tunable constants
+    mainGui->setLifeVoicingParams(&audioProcessor.lifeVoicing);
+
     // Version label
     versionLabel.setText("v0.5.0-life", juce::dontSendNotification);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey.withAlpha(0.6f));

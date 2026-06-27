@@ -11,6 +11,7 @@
 #include "WaveformDisplay.h"
 #include <array>
 #include "IshtarLookAndFeel.h"
+#include "PLANETDataStructures.h"
 
 
 //==============================================================================
@@ -146,6 +147,7 @@ public:
     void refreshAllGUIValues();  // Refresh all GUI elements from current parameter values
     void updatePatchNameDisplay(const juce::String& name);
     void updatePatchCommentDisplay(const juce::String& comment);
+    void setLifeVoicingParams(LifeVoicingParams* p);   // wires the dev panel to the processor
 
     // Flag to suppress GUI updates during bulk parameter loading
     bool suppressParameterUpdates = false;
@@ -267,6 +269,29 @@ private:
     juce::Rectangle<int> lifeKnobBounds, seedModuleBounds;
     float boltFlash = 0.0f;
     void rerollSeed();
+
+    // ---- LIFE voicing dev panel (temporary tuning scaffold) ----
+    // Shift-click the seed star to toggle. Functional-ugly by design: orange border
+    // so it can't be mistaken for shipping GUI. Sliders write straight to the
+    // processor's LifeVoicingParams atomics; Snapshot dumps them to a text file.
+    struct VoicingPanel : juce::Component {
+        void paint(juce::Graphics& g) override {
+            g.fillAll(juce::Colour(0xf0141420));
+            g.setColour(juce::Colours::orange);
+            g.drawRect(getLocalBounds(), 2);
+            g.drawText("LIFE VOICING (dev)", 10, 6, getWidth() - 20, 16, juce::Justification::left);
+        }
+    };
+    VoicingPanel voicingPanel;
+    static constexpr int NUM_VOICING_SLIDERS = 5;
+    std::array<juce::Slider, NUM_VOICING_SLIDERS> voicingSliders;
+    std::array<juce::Label, NUM_VOICING_SLIDERS> voicingSliderLabels;
+    juce::TextButton voicingSnapshotButton { "Snapshot" };
+    juce::TextButton voicingCloseButton { "x" };   // dismiss the dev panel (top-right corner)
+    juce::Label voicingSavedLabel;
+    LifeVoicingParams* lifeVoicingParams = nullptr;
+    void toggleVoicingPanel();
+    void saveVoicingSnapshot();
 
     // ======================== RIGHT COLUMN CONTROLS ========================
     
