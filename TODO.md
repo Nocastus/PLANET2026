@@ -183,10 +183,11 @@ update the project name / plugin name fields so the generated plugin advertises 
   source folder on disk? Display name is the minimum to fix the symptom; a full rename is tidier but
   touches more (build paths, install scripts). Confirm scope with Gerard before doing the full rename.
 
-### 3b. Version string is stale
-[`Source/PluginEditor.cpp:28`](Source/PluginEditor.cpp#L28) still reads `"v0.4.0"` despite the
-v0.4.1 bug-fix work and everything since (master volume, transpose, random LFO, tempo-sync LFO).
-Bump it to reflect reality before the next release build.
+### 3b. Version string is stale ✅ CLOSED (27 Jun 2026)
+The label had already moved on to `"v0.5.0-life"` (the TODO note saying `"v0.4.0"` was itself stale).
+Dropped the `-life` dev suffix now that LIFE is locked/shipped and bumped to **`v0.5.1`**
+([`Source/PluginEditor.cpp:31`](Source/PluginEditor.cpp#L31)) to cover the focus fix + pitch-envelope
+work landing on top of the LIFE release.
 
 ### 4. Decide the fate of `StereoSplitter.cpp`
 [`Source/StereoSplitter.cpp`](Source/StereoSplitter.cpp) is an untracked standalone console
