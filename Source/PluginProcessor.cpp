@@ -233,7 +233,14 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
             // ======================== PITCH ATTACK ENVELOPE PARAMETERS ========================
             std::make_unique<juce::AudioParameterFloat>("pitchEnvDistance", "Pitch Env Distance", -12.0f, 12.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("pitchEnvTime", "Pitch Env Time", 0.01f, 5.0f, 0.5f),
+            // Skewed (skew < 1) so the low end gets most of the knob travel - the musically
+            // useful fast pitch sweeps live below ~0.5 s and need fine control. skew = 0.35
+            // puts the knob centre at ~0.70 s; the bottom quarter spans 0.01-0.10 s (skew 0.25
+            // was too aggressive - the first quarter wasted on an imperceptible 0.01-0.03 s).
+            // Range (0.01-5.0 s) and default (0.5 s) unchanged, so existing patches are
+            // unaffected (they store real seconds and reload through this range). Tune by feel.
+            std::make_unique<juce::AudioParameterFloat>("pitchEnvTime", "Pitch Env Time",
+                juce::NormalisableRange<float>(0.01f, 5.0f, 0.0f, 0.35f), 0.5f),
 
             // ======================== AMPLITUDE ENVELOPE PARAMETERS (4) ========================
             std::make_unique<juce::AudioParameterFloat>("ampEnvAttackTime", "Amp Env Attack Time", 0.001f, 10.0f, 0.1f),

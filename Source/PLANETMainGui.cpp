@@ -101,8 +101,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoShapeCombo.addItem("Square", 3);
     lfoShapeCombo.addItem("Random", 4);
     lfoShapeCombo.setSelectedId(1);
-    lfoShapeCombo.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
-    lfoShapeCombo.setMouseClickGrabsKeyboardFocus(false);  // clicking must not steal focus either (keypad Enter -> Cubase)
+    // Keyboard-focus suppression now handled by FocuslessComboBox (see PLANETMainGui.h)
     addAndMakeVisible(lfoShapeCombo);
 
     lfoShapeLabel.setText("Shape", juce::dontSendNotification);
@@ -121,8 +120,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
             updateLfoSyncMode();
         }
     };
-    lfoSyncCombo.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
-    lfoSyncCombo.setMouseClickGrabsKeyboardFocus(false);  // clicking must not steal focus either (keypad Enter -> Cubase)
+    // Keyboard-focus suppression now handled by FocuslessComboBox (see PLANETMainGui.h)
     addAndMakeVisible(lfoSyncCombo);
 
     lfoSyncLabel.setText("Tempo", juce::dontSendNotification);

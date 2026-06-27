@@ -115,6 +115,47 @@ private:
 };
 
 //==============================================================================
+// ComboBox that never holds keyboard focus, so DAW transport keys (e.g. keypad
+// Enter in Cubase) reach the host instead of being swallowed by the combo.
+//
+// setWantsKeyboardFocus(false) / setMouseClickGrabsKeyboardFocus(false) are NOT
+// enough: after the popup closes, ComboBox's popup-finished callback calls
+// getAccessibilityHandler()->grabFocus() (see juce_ComboBox.cpp), which puts
+// focus back on the combo regardless of those flags. Once focused, ComboBox::
+// keyPressed consumes Return by re-opening the popup. We bounce focus away the
+// instant it is gained (covers the accessibility grab and every other path), so
+// the combo never gets to consume keys. These combos are non-editable and
+// mouse-operated, so they never legitimately need focus.
+//==============================================================================
+class FocuslessComboBox : public juce::ComboBox
+{
+public:
+    FocuslessComboBox()
+    {
+        setWantsKeyboardFocus(false);
+        setMouseClickGrabsKeyboardFocus(false);
+    }
+
+    void focusGained(FocusChangeType) override
+    {
+        // Don't recurse while the give-away is in flight.
+        if (givingAway)
+            return;
+
+        const juce::ScopedValueSetter<bool> guard(givingAway, true);
+        giveAwayKeyboardFocus();
+    }
+
+    // Belt-and-suspenders: if focus ever lands here anyway, don't consume the
+    // keys ComboBox normally eats (Return/arrows) — let them propagate to host.
+    bool keyPressed(const juce::KeyPress&) override { return false; }
+    bool keyStateChanged(bool) override            { return false; }
+
+private:
+    bool givingAway = false;
+};
+
+//==============================================================================
 // Main GUI Component
 //==============================================================================
 class PLANETMainGui : public juce::Component,
@@ -225,8 +266,8 @@ private:
     juce::String currentHarmonicParamIDs[4];
 
     // Harmonic LFO controls
-    juce::ComboBox lfoShapeCombo;
-    juce::ComboBox lfoSyncCombo;
+    FocuslessComboBox lfoShapeCombo;
+    FocuslessComboBox lfoSyncCombo;
     juce::Slider lfoSpeedKnob;
     juce::Slider lfoDepthKnob;
     juce::Label lfoShapeLabel, lfoSyncLabel, lfoSpeedLabel, lfoDepthLabel;

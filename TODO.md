@@ -9,8 +9,15 @@
 
 ## Active tasks
 
-### 1. Pitch envelope — restore exponential shape *without* the residual detune ✅ IMPLEMENTED (needs ear test)
+### 1. Pitch envelope — restore exponential shape *without* the residual detune ✅ CLOSED (27 Jun 2026)
 **File:** [`Source/PLANETVoice.cpp`](Source/PLANETVoice.cpp) — `PITCH ATTACK ENVELOPE` block, ~lines 216–243.
+
+**Closed (27 Jun 2026):** Shape confirmed good by ear. Final remaining issue was the *time-knob
+scaling* — the linear 0.01–5.0 s range gave no resolution at the low end where fast sweeps live.
+Fixed by skewing the `pitchEnvTime` `NormalisableRange` (skew `0.35`) in `PluginProcessor.cpp` so
+the low end gets most of the knob travel (knob centre ~0.70 s; first quarter 0.01–0.10 s). Range
+and default unchanged → patches unaffected (they store real seconds, reload through the live range);
+only host-automation lanes remap. Confirmed perfect by Gerard. **Item #1 fully closed.**
 
 **Status (9 Jun 2026):** Replaced smoothstep with the normalised finite-duration exponential
 (approach 1 below), `k = 5.0`. Builds on the existing exact-arrival guard (`pitchEnvTime >=
@@ -65,7 +72,7 @@ initial sweep still feels like the old exponential. Compare A/B against commit h
 
 ---
 
-### 2. ISHTAR editor window steals keyboard focus from the DAW ⭐ PRIORITY (the big one)
+### 2. ISHTAR editor window steals keyboard focus from the DAW ✅ CLOSED (27 Jun 2026 — all Cubase tests passed)
 **Symptom (from testing):** while the PLANET/ISHTAR plugin window is focused, the host's
 transport key commands (play, stop, cycle, etc.) don't reach the DAW. Breaks muscle-memory
 DAW operation while the editor is open.
@@ -114,6 +121,25 @@ focus (the `setMouseClickGrabsKeyboardFocus(false)` wasn't enough — focus is b
 combo some other way, likely when the popup dismisses). **Next step (not yet done):** subclass
 `ComboBox`, override `focusGained` to immediately `giveAwayKeyboardFocus()`, and use that subclass
 for `lfoShapeCombo`/`lfoSyncCombo`. Everything else in the focus work is confirmed working in Cubase.
+
+**Round-3 fix (27 Jun 2026, IMPLEMENTED — builds clean, awaiting Cubase test):** Root cause confirmed
+in the JUCE 8.0.9 source. Two vectors fed the bug: (1) `ComboBox::keyPressed` consumes Return by
+re-opening the popup (`juce_ComboBox.cpp:469`); (2) after the popup closes, `comboBoxPopupMenuFinished-
+Callback` calls `getAccessibilityHandler()->grabFocus()` (`juce_ComboBox.cpp:527`) — this **bypasses
+`setWantsKeyboardFocus(false)`** (which only governs the normal traversal/mouse path), which is exactly
+why Round-2 didn't take. Fix: new `FocuslessComboBox` subclass in `PLANETMainGui.h` that (a) overrides
+`focusGained` to immediately `giveAwayKeyboardFocus()` (with a re-entrancy guard) so the combo never
+holds focus by any path including the accessibility grab, and (b) overrides `keyPressed`/`keyStateChanged`
+to return `false` as belt-and-suspenders so keys propagate to the host if focus ever lands there.
+`lfoShapeCombo`/`lfoSyncCombo` are now `FocuslessComboBox`; the redundant per-instance focus calls in
+`PLANETMainGui.cpp` were removed (constructor handles them). **Cubase test protocol:** with ISHTAR
+focused, after *using an LFO dropdown*, press keypad Enter → Cubase should play (NOT re-open the combo).
+Re-confirm the earlier passes still hold (spacebar, locators 1/2, numeric-field Enter, Load/Save). If
+this passes, item #2 is fully closed.
+
+**Round-3 Cubase test results (27 Jun 2026):** ✅ ALL PASSED. Keypad Enter plays after using an LFO
+dropdown (no re-open); spacebar, locators 1/2, numeric-field Enter, and Load/Save all still correct.
+**Item #2 fully closed.** The whole keyboard-focus issue is resolved.
 
 **Directions to investigate (cheapest first):**
 1. **Audit keyboard-focus ownership.** Call `setWantsKeyboardFocus(false)` on the top-level
