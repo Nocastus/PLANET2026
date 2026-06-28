@@ -175,6 +175,7 @@ public:
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
+    void paintOverChildren(juce::Graphics&) override;   // draws the selected-drawbar outline on top of the sliders
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
@@ -246,6 +247,7 @@ private:
     // Drawbar components
     std::array<juce::Slider, 10> drawbarSliders;
     std::array<juce::Label, 10> fValueLabels;
+    std::array<juce::Rectangle<int>, 10> drawbarColumnBounds;  // per-column bounds (set in resized()), used to outline the selected drawbar
     int selectedDrawbar = 0;
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
 

@@ -9,7 +9,7 @@
 
 void IshtarLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
     float sliderPosProportional, float /*rotaryStartAngle*/,
-    float /*rotaryEndAngle*/, juce::Slider& /*slider*/)
+    float /*rotaryEndAngle*/, juce::Slider& slider)
 {
     // Calculate dimensions
     float size = (float)juce::jmin(width, height);
@@ -26,8 +26,17 @@ void IshtarLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wi
     float arcSpanRad = juce::degreesToRadians(ARC_SPAN_DEG);
     float indicatorAngle = startAngleRad + (sliderPosProportional * arcSpanRad);
 
-    // Draw the orbiting indicator
+    // Tail origin: unipolar knobs trail from the start of travel; bipolar knobs (range
+    // straddles zero, e.g. Pitch Distance, Vel to Drawbar, drawbar LFO Depth) trail from
+    // the value-0 position (centre-top) and grow in whichever direction the value moves.
+    float originProportional = 0.0f;
+    if (slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0)
+        originProportional = (float)slider.valueToProportionOfLength(0.0);
+    float originAngle = startAngleRad + (originProportional * arcSpanRad);
+
+    // Draw the comet-tail value arc (origin -> current value), then the dot at its head
     float indicatorOrbitRadius = outerRadius + (ORBIT_OFFSET * scale);
+    drawCometTail(g, centreX, centreY, indicatorOrbitRadius, originAngle, indicatorAngle, scale);
     drawOrbitingIndicator(g, centreX, centreY, indicatorOrbitRadius, indicatorAngle, scale);
 }
 
@@ -38,17 +47,13 @@ void IshtarLookAndFeel::drawIshtarStar(juce::Graphics& g, float centreX, float c
     // sized independently of each other (both as fractions of the orbit): the circle is
     // restored to its full size, while the rays are kept short so they clear the ring.
     float innerRadius  = outerRadius * INNER_CIRCLE_RATIO;
-    float rayTipRadius = outerRadius * RAY_TIP_RATIO;
 
     // Scale stroke widths
-    float orbitStroke = ORBIT_STROKE * scale;
     float innerStroke = INNER_STROKE * scale;
     float rayStroke = RAY_STROKE * scale;
 
-    // Draw orbit circle (outer) — stays at outerRadius, outside the star points
-    g.setColour(starColour.withAlpha(ORBIT_OPACITY));
-    g.drawEllipse(centreX - outerRadius, centreY - outerRadius,
-        outerRadius * 2.0f, outerRadius * 2.0f, orbitStroke);
+    // (No full orbit ring on ISHTAR — the comet-tail value arc, drawn in drawCometTail,
+    //  now traces the value along outerRadius. The full ring is PLANET2026's tell.)
 
     // Draw inner circle
     g.setColour(starColour.withAlpha(STAR_OPACITY));
@@ -62,6 +67,10 @@ void IshtarLookAndFeel::drawIshtarStar(juce::Graphics& g, float centreX, float c
     for (int i = 0; i < 8; ++i)
     {
         float angle = i * juce::MathConstants<float>::pi / 4.0f;  // 0, 45, 90... degrees
+
+        // Cardinals (i even: N/S/E/W) keep the full length; diagonals (i odd) are shorter so
+        // the eight spokes aren't uniform — pulls the star away from a "settings cog" read.
+        float rayTipRadius = outerRadius * ((i % 2 == 0) ? RAY_TIP_RATIO : RAY_TIP_RATIO_DIAG);
 
         // Apex on the ray-tip radius, inside the orbit ring
         float apexX = centreX + rayTipRadius * std::sin(angle);
@@ -85,6 +94,47 @@ void IshtarLookAndFeel::drawIshtarStar(juce::Graphics& g, float centreX, float c
         g.setColour(starColour.withAlpha(STAR_OPACITY));
         g.strokePath(ray, juce::PathStrokeType(rayStroke,
             juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+}
+
+void IshtarLookAndFeel::drawCometTail(juce::Graphics& g, float centreX, float centreY,
+    float orbitRadius, float originAngle, float headAngle, float scale)
+{
+    // Sweep from the origin (0% for unipolar, value-0/centre for bipolar) to the current
+    // value. headAngle uses the same cos/sin convention as the orbiting dot, so the tail
+    // traces exactly the dot's path. sweep may be negative (head left of a bipolar origin).
+    const float sweep = headAngle - originAngle;
+    if (std::abs(sweep) <= 1.0e-4f)
+        return;                                            // nothing to trail at the origin
+
+    const float tailStroke = TAIL_STROKE * scale;
+    const float fullSpan   = juce::degreesToRadians(ARC_SPAN_DEG);
+
+    // Keep segment density constant regardless of value, so a short tail is as smooth as a long one.
+    const int   segments = juce::jmax(2, (int)std::ceil(TAIL_SEGMENTS * (std::abs(sweep) / fullSpan)));
+    const float segAngle = sweep / (float)segments;        // signed: follows the sweep direction
+
+    // Curved/rounded so consecutive segments blend into a continuous arc with no faceting.
+    const juce::PathStrokeType stroke(tailStroke,
+        juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+    for (int i = 0; i < segments; ++i)
+    {
+        const float a0 = originAngle + segAngle * (float)i;
+        const float a1 = a0 + segAngle;
+
+        // Fade transparent at the tail (i=0) -> TAIL_HEAD_OPACITY at the head (the dot).
+        const float t     = (float)(i + 1) / (float)segments;
+        const float alpha = t * TAIL_HEAD_OPACITY;
+
+        juce::Path seg;
+        seg.startNewSubPath(centreX + orbitRadius * std::cos(a0),
+                            centreY + orbitRadius * std::sin(a0));
+        seg.lineTo(centreX + orbitRadius * std::cos(a1),
+                   centreY + orbitRadius * std::sin(a1));
+
+        g.setColour(starColour.withAlpha(alpha));
+        g.strokePath(seg, stroke);
     }
 }
 

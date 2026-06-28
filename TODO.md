@@ -222,8 +222,9 @@ Source: Claude Design mockup + `ISHTAR Claude Design notes.txt` + Gerard's notes
 reference, not gospel — several things are better in the current build. Items below are the agreed
 keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLookAndFeel`.
 
-**Progress (28 Jun 2026):** a, c, d, e, h DONE and eye-tested in Cubase — looking good. f DECIDED
-(keep ISHTAR on the bottom row). Only **g (comet-tail)** remains — it's the next GUI task.
+**Progress (29 Jun 2026):** ✅ **ALL DONE and eye-tested in Cubase.** a, c (incl. the diagonal-ray
+de-cog tweak), d, e, g, h all DONE; f DECIDED (keep ISHTAR on the bottom row); b a no-op. Plus a new
+item **i (selected-drawbar outline)** added and done this session. **Item #6 fully closed.**
 
 **Adopt (clear wins):**
 - **a. Drawbar palette → "Palette 03". ✅ DONE (27 Jun 2026, awaiting eye-test).** `drawbarColours`
@@ -242,12 +243,10 @@ keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLook
   past the geometric tip — that overhang, not the maths, was why points always reached the ring). Gerard
   likes the result; noted it reads slightly cog-wheel-ish, which the comet-tails (g) replacing the orbit
   rings should pull back toward "knob".
-  - **Future tweak (Gerard's idea, 28 Jun 2026) — make it less cog-like:** give the cardinal points
-    (N/S/E/W) a slightly *longer* ray than the intermediate diagonal points, breaking the uniform-spoke
-    symmetry that reads as a settings cog. Trivial in the 8-ray loop in `IshtarLookAndFeel::drawIshtarStar`:
-    cardinals are `i = 0,2,4,6`, diagonals `i = 1,3,5,7` — use the full `RAY_TIP_RATIO` for cardinals and
-    a slightly smaller ratio (new constant, e.g. `RAY_TIP_RATIO_DIAG`) for diagonals. Pairs naturally
-    with g (both de-cog the star); try alongside the comet-tails.
+  - **De-cog tweak ✅ DONE (29 Jun 2026, eye-tested).** Diagonal rays shortened relative to cardinals:
+    cardinals (`i = 0,2,4,6`) keep `RAY_TIP_RATIO = 0.78`; diagonals (`i = 1,3,5,7`) use new constant
+    `RAY_TIP_RATIO_DIAG = 0.58` in `IshtarLookAndFeel.h`, chosen per-`i` in the 8-ray loop in
+    `drawIshtarStar`. Breaks the uniform-spoke symmetry; reads less like a settings cog.
 - **d. Zone labels → top-left of each zone. ✅ DONE (28 Jun 2026, eye-tested).** All seven zone labels
   moved from bottom-centre to top-left, left-justified, via a `zoneLabelH = 24` top strip; each zone's
   contents translated down into the space freed by the old bottom labels (drawbars/effects also shrank
@@ -266,15 +265,22 @@ keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLook
   wordmark where it is, on the bottom patch bar — "a bit more understated down there." No change; the
   top-left zone-label strips (d) stay reserved for zone names. Item closed.
 
-**Feasible, worth a spike — THIS IS THE NEXT GUI TASK (Gerard, 28 Jun 2026):**
-- **g. "Comet-tail" value indicator on the star knobs.** A fading arc/trail behind the orbiting
-  indicator from start-angle to current value. Draw a gradient-stroked `Path` arc in
-  `drawOrbitingIndicator` (`IshtarLookAndFeel.cpp`), spanning `START_ANGLE_DEG` → current
-  `indicatorAngle`, fading from transparent at the start to the indicator colour at the head. **Intended
-  endgame:** the comet-tails eventually *replace the orbit rings* as the value indicator — which should
-  also fix the slight cog-wheel read of the stars (c). The tail should pick up the same accent the star
-  uses (global = steel grey `globalAccent`; per-drawbar = `drawbarColours[selectedDrawbar]`), i.e. each
-  `IshtarLookAndFeel` instance's `starColour`. All a–f done, so this is clear to start next session.
+- **g. "Comet-tail" value indicator on the star knobs. ✅ DONE (29 Jun 2026, eye-tested).** A fading
+  value arc that **replaced the orbit ring** (deliberately — the full orbit ring is now PLANET2026's
+  visual tell; comet-tails identify ISHTAR at a glance, per Gerard). New `drawCometTail` in
+  `IshtarLookAndFeel.cpp`: subdivides the arc from the origin to the current `indicatorAngle` into
+  per-segment strokes, fading alpha transparent→`TAIL_HEAD_OPACITY` toward the head (the dot); picks up
+  each instance's `starColour` (global steel grey / per-drawbar colour). New constants `TAIL_STROKE`,
+  `TAIL_HEAD_OPACITY`, `TAIL_SEGMENTS`; the `ORBIT_STROKE`/`ORBIT_OPACITY` ring constants were removed.
+  **Bipolar handling:** knobs whose range straddles zero (Pitch Distance, Vel to Drawbar, drawbar LFO
+  Depth) trail from the value-0 position (centre-top) and grow left/right with the sign — auto-detected
+  via `slider.getMinimum()<0 && getMaximum()>0`, origin = `valueToProportionOfLength(0)`. Linear fade
+  (could add a fade-gamma later if a more comet-like falloff is wanted).
+- **i. Selected-drawbar outline. ✅ DONE (29 Jun 2026, eye-tested).** A rounded-rect outline around the
+  selected drawbar's whole column (F-value label + fader), in that drawbar's accent colour, so it's
+  obvious which drawbar the envelope/LFO/Vel controls address. Column bounds stored per-`i` in
+  `resized()` (`drawbarColumnBounds`, single source of truth) and stroked in a new `paintOverChildren`
+  (over the sliders); selection already calls `repaint()` so it updates live.
 
 **Global-scope accent colour — DECIDED 26 Jun 2026: steel grey.**
 - **h. Global accent = steel grey (~`#8a93a3`). ✅ DONE (28 Jun 2026, eye-tested).** `globalAccent
@@ -289,7 +295,7 @@ keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLook
   - **NOT** the LIFE lightning-bolt glow — that electric-blue spark stays on `accentColour` (feature
     effect, not a global accent). Knob *legend text* stays white for legibility (incl. Life).
 
-**Sequencing:** a → c → d → e → b(no-op) → h → f(rejected) all DONE. Only **g (comet-tail)** remains.
+**Sequencing:** a → c → d → e → b(no-op) → h → f(rejected) → g → i ALL DONE. **Item #6 fully closed (29 Jun 2026).**
 
 ---
 
@@ -361,6 +367,42 @@ upper drawbars attack later / decay faster than lower ones. With 10 drawbars you
 filter's harmonic-gain envelope in 10 bands. Natural pairing with F3: start from a fitted saw/square,
 then shape per-drawbar envelopes to match a sweeping filter's per-harmonic gain over time. Worth
 exploring how close 10 bands can get (resonance peak = boost the band at the cutoff). **Next session.**
+
+### F5. Experiment with non-sine source waveforms (alternate carrier LUT)
+**Idea (Gerard, 29 Jun 2026) — exploratory, may not survive contact with the engine.** The engine is
+`output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — the *outer* `sin()` is the carrier/source wave, currently a
+sine lookup. Try swapping that carrier LUT for a different base wave (start with a **sawtooth** LUT) and
+see what the PM/phase-distortion structure does with a harmonically-rich source.
+- **Key constraint (Gerard's insight):** phase distortion can only **add** harmonics, never **remove**
+  them. So a *true* sawtooth carrier is probably the wrong target — once it's the source you can't
+  subtract its harmonics back out. The better starting wave may be one that is **not** a true saw on its
+  own but **becomes** a true saw once a few drawbars are added in. So the experiment is really: find a
+  carrier shape that, combined with the existing additive drawbar structure, lands on the wanted classic
+  waves — rather than baking the classic wave into the carrier.
+- **Integration point:** the carrier sine lookup in `PLANETVoice` (`applyPhaseDistortion`, the per-sample
+  10-tap loop). Swapping the LUT touches every voice and every drawbar, so expect broad tonal change —
+  hence "may totally break the whole synth, but worth a look." Keep it behind a switch/LUT-select so the
+  sine path stays intact for A/B and for patch compatibility.
+- **Relationship to F3:** F3 reproduces classic waves by *fitting drawbar Kᵢ over a sine carrier*; F5 is
+  the dual — change the carrier itself. They inform each other: a fitted-saw analysis (F3) might reveal
+  what carrier shape would make saws/squares cheap to reach with only a few drawbars. **Exploratory —
+  start with one alternate LUT (saw) and listen.**
+
+### F6. Voice stacking / unison detune
+**Idea (Gerard, 29 Jun 2026).** Currently 16 voices = one voice per note = 16-note polyphony
+(`PLANETVoiceManager`). Add a **stack** option that assigns multiple detuned voices per note, trading
+polyphony for thickness:
+- **Modes:** 1× (current, 16-note poly), **2× stacked** (8-note poly), **4× stacked** (4-note poly).
+- **Detune:** spread the stacked voices by a small, adjustable amount around the note pitch (a detune-
+  spread parameter, cents or similar). The pitch source is `PLANETVoice.cpp:44`
+  (`440 * 2^((note-69)/12)`) — apply per-stacked-voice detune offsets there / at voice trigger.
+- **Implementation sketch:** on note-on, allocate `N` voices for the note instead of 1, each with its
+  detune offset (e.g. symmetric spread); cap simultaneous notes at `16 / N`. Voice-stealing and the
+  voice-allocation logic in `PLANETVoiceManager` need to understand the grouping. Consider whether stack
+  voices also get a stereo spread (pan) for width, or detune-only for now.
+- **Open questions:** detune law (linear cents vs musical spread); odd-count centre voice at pitch vs all
+  detuned; per-stack stereo spread yes/no; does stack count want to be a patch parameter (likely yes).
+  **Design pass with Gerard before building.**
 
 ---
 

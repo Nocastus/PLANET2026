@@ -1430,6 +1430,19 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawHorizontalLine(mainHeight, 0, (float)bounds.getWidth());
 }
 
+void PLANETMainGui::paintOverChildren(juce::Graphics& g)
+{
+    // Outline the selected drawbar (over the top of the sliders/labels) so it's obvious
+    // which drawbar the envelope / LFO / Vel-to-Drawbar controls are addressing. Drawn in
+    // that drawbar's accent colour, matching the per-drawbar colour scheme.
+    auto r = drawbarColumnBounds[selectedDrawbar].toFloat();
+    if (r.isEmpty())
+        return;
+
+    g.setColour(drawbarColours[selectedDrawbar]);
+    g.drawRoundedRectangle(r, 4.0f, 2.0f);
+}
+
 void PLANETMainGui::resized()
 {
     auto bounds = getLocalBounds();
@@ -1451,6 +1464,10 @@ void PLANETMainGui::resized()
         int x = drawbarMargin + i * drawbarWidth;
         fValueLabels[i].setBounds(x + 5, drawbarTop, drawbarWidth - 10, fLabelHeight);
         drawbarSliders[i].setBounds(x + 10, drawbarTop + fLabelHeight + 5, drawbarWidth - 20, drawbarHeight);
+
+        // Full column (F-value label + fader) — used to outline the selected drawbar in paintOverChildren()
+        drawbarColumnBounds[i] = juce::Rectangle<int>(x + 2, drawbarTop - 2,
+            drawbarWidth - 4, fLabelHeight + 5 + drawbarHeight + 4);
     }
 
     // Position ADSR labels and value editors
