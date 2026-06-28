@@ -301,8 +301,77 @@ item **i (selected-drawbar outline)** added and done this session. **Item #6 ful
 
 ## Feature backlog
 
+Two threads below: an **exploration arc** (the headline experiment — can ISHTAR be pushed to sound like
+a classic subtractive synth?) and a set of **standalone features**. The `F#` numbers are stable IDs, so
+they're grouped here by theme rather than in numeric order.
+
+---
+
+## Exploration Arc A — "Can ISHTAR emulate a classic subtractive synth?"
+**Framing (Gerard, 29 Jun 2026).** This is an *experiment, not a commitment*. ISHTAR is a harmonic
+phase-distortion engine; a subtractive synth is source-wave-plus-filter. The question is what happens
+when we push phase distortion to do something **outside its natural compass** — and we'll only know
+whether that's worthwhile by building enough to *hear* it. The arc has three steps that build on each
+other: **get the source wave (F3 → F5), then animate it like a filter (F4).** Treat each step's output
+as evidence for whether to take the next one.
+
+### Arc step 1 — F3. Classic-waveform presets via phase-distortion fitting (saw / square / pulse)
+The engine is `output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — i.e. each drawbar is a PM operator
+(ratio `fᵢ` = F field, depth `Kᵢ` = drawbar fader). Goal: compute `(fᵢ, Kᵢ)` sets that
+reproduce sawtooth, square, and pulse, and ship them as `.md` presets.
+- **Theory:** Jacobi–Anger gives `sin(x + K·sin(f·x)) = Σₙ Jₙ(K)·sin((1+nf)x)`. So `f=1` →
+  all harmonics (saw/brass family), `f=2` → odd harmonics only (square/triangle family);
+  integer multipliers only (non-integer = inharmonic). Bessel ripple + cross-modulation mean the
+  exact `1/n` amplitudes need numerical fitting, not a closed form.
+- **Method (offline):** model the engine in Python → FFT one cycle to read its harmonics →
+  `scipy.optimize.least_squares` to solve the 10 `Kᵢ` against the target harmonic series
+  (saw `1/n`; square `1/n` odd; pulse(d) `(2/nπ)sin(nπd)`) → emit `(fᵢ, Kᵢ)` straight into a
+  patch. Maps 1:1 onto the F fields + drawbar faders.
+- **Notes:** brilliance scales all Kᵢ, so one fitted preset gives a free sine→waveform morph on
+  the brilliance knob. Expect convincing "saw-like/square-like" tones, not textbook band-limited
+  classics (usually more organic). Watch aliasing up high — fit ~10–16 harmonics. Gerard already
+  has a convincing square by hand, so the manual approach works; the fitter automates/refines it.
+- **Deliverable:** Python fitter + ready-to-load saw / square / pulse(50%) / pulse(25%) `.md`
+  presets, plus printed F-and-K tables for hand-dialling. **Good entry point to the arc — pure offline
+  analysis, no engine changes, and its output directly informs F5.**
+
+### Arc step 2 — F5. Experiment with non-sine source waveforms (alternate carrier LUT)
+**Exploratory, may not survive contact with the engine.** The engine is
+`output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — the *outer* `sin()` is the carrier/source wave, currently a
+sine lookup. Try swapping that carrier LUT for a different base wave (start with a **sawtooth** LUT) and
+see what the PM/phase-distortion structure does with a harmonically-rich source.
+- **Key constraint (Gerard's insight):** phase distortion can only **add** harmonics, never **remove**
+  them. So a *true* sawtooth carrier is probably the wrong target — once it's the source you can't
+  subtract its harmonics back out. The better starting wave may be one that is **not** a true saw on its
+  own but **becomes** a true saw once a few drawbars are added in. So the experiment is really: find a
+  carrier shape that, combined with the existing additive drawbar structure, lands on the wanted classic
+  waves — rather than baking the classic wave into the carrier.
+- **Integration point:** the carrier sine lookup in `PLANETVoice` (`applyPhaseDistortion`, the per-sample
+  10-tap loop). Swapping the LUT touches every voice and every drawbar, so expect broad tonal change —
+  hence "may totally break the whole synth, but worth a look." Keep it behind a switch/LUT-select so the
+  sine path stays intact for A/B and for patch compatibility.
+- **Relationship to F3:** F3 reproduces classic waves by *fitting drawbar Kᵢ over a sine carrier*; F5 is
+  the dual — change the carrier itself. They inform each other: a fitted-saw analysis (F3) might reveal
+  what carrier shape would make saws/squares cheap to reach with only a few drawbars. **Start with one
+  alternate LUT (saw) and listen.**
+
+### Arc step 3 — F4. Simulate filter sweeps with the drawbar envelopes
+Idea (Gerard): each drawbar has its own envelope, so per-drawbar envelope depths/times across the
+harmonic series can emulate a filter's time-varying gain at each harmonic — e.g. a lowpass sweep =
+upper drawbars attack later / decay faster than lower ones. With 10 drawbars you approximate the
+filter's harmonic-gain envelope in 10 bands. Natural pairing with F3/F5: start from a fitted/alternate
+saw or square, then shape per-drawbar envelopes to match a sweeping filter's per-harmonic gain over time.
+Worth exploring how close 10 bands can get (resonance peak = boost the band at the cutoff). **The payoff
+step — this is where "source wave + moving filter" actually becomes subtractive-synth-like; do it once a
+usable saw/square exists from steps 1–2.**
+
+---
+
+## Standalone features (not part of the arc)
+
 ### F1. Copy envelope parameters between drawbars (drag & drop)
-**From testing — quality-of-life.** Setting up 10 drawbar envelopes by hand is tedious.
+**Quality-of-life — a confirmed keeper (Gerard, 29 Jun 2026: "certainly a useful ease-of-programming
+feature").** Setting up 10 drawbar envelopes by hand is tedious.
 
 **Proposed UX (Gerard's):** a small draggable box in each drawbar's envelope-control area.
 Drag it onto a different drawbar → that target drawbar's envelope is instantly set to match
@@ -322,7 +391,8 @@ value itself? Suggest: envelope-only by default, with LFO copied only on a modif
 key while dropping) if we want it. Confirm with Gerard before building.
 
 ### F2. Oscillator pitch — portamento + alternate tunings
-Two related pitch features. Current pitch is hardcoded equal temperament at
+**Gerard (29 Jun 2026): portamento is "a nice thing to have" once we define the logic.** Two related
+pitch features. Current pitch is hardcoded equal temperament at
 [`Source/PLANETVoice.cpp:44`](Source/PLANETVoice.cpp#L44): `440 * 2^((note-69)/12)`.
 
 **F2a. Portamento (glide).** ⚠️ Needs a design discussion before coding — polyphonic glide is
@@ -341,55 +411,9 @@ mainline. Replace the hardcoded equal-temperament formula at `PLANETVoice.cpp:44
 table lookup. Options to evaluate: fixed microtuning tables, Scala `.scl`/`.kbm` import, or
 MTS / MTS-ESP support. Keep the integration point isolated so a fork is easy to maintain.
 
-### F3. Classic-waveform presets via phase-distortion fitting (saw / square / pulse)
-The engine is `output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — i.e. each drawbar is a PM operator
-(ratio `fᵢ` = F field, depth `Kᵢ` = drawbar fader). Goal: compute `(fᵢ, Kᵢ)` sets that
-reproduce sawtooth, square, and pulse, and ship them as `.md` presets.
-- **Theory:** Jacobi–Anger gives `sin(x + K·sin(f·x)) = Σₙ Jₙ(K)·sin((1+nf)x)`. So `f=1` →
-  all harmonics (saw/brass family), `f=2` → odd harmonics only (square/triangle family);
-  integer multipliers only (non-integer = inharmonic). Bessel ripple + cross-modulation mean the
-  exact `1/n` amplitudes need numerical fitting, not a closed form.
-- **Method (offline):** model the engine in Python → FFT one cycle to read its harmonics →
-  `scipy.optimize.least_squares` to solve the 10 `Kᵢ` against the target harmonic series
-  (saw `1/n`; square `1/n` odd; pulse(d) `(2/nπ)sin(nπd)`) → emit `(fᵢ, Kᵢ)` straight into a
-  patch. Maps 1:1 onto the F fields + drawbar faders.
-- **Notes:** brilliance scales all Kᵢ, so one fitted preset gives a free sine→waveform morph on
-  the brilliance knob. Expect convincing "saw-like/square-like" tones, not textbook band-limited
-  classics (usually more organic). Watch aliasing up high — fit ~10–16 harmonics. Gerard already
-  has a convincing square by hand, so the manual approach works; the fitter automates/refines it.
-- **Deliverable:** Python fitter + ready-to-load saw / square / pulse(50%) / pulse(25%) `.md`
-  presets, plus printed F-and-K tables for hand-dialling. **Queued for next session.**
-
-### F4. Simulate filter sweeps with the drawbar envelopes
-Idea (Gerard): each drawbar has its own envelope, so per-drawbar envelope depths/times across the
-harmonic series can emulate a filter's time-varying gain at each harmonic — e.g. a lowpass sweep =
-upper drawbars attack later / decay faster than lower ones. With 10 drawbars you approximate the
-filter's harmonic-gain envelope in 10 bands. Natural pairing with F3: start from a fitted saw/square,
-then shape per-drawbar envelopes to match a sweeping filter's per-harmonic gain over time. Worth
-exploring how close 10 bands can get (resonance peak = boost the band at the cutoff). **Next session.**
-
-### F5. Experiment with non-sine source waveforms (alternate carrier LUT)
-**Idea (Gerard, 29 Jun 2026) — exploratory, may not survive contact with the engine.** The engine is
-`output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — the *outer* `sin()` is the carrier/source wave, currently a
-sine lookup. Try swapping that carrier LUT for a different base wave (start with a **sawtooth** LUT) and
-see what the PM/phase-distortion structure does with a harmonically-rich source.
-- **Key constraint (Gerard's insight):** phase distortion can only **add** harmonics, never **remove**
-  them. So a *true* sawtooth carrier is probably the wrong target — once it's the source you can't
-  subtract its harmonics back out. The better starting wave may be one that is **not** a true saw on its
-  own but **becomes** a true saw once a few drawbars are added in. So the experiment is really: find a
-  carrier shape that, combined with the existing additive drawbar structure, lands on the wanted classic
-  waves — rather than baking the classic wave into the carrier.
-- **Integration point:** the carrier sine lookup in `PLANETVoice` (`applyPhaseDistortion`, the per-sample
-  10-tap loop). Swapping the LUT touches every voice and every drawbar, so expect broad tonal change —
-  hence "may totally break the whole synth, but worth a look." Keep it behind a switch/LUT-select so the
-  sine path stays intact for A/B and for patch compatibility.
-- **Relationship to F3:** F3 reproduces classic waves by *fitting drawbar Kᵢ over a sine carrier*; F5 is
-  the dual — change the carrier itself. They inform each other: a fitted-saw analysis (F3) might reveal
-  what carrier shape would make saws/squares cheap to reach with only a few drawbars. **Exploratory —
-  start with one alternate LUT (saw) and listen.**
-
 ### F6. Voice stacking / unison detune
-**Idea (Gerard, 29 Jun 2026).** Currently 16 voices = one voice per note = 16-note polyphony
+**Idea (Gerard, 29 Jun 2026) — genuinely uncertain: "might be great or might not suit the sound — we'll
+just have to experiment and see."** Currently 16 voices = one voice per note = 16-note polyphony
 (`PLANETVoiceManager`). Add a **stack** option that assigns multiple detuned voices per note, trading
 polyphony for thickness:
 - **Modes:** 1× (current, 16-note poly), **2× stacked** (8-note poly), **4× stacked** (4-note poly).
