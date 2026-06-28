@@ -209,44 +209,68 @@ Source: Claude Design mockup + `ISHTAR Claude Design notes.txt` + Gerard's notes
 reference, not gospel — several things are better in the current build. Items below are the agreed
 keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLookAndFeel`.
 
+**Progress (28 Jun 2026):** a, c, d, e, h DONE and eye-tested in Cubase — looking good. f DECIDED
+(keep ISHTAR on the bottom row). Only **g (comet-tail)** remains — it's the next GUI task.
+
 **Adopt (clear wins):**
-- **a. Drawbar palette → "Palette 03".** Replace `drawbarColours[10]` (`PLANETMainGui.h:181`) with:
-  `#ff9886 #ae6100 #d7b946 #638519 #64d599 #008f89 #33cdf8 #3779c5 #b3adff #985baa`.
-  Trivial constant swap. Knock-on: `selectedFDisplay` text colour + any per-drawbar tinting follow
-  automatically since they read from this array.
+- **a. Drawbar palette → "Palette 03". ✅ DONE (27 Jun 2026, awaiting eye-test).** `drawbarColours`
+  in `PLANETMainGui.h` now holds the Palette-03 hues
+  (`#ff9886 #ae6100 #d7b946 #638519 #64d599 #008f89 #33cdf8 #3779c5 #b3adff #985baa`). Per-drawbar
+  tinting / `selectedFDisplay` follow automatically since they read from this array.
 - **b. KEEP current drawbar thumb design — reject the mockup's solid rectangles.** The mockup author
   didn't realise the thumb shape encodes function (circle vs Ishtar-star = VelToHarm; pale ring = active
   LFO; see `DrawbarLookAndFeel::drawLinearSlider`, `PLANETMainGui.h:23`). No change — documented so we
   don't "fix" it later.
-- **c. Shrink the Ishtar star inside its orbit.** Currently the star rays and the orbit circle share
-  `outerRadius` (`IshtarLookAndFeel.cpp:18,46,63`), so ray tips touch the orbit. Make the star smaller
-  than the orbit so the orbit ring clearly sits *outside* the points. Keep our star shape (Gerard
-  prefers it to the mockup's). Implementation: introduce a star-scale ratio (<1) applied to the star's
-  `outerRadius` while the orbit/indicator radius stays put. Easy, low-risk.
-- **d. Zone labels → top-left of each zone** (currently bottom-centre, `PLANETMainGui.cpp:1301-1314`).
-  Watch for collisions with controls that sit at the top of a zone; may need small top padding per zone.
-- **e. Drawbar-Envelope label becomes dynamic + coloured.** Make the "DRAWBAR ENVELOPE" header read
-  e.g. "DRAWBAR 4 ENVELOPE" in that drawbar's highlight colour (`drawbarColours[selectedDrawbar]`), and
-  **remove** the faint "DRAWBAR N" watermark inside the graph (`PLANETMainGui.cpp:1204-1208`). The
-  coloured header replaces what the watermark was doing, better. Pairs with (a) and (d).
-- **f. Move "ISHTAR" wordmark to top-left of the window** in the Amarna font, instead of the bottom
-  patch bar (`PLANETMainGui.cpp:1316-1319`). ⚠ Most layout-invasive: zones currently start at y=0 with
-  no title strip. Either overlay the wordmark in the DRAWBARS zone's new top-left label area, or add a
-  slim title strip and push content down. Decide approach before building; do this one last.
+- **c. Shrink the Ishtar star inside its orbit + redesign. ✅ DONE (28 Jun 2026, eye-tested).** Evolved
+  past the first `STAR_SCALE` approach: the central circle and ray tips are now sized **independently**
+  of each other (both fractions of the orbit) via `INNER_CIRCLE_RATIO = 0.4` and `RAY_TIP_RATIO = 0.78`
+  in `IshtarLookAndFeel.h`. The ray stroke join was switched to **curved** to kill the mitered spike that
+  was the long-standing star-vs-orbit overlap mystery (a sharp apex with a miter join throws the stroke
+  past the geometric tip — that overhang, not the maths, was why points always reached the ring). Gerard
+  likes the result; noted it reads slightly cog-wheel-ish, which the comet-tails (g) replacing the orbit
+  rings should pull back toward "knob".
+- **d. Zone labels → top-left of each zone. ✅ DONE (28 Jun 2026, eye-tested).** All seven zone labels
+  moved from bottom-centre to top-left, left-justified, via a `zoneLabelH = 24` top strip; each zone's
+  contents translated down into the space freed by the old bottom labels (drawbars/effects also shrank
+  their slider height to fit). **Key fix found along the way:** the envelope graphs are drawn in `paint()`
+  but their value boxes are placed in `resized()` — two sources of truth that had drifted. `paint()` now
+  draws both graphs from the `harmonicEnvBounds`/`ampEnvBounds` members `resized()` computes, so graph +
+  drag-handles + value fields can never disagree again. Both envelope graphs shrunk to leave a ~14px
+  bottom border; LFO knob-triangle nudged up while Shape/Tempo combos stayed put; **WAVEFORM** zone added
+  (waveform display shrunk so its top aligns with the drawbar columns, label above). DRAWBARS centred in
+  its top margin; EFFECTS label nudged up 8px.
+- **e. Drawbar-Envelope label becomes dynamic + coloured. ✅ DONE (27 Jun 2026, awaiting eye-test).**
+  The "DRAWBAR ENVELOPE" header now reads "DRAWBAR N ENVELOPE" in `drawbarColours[selectedDrawbar]`,
+  and the faint in-graph watermark is removed. NOTE: the header is still bottom-centred — item (d) is
+  what moves it to top-left, so e and d will visually combine once d lands.
+- **f. Move "ISHTAR" wordmark to top-left. ❌ DECIDED AGAINST (28 Jun 2026).** Gerard prefers the
+  wordmark where it is, on the bottom patch bar — "a bit more understated down there." No change; the
+  top-left zone-label strips (d) stay reserved for zone names. Item closed.
 
-**Feasible, worth a spike:**
+**Feasible, worth a spike — THIS IS THE NEXT GUI TASK (Gerard, 28 Jun 2026):**
 - **g. "Comet-tail" value indicator on the star knobs.** A fading arc/trail behind the orbiting
-  indicator from start-angle to current value. Definitely doable in JUCE (draw a gradient-stroked
-  `Path` arc in `drawOrbitingIndicator`). Nice-to-have polish; build after a-f land and ear/eye-test it.
+  indicator from start-angle to current value. Draw a gradient-stroked `Path` arc in
+  `drawOrbitingIndicator` (`IshtarLookAndFeel.cpp`), spanning `START_ANGLE_DEG` → current
+  `indicatorAngle`, fading from transparent at the start to the indicator colour at the head. **Intended
+  endgame:** the comet-tails eventually *replace the orbit rings* as the value indicator — which should
+  also fix the slight cog-wheel read of the stars (c). The tail should pick up the same accent the star
+  uses (global = steel grey `globalAccent`; per-drawbar = `drawbarColours[selectedDrawbar]`), i.e. each
+  `IshtarLookAndFeel` instance's `starColour`. All a–f done, so this is clear to start next session.
 
 **Global-scope accent colour — DECIDED 26 Jun 2026: steel grey.**
-- **h. Global accent = steel grey (~`#8a93a3`, tune by eye).** Used for *global* elements (the global
-  Amplitude Envelope curve, global section accents). Chosen over antique-gold `#bba357` because gold sat
-  too close to drawbar 3's `#d7b946` (two-golds collision). Steel grey reads as neutral/"global" and is
-  distinct from every Palette-03 hue. Implement as a single named constant so it's easy to fine-tune.
+- **h. Global accent = steel grey (~`#8a93a3`). ✅ DONE (28 Jun 2026, eye-tested).** `globalAccent
+  { 0xff8a93a3 }` constant in `PLANETMainGui.h`. Grew into a full **global-vs-per-drawbar colour scheme**
+  (Gerard's framing — colour consistently differentiates global from per-drawbar controls):
+  - **Star knobs** via two `IshtarLookAndFeel` instances. Global (steel grey): Vel-to-Attack, Env Curve,
+    Vintage, Life, Vibrato Rate/Depth/Fade, Pitch Distance/Time. Per-drawbar (selected drawbar's colour,
+    retinted live in `bindToSelectedDrawbar()`): Vel-to-Drawbar, LFO Speed, LFO Depth.
+  - **Slider thumbs.** Global steel grey (`thumbColourId`): Vel Ampli, Brilliance, the 5 Effects sliders.
+    Per-drawbar: Env Depth thumb (tracks selection).
+  - Also: global Amplitude-Envelope curve + the Brilliance mod-wheel indicators = steel grey.
+  - **NOT** the LIFE lightning-bolt glow — that electric-blue spark stays on `accentColour` (feature
+    effect, not a global accent). Knob *legend text* stays white for legibility (incl. Life).
 
-**Sequencing:** a → c → d → e → b(no-op) → h(once decided) → f (layout) → g (polish). a/c/d/e/h are
-small, independent edits; f is the only structural one.
+**Sequencing:** a → c → d → e → b(no-op) → h → f(rejected) all DONE. Only **g (comet-tail)** remains.
 
 ---
 

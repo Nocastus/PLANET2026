@@ -42,6 +42,11 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         snapshotReadyPtr, snapshotRequestPtr,
         waveformActivePtr);
 
+    // Star-knob accent colours: global controls read steel grey; per-drawbar controls
+    // take the selected drawbar's colour (refreshed in bindToSelectedDrawbar()).
+    ishtarLookAndFeel.starColour = globalAccent;
+    drawbarIshtarLookAndFeel.starColour = drawbarColours[selectedDrawbar];
+
     // Set up drawbar sliders
     for (int i = 0; i < 10; ++i)
     {
@@ -134,7 +139,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoSpeedKnob.setValue(4.0);
     lfoSpeedKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 0, 0);
     addAndMakeVisible(lfoSpeedKnob);
-    lfoSpeedKnob.setLookAndFeel(&ishtarLookAndFeel);
+    lfoSpeedKnob.setLookAndFeel(&drawbarIshtarLookAndFeel);  // per-drawbar accent
 
     lfoSpeedLabel.setText("Speed", juce::dontSendNotification);
     lfoSpeedLabel.setJustificationType(juce::Justification::centred);
@@ -147,7 +152,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lfoDepthKnob.setValue(0.0);
     lfoDepthKnob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 0, 0);
     addAndMakeVisible(lfoDepthKnob);
-    lfoDepthKnob.setLookAndFeel(&ishtarLookAndFeel);
+    lfoDepthKnob.setLookAndFeel(&drawbarIshtarLookAndFeel);  // per-drawbar accent
 
     lfoDepthLabel.setText("Depth", juce::dontSendNotification);
     lfoDepthLabel.setJustificationType(juce::Justification::centred);
@@ -197,7 +202,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velToDrawbarKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velToDrawbarKnob.setDoubleClickReturnValue(true, 0.0);
     addAndMakeVisible(velToDrawbarKnob);
-    velToDrawbarKnob.setLookAndFeel(&ishtarLookAndFeel);
+    velToDrawbarKnob.setLookAndFeel(&drawbarIshtarLookAndFeel);  // per-drawbar accent
 
     velToDrawbarLabel.setText("Vel to Drawbar", juce::dontSendNotification);
     velToDrawbarLabel.setJustificationType(juce::Justification::centred);
@@ -245,6 +250,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     velAmpSlider.setValue(100.0);
     velAmpSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     velAmpSlider.setDoubleClickReturnValue(true, 100.0);
+    velAmpSlider.setColour(juce::Slider::thumbColourId, globalAccent);  // global control accent
     addAndMakeVisible(velAmpSlider);
 
     velAmpLabel.setText("Vel Ampli", juce::dontSendNotification);
@@ -329,7 +335,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     lifeKnob.setLookAndFeel(&ishtarLookAndFeel);
     lifeLabel.setText("Life", juce::dontSendNotification);
     lifeLabel.setJustificationType(juce::Justification::centred);
-    lifeLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9ad0ff));
+    lifeLabel.setColour(juce::Label::textColourId, juce::Colours::white);  // match the white control legending
     addAndMakeVisible(lifeLabel);
     lifeValue.setText("0", juce::dontSendNotification);
     lifeValue.setJustificationType(juce::Justification::centred);
@@ -490,6 +496,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     brillianceSlider.setValue(0.5);
     brillianceSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     brillianceSlider.setDoubleClickReturnValue(true, 0.5);
+    brillianceSlider.setColour(juce::Slider::thumbColourId, globalAccent);  // global control accent
     addAndMakeVisible(brillianceSlider);
     brillianceMainLabel.setText("Brilliance", juce::dontSendNotification);
     brillianceMainLabel.setJustificationType(juce::Justification::centred);
@@ -504,14 +511,15 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         slider.setValue(defaultVal);
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         slider.setDoubleClickReturnValue(true, defaultVal);
+        slider.setColour(juce::Slider::thumbColourId, globalAccent);  // global control accent
         addAndMakeVisible(slider);
-        
+
         label.setText(name, juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
         label.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(label);
     };
-    
+
     setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
     setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Mix", 0.0, 1.0, 0.0);
     setupVerticalSlider(warmthSlider, warmthLabel, "Warmth", 0.0, 1.0, 0.0);
@@ -1189,8 +1197,9 @@ void PLANETMainGui::paint(juce::Graphics& g)
 
     // ======================== LEFT SIDE ========================
     
-    // Drawbar section
-    g.setColour(backgroundLight);
+    // Drawbar section — same tinted base as the Drawbar-Envelope zone below, so the two
+    // per-drawbar zones read as one connected unit.
+    g.setColour(drawbarColours[selectedDrawbar].withAlpha(0.3f));
     g.fillRect(0, 0, leftWidth, drawbarSectionHeight);
     
     // Draw coloured backgrounds for each drawbar
@@ -1208,27 +1217,13 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setColour(drawbarColours[selectedDrawbar].withAlpha(0.3f));
     g.fillRect(0, drawbarSectionHeight, leftWidth, harmonicHeight);
 
-    // Draw Harmonic ADSR envelope
+    // Draw Harmonic ADSR envelope — geometry comes from resized() via harmonicEnvBounds,
+    // so the graph, its drag handles and the value fields can never drift apart.
     {
-        int adsrZoneWidth = (int)(leftWidth * 0.65f);
-        int adsrMargin = 20;
-        int adsrGraphHeight = harmonicHeight - 80;
-        int adsrGraphY = drawbarSectionHeight + 10;
-        int adsrGraphWidth = adsrZoneWidth - adsrMargin * 2;
-
         g.setColour(juce::Colours::black.withAlpha(0.3f));
-        g.fillRoundedRectangle((float)adsrMargin, (float)adsrGraphY,
-            (float)adsrGraphWidth, (float)adsrGraphHeight, 5.0f);
+        g.fillRoundedRectangle(harmonicEnvBounds.toFloat(), 5.0f);
 
-        // Draw DRAWBAR N watermark
-        g.setColour(juce::Colours::white.withAlpha(0.25f));
-        g.setFont(amarnaSemiBold.withHeight(36.0f));
-        juce::String watermarkText = "DRAWBAR " + juce::String(selectedDrawbar + 1);
-        g.drawText(watermarkText, adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight,
-            juce::Justification::centred, false);
-        
-        juce::Rectangle<int> envBounds(adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
-        drawEnvelopeCurve(g, envBounds,
+        drawEnvelopeCurve(g, harmonicEnvBounds,
                           adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
                           adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3],
                           (float)envCurveKnob.getValue(),
@@ -1239,23 +1234,15 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setColour(backgroundGlobal);
     g.fillRect(0, drawbarSectionHeight + harmonicHeight, leftWidth, ampHeight);
 
-    // Draw Amplitude ADSR envelope
+    // Draw Amplitude ADSR envelope — geometry from resized() via ampEnvBounds (see above).
     {
-        int adsrZoneWidth = (int)(leftWidth * 0.65f);
-        int adsrMargin = 20;
-        int adsrGraphHeight = ampHeight - 80;
-        int adsrGraphY = drawbarSectionHeight + harmonicHeight + 10;
-        int adsrGraphWidth = adsrZoneWidth - adsrMargin * 2;
-        
         g.setColour(juce::Colours::black.withAlpha(0.3f));
-        g.fillRoundedRectangle((float)adsrMargin, (float)adsrGraphY, 
-                                (float)adsrGraphWidth, (float)adsrGraphHeight, 5.0f);
-        
-        juce::Rectangle<int> envBounds(adsrMargin, adsrGraphY, adsrGraphWidth, adsrGraphHeight);
-        drawEnvelopeCurve(g, envBounds,
+        g.fillRoundedRectangle(ampEnvBounds.toFloat(), 5.0f);
+
+        drawEnvelopeCurve(g, ampEnvBounds,
                           ampAdsrValues[0], ampAdsrValues[1], ampAdsrValues[2], ampAdsrValues[3],
                           (float)envCurveKnob.getValue(),
-                          juce::Colours::white, accentColour);
+                          juce::Colours::white, globalAccent);
     }
 
     // ======================== LIFE: spark-of-life lightning bolt ========================
@@ -1313,24 +1300,35 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.setColour(juce::Colours::white.withAlpha(0.7f));
     g.setFont(amarnaSemiBold.withHeight(20.0f));
 
-    int labelHeight = 22;
-    int labelMargin = 1;
-
-    // Left column labels (centered at bottom of each zone)
-    g.drawText("DRAWBARS", 0, drawbarSectionHeight - labelHeight - labelMargin, leftWidth, labelHeight, juce::Justification::centred);
-    g.drawText("DRAWBAR ENVELOPE", 0, drawbarSectionHeight + harmonicHeight - labelHeight - labelMargin, leftWidth, labelHeight, juce::Justification::centred);
-    g.drawText("AMPLITUDE ENVELOPE", 0, mainHeight - labelHeight - labelMargin, leftWidth, labelHeight, juce::Justification::centred);
+    const int zoneLabelH = 24;     // must match resized(): zone contents are shifted down by this
+    int labelHeight = 20;
+    int labelLeftPad = 12;         // left inset for the top-left zone labels
+    int labelTopPad = 3;
+    int labelW = 280;
 
     int rightX = leftWidth;
     int rightContentHeight = mainHeight - drawbarSectionHeight;
     int rightSectionHeight = rightContentHeight / 4;
     int rightSectionY = drawbarSectionHeight;
 
-    // Right column labels (centered at bottom of each zone)
-    g.drawText("VIBRATO", rightX, rightSectionY + rightSectionHeight - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
-    g.drawText("PITCH ENVELOPE", rightX, rightSectionY + rightSectionHeight * 2 - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
-    g.drawText("BRILLIANCE", rightX, rightSectionY + rightSectionHeight * 3 - 10 - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
-    g.drawText("EFFECTS", rightX, mainHeight - labelHeight - labelMargin, rightWidth, labelHeight, juce::Justification::centred);
+    // Top-row labels (DRAWBARS, WAVEFORM) — centred in the margin above the columns/waveform
+    g.drawText("DRAWBARS", labelLeftPad, 0, labelW, drawbarMargin, juce::Justification::centredLeft);
+    g.drawText("WAVEFORM", rightX + labelLeftPad, 0, labelW, drawbarMargin, juce::Justification::centredLeft);
+
+    // Drawbar-envelope header: names the selected drawbar in its own highlight colour
+    // (replaces the old faint in-graph watermark).
+    g.setColour(drawbarColours[selectedDrawbar]);
+    g.drawText("DRAWBAR " + juce::String(selectedDrawbar + 1) + " ENVELOPE",
+        labelLeftPad, drawbarSectionHeight + labelTopPad, labelW, labelHeight, juce::Justification::left);
+    g.setColour(juce::Colours::white.withAlpha(0.7f));
+
+    g.drawText("AMPLITUDE ENVELOPE", labelLeftPad, drawbarSectionHeight + harmonicHeight + labelTopPad, labelW, labelHeight, juce::Justification::left);
+
+    // Right column labels — top-left of each zone
+    g.drawText("VIBRATO", rightX + labelLeftPad, rightSectionY + labelTopPad, labelW, labelHeight, juce::Justification::left);
+    g.drawText("PITCH ENVELOPE", rightX + labelLeftPad, rightSectionY + rightSectionHeight + labelTopPad, labelW, labelHeight, juce::Justification::left);
+    g.drawText("BRILLIANCE", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 2 + labelTopPad, labelW, labelHeight, juce::Justification::left);
+    g.drawText("EFFECTS", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 3 + labelTopPad - 8, labelW, labelHeight, juce::Justification::left);
 
     // ISHTAR name - aligned with left/right column divider
     g.setColour(accentColour.withAlpha(0.9f));
@@ -1363,7 +1361,7 @@ void PLANETMainGui::paint(juce::Graphics& g)
                 int baseX = sliderX + (int)(S * sliderWidth);
                 int effectiveX = sliderX + (int)(effectiveBrilliance * sliderWidth);
 
-                g.setColour(accentColour.withAlpha(0.5f));
+                g.setColour(globalAccent.withAlpha(0.5f));  // Brilliance is a global control
                 int barY = sliderY + sliderHeight / 2 - 3;
 
                 // Draw bar from slider position to effective position
@@ -1371,7 +1369,7 @@ void PLANETMainGui::paint(juce::Graphics& g)
                 int barRight = juce::jmax(baseX, effectiveX);
                 g.fillRect(barLeft, barY, barRight - barLeft, 6);
 
-                g.setColour(accentColour);
+                g.setColour(globalAccent);
                 g.fillRect(effectiveX - 2, sliderY + 5, 4, sliderHeight - 10);
             }
         }
@@ -1384,7 +1382,7 @@ void PLANETMainGui::paint(juce::Graphics& g)
         int rightContentWidth = bounds.getWidth() - leftWidth - 20;
         int effectsSliderSpacing = rightContentWidth / 5;
         int effectsSliderWidth = 55;
-        int effectsY = drawbarSectionHeight + rightSectionHeight * 3 + 7;
+        int effectsY = drawbarSectionHeight + rightSectionHeight * 3 + 7 + zoneLabelH;  // follow the shifted sliders
         int bracketY = effectsY + 15;  // Just below the labels
         int bracketHeight = 5;
         int bracketThickness = 2;
@@ -1437,17 +1435,22 @@ void PLANETMainGui::resized()
     auto bounds = getLocalBounds();
     int leftWidth = (int)(bounds.getWidth() * leftWidthRatio);
     
-    // Drawbar section layout
+    // Height of the top-left zone-label strip. Zone labels moved here from bottom-centre;
+    // each zone's contents are translated down by this amount (see paint()).
+    const int zoneLabelH = 24;
+
+    // Drawbar section layout — contents sit below the zone-label strip
     int drawbarMargin = 20;
     int fLabelHeight = 25;
     int drawbarWidth = (leftWidth - drawbarMargin * 2) / 10;
-    int drawbarHeight = drawbarSectionHeight - fLabelHeight - drawbarMargin * 2;
-    
+    int drawbarTop = zoneLabelH;
+    int drawbarHeight = drawbarSectionHeight - drawbarMargin - drawbarTop - fLabelHeight - 5;
+
     for (int i = 0; i < 10; ++i)
     {
         int x = drawbarMargin + i * drawbarWidth;
-        fValueLabels[i].setBounds(x + 5, drawbarMargin, drawbarWidth - 10, fLabelHeight);
-        drawbarSliders[i].setBounds(x + 10, drawbarMargin + fLabelHeight + 5, drawbarWidth - 20, drawbarHeight);
+        fValueLabels[i].setBounds(x + 5, drawbarTop, drawbarWidth - 10, fLabelHeight);
+        drawbarSliders[i].setBounds(x + 10, drawbarTop + fLabelHeight + 5, drawbarWidth - 20, drawbarHeight);
     }
 
     // Position ADSR labels and value editors
@@ -1455,10 +1458,10 @@ void PLANETMainGui::resized()
     int harmonicAndAmpHeight = mainHeight - drawbarSectionHeight;
     int harmonicHeight = harmonicAndAmpHeight / 2;
     int adsrZoneWidth = (int)(leftWidth * 0.65f);
-    int adsrGraphHeight = harmonicHeight - 80;
-    int adsrGraphY = drawbarSectionHeight + 10;
+    int adsrGraphHeight = harmonicHeight - 101;   // shrunk to leave the top label strip + a bottom border
+    int adsrGraphY = drawbarSectionHeight + zoneLabelH + 8;
     int adsrGraphWidth = adsrZoneWidth - 40;
-    int adsrLabelY = drawbarSectionHeight + adsrGraphHeight + 5;
+    int adsrLabelY = adsrGraphY + adsrGraphHeight + 8;
     int adsrFieldWidth = 50;
     int adsrFieldHeight = 25;
     int adsrSpacing = (adsrZoneWidth - 40) / 4;
@@ -1477,7 +1480,7 @@ void PLANETMainGui::resized()
     int envDepthX = adsrZoneWidth + 10;
     int lfoZoneX = envDepthX + envDepthSliderWidth + 20;
     int lfoZoneWidth = leftWidth - lfoZoneX;
-    int lfoZoneY = drawbarSectionHeight + 10;
+    int lfoZoneY = drawbarSectionHeight + zoneLabelH;   // triangle nudged up; combos stay put (gap below grows)
     int knobSize = 80;
 
     int envDepthY = adsrGraphY;
@@ -1520,7 +1523,7 @@ void PLANETMainGui::resized()
 
     lfoSpeedValue.setBounds(base1X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
     lfoDepthValue.setBounds(base2X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
-    int comboY = baseY + 16 + smallKnobSize + smallKnobValueHeight + 5;
+    int comboY = baseY + 16 + smallKnobSize + smallKnobValueHeight + 15;  // +10 keeps combos put after the triangle moved up
     int comboHalfWidth = (lfoZoneWidth - 30) / 2;
     int comboLabelW = 40;
 
@@ -1535,8 +1538,8 @@ void PLANETMainGui::resized()
 
     // ======================== AMPLITUDE ADSR SECTION ========================
     int ampHeight = harmonicAndAmpHeight - harmonicHeight;
-    int ampAdsrGraphHeight = ampHeight - 80;
-    int ampAdsrGraphY = drawbarSectionHeight + harmonicHeight + 10;
+    int ampAdsrGraphHeight = ampHeight - 90;   // shrunk to leave the top label strip + a bottom border
+    int ampAdsrGraphY = drawbarSectionHeight + harmonicHeight + zoneLabelH + 8;
     int ampAdsrLabelY = ampAdsrGraphY + ampAdsrGraphHeight - 3;
 
     ampEnvBounds = juce::Rectangle<int>(20, ampAdsrGraphY, adsrGraphWidth, ampAdsrGraphHeight);
@@ -1565,7 +1568,7 @@ void PLANETMainGui::resized()
     int ampCol1X = lfoZoneX + ampBaseSpacing;
     int ampCol2X = ampCol1X + ampKnobSize + ampBaseSpacing;
 
-    int ampRow1Y = drawbarSectionHeight + harmonicHeight + 26;
+    int ampRow1Y = drawbarSectionHeight + harmonicHeight + 14 + zoneLabelH;  // nudged up for more bottom border
     int ampRow2Y = ampRow1Y + ampBlockH + 12;
 
     auto placeKnob = [&](juce::Label& lbl, juce::Slider& knob, juce::Label& val, int cx, int cy)
@@ -1599,15 +1602,15 @@ void PLANETMainGui::resized()
     int rightContentWidth = bounds.getWidth() - leftWidth - 20;
     int rightKnobSize = 80;
 
-    // Waveform display
-    waveformDisplay.setBounds(rightX, 10, rightContentWidth, drawbarSectionHeight - 20);
+    // Waveform display — top aligned with the drawbar columns; "Waveform" label sits above it
+    waveformDisplay.setBounds(rightX, drawbarMargin, rightContentWidth, drawbarSectionHeight - drawbarMargin * 2);
     
     int waveformHeight = drawbarSectionHeight;
     int remainingHeight = mainHeight - waveformHeight;
     int rightSectionHeight = remainingHeight / 4;
     
     // Vibrato section
-    int vibratoY = waveformHeight + 5;
+    int vibratoY = waveformHeight + 5 + zoneLabelH;
     int vibratoKnobSpacing = rightContentWidth / 3;
     int knobValueHeight = 20;
 
@@ -1627,7 +1630,7 @@ void PLANETMainGui::resized()
     vibratoFadeValue.setBounds(vkx2 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     
     // Pitch section
-    int pitchY = waveformHeight + rightSectionHeight + 5;
+    int pitchY = waveformHeight + rightSectionHeight + 5 + zoneLabelH;
     int pitchKnobSpacing = rightContentWidth / 2;
 
     int pkx0 = rightX + (pitchKnobSpacing - rightKnobSize) / 2;
@@ -1650,10 +1653,10 @@ void PLANETMainGui::resized()
     brillianceSlider.setBounds(brillianceSliderBounds);
     
     // Effects section (5 sliders: Detune, Mix, Warmth, Punch, Freq)
-    int effectsY = waveformHeight + rightSectionHeight * 3 + 1;
+    int effectsY = waveformHeight + rightSectionHeight * 3 + 1 + zoneLabelH;
     int effectsSliderWidth = 55;
     int effectsValueHeight = 20;
-    int effectsSliderHeight = rightSectionHeight - 68;  // Room for label + value
+    int effectsSliderHeight = rightSectionHeight - 68 - zoneLabelH;  // Room for top label strip + value
     int effectsSliderSpacing = rightContentWidth / 5;
 
     int esx0 = rightX + (effectsSliderSpacing - effectsSliderWidth) / 2;
@@ -2020,6 +2023,14 @@ void PLANETMainGui::bindToSelectedDrawbar()
 
     if (auto* param = apvts.getParameter(prefix + "VelToHarmonic"))
         velToDrawbarValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+
+    // Re-tint the per-drawbar controls to the selected drawbar's colour.
+    drawbarIshtarLookAndFeel.starColour = drawbarColours[selectedDrawbar];
+    envDepthKnob.setColour(juce::Slider::thumbColourId, drawbarColours[selectedDrawbar]);
+    lfoSpeedKnob.repaint();
+    lfoDepthKnob.repaint();
+    velToDrawbarKnob.repaint();
+    envDepthKnob.repaint();
 }
 
 void PLANETMainGui::updateLfoSyncMode()

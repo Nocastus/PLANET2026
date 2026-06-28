@@ -217,19 +217,20 @@ private:
     juce::Colour backgroundLight { 0xff3a3a3a };
     juce::Colour backgroundGlobal { 0xff2a2a4a };
     juce::Colour accentColour { 0xff6ab0ff };
+    juce::Colour globalAccent { 0xff8a93a3 };   // Steel grey — for global elements (amp envelope, global section accents); neutral against Palette-03 hues. Tune by eye.
 
     // Drawbar colours (resistor code inspired)
     std::array<juce::Colour, 10> drawbarColours {
-        juce::Colour(0xff4a4a4a),   // 1 - dark grey
-        juce::Colour(0xff8b4513),   // 2 - brown
-        juce::Colour(0xffcc0000),   // 3 - red
-        juce::Colour(0xffff6600),   // 4 - orange
-        juce::Colour(0xffcccc00),   // 5 - yellow
-        juce::Colour(0xff00aa00),   // 6 - green
-        juce::Colour(0xff0066cc),   // 7 - blue
-        juce::Colour(0xff6600cc),   // 8 - violet
-        juce::Colour(0xff666666),   // 9 - grey
-        juce::Colour(0xffeeeeee)    // 10 - white
+        juce::Colour(0xffff9886),   // 1 - coral
+        juce::Colour(0xffae6100),   // 2 - amber
+        juce::Colour(0xffd7b946),   // 3 - gold
+        juce::Colour(0xff638519),   // 4 - olive
+        juce::Colour(0xff64d599),   // 5 - mint
+        juce::Colour(0xff008f89),   // 6 - teal
+        juce::Colour(0xff33cdf8),   // 7 - cyan
+        juce::Colour(0xff3779c5),   // 8 - blue
+        juce::Colour(0xffb3adff),   // 9 - lavender
+        juce::Colour(0xff985baa)    // 10 - purple
     };
 
     // Layout proportions
@@ -248,7 +249,8 @@ private:
     int selectedDrawbar = 0;
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
 
-    IshtarLookAndFeel ishtarLookAndFeel;  // Custom rotary knob appearance
+    IshtarLookAndFeel ishtarLookAndFeel;          // Global star knobs — steel-grey accent
+    IshtarLookAndFeel drawbarIshtarLookAndFeel;   // Per-drawbar star knobs — tracks selected drawbar's colour
 
     // Custom fonts
     juce::Font amarnaRegular;

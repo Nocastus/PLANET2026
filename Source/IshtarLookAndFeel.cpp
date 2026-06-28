@@ -34,14 +34,18 @@ void IshtarLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wi
 void IshtarLookAndFeel::drawIshtarStar(juce::Graphics& g, float centreX, float centreY,
     float outerRadius, float scale)
 {
-    float innerRadius = outerRadius * INNER_CIRCLE_RATIO;
+    // The orbit ring sits at outerRadius. The central circle and the ray tips are now
+    // sized independently of each other (both as fractions of the orbit): the circle is
+    // restored to its full size, while the rays are kept short so they clear the ring.
+    float innerRadius  = outerRadius * INNER_CIRCLE_RATIO;
+    float rayTipRadius = outerRadius * RAY_TIP_RATIO;
 
     // Scale stroke widths
     float orbitStroke = ORBIT_STROKE * scale;
     float innerStroke = INNER_STROKE * scale;
     float rayStroke = RAY_STROKE * scale;
 
-    // Draw orbit circle (outer)
+    // Draw orbit circle (outer) — stays at outerRadius, outside the star points
     g.setColour(starColour.withAlpha(ORBIT_OPACITY));
     g.drawEllipse(centreX - outerRadius, centreY - outerRadius,
         outerRadius * 2.0f, outerRadius * 2.0f, orbitStroke);
@@ -59,9 +63,9 @@ void IshtarLookAndFeel::drawIshtarStar(juce::Graphics& g, float centreX, float c
     {
         float angle = i * juce::MathConstants<float>::pi / 4.0f;  // 0, 45, 90... degrees
 
-        // Apex on outer circle
-        float apexX = centreX + outerRadius * std::sin(angle);
-        float apexY = centreY - outerRadius * std::cos(angle);
+        // Apex on the ray-tip radius, inside the orbit ring
+        float apexX = centreX + rayTipRadius * std::sin(angle);
+        float apexY = centreY - rayTipRadius * std::cos(angle);
 
         // Base points on inner circle
         float baseLeftX = centreX + innerRadius * std::sin(angle - halfBase);
@@ -75,8 +79,12 @@ void IshtarLookAndFeel::drawIshtarStar(juce::Graphics& g, float centreX, float c
         ray.lineTo(apexX, apexY);
         ray.lineTo(baseRightX, baseRightY);
 
+        // Curved join rounds the apex so the stroke doesn't throw a mitered spike past
+        // the tip (that overhang was the old star-vs-orbit overlap). Rounded ends soften
+        // the ray bases too.
         g.setColour(starColour.withAlpha(STAR_OPACITY));
-        g.strokePath(ray, juce::PathStrokeType(rayStroke));
+        g.strokePath(ray, juce::PathStrokeType(rayStroke,
+            juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 }
 

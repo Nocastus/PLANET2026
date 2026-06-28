@@ -16,7 +16,8 @@ public:
     //==========================================================================
 
     // Star geometry
-    static constexpr float INNER_CIRCLE_RATIO = 0.4f;      // Inner circle as fraction of outer
+    static constexpr float INNER_CIRCLE_RATIO = 0.4f;      // Central circle radius as fraction of the orbit
+    static constexpr float RAY_TIP_RATIO = 0.78f;          // Ray-tip radius as fraction of the orbit (<1 = tips sit inside the ring)
     static constexpr float RAY_BASE_WIDTH_DEG = 20.0f;     // 20 for reticule, 45 for classic
 
     // Line weights (at 80px size, scales proportionally)
