@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="eDTqr9" name="PLANET2026" projectType="audioplug" useAppConfig="0"
+<JUCERPROJECT id="eDTqr9" name="ISHTAR" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn"
-              pluginName="PLANET2026" pluginDesc="HPD Synth" pluginManufacturer="Gerard Johnson"
-              pluginManufacturerCode="Gera" pluginCode="PL26" bundleIdentifier="com.gerardjonson.PLANET2026">
-  <MAINGROUP id="KRDVCI" name="PLANET2026">
+              pluginName="ISHTAR" pluginDesc="HPD Synth" pluginManufacturer="Gerard Johnson"
+              pluginManufacturerCode="Gera" pluginCode="ISTA" bundleIdentifier="com.gerardjohnson.ISHTAR">
+  <MAINGROUP id="KRDVCI" name="ISHTAR">
     <GROUP id="{98A0DDF2-A42D-8D42-FE29-B09DFF176340}" name="Source">
       <FILE id="Hn73Ib" name="Amarna-Italic.ttf" compile="0" resource="1"
             file="../New folder (4)/Amarna/static/Amarna-Italic.ttf"/>
@@ -70,9 +70,9 @@
   <EXPORTFORMATS>
     <VS2022 targetFolder="Builds/VisualStudio2022">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="PLANET2026"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="PLANET2026" enablePluginBinaryCopyStep="0"
-                       vst3BinaryLocation_x64="C:\Program Files\Common Files\VST3\PLANET2026.vst3"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="ISHTAR"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="ISHTAR" enablePluginBinaryCopyStep="0"
+                       vst3BinaryLocation_x64="C:\Program Files\Common Files\VST3\ISHTAR.vst3"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_animation" path="C:/JUCE/modules"/>

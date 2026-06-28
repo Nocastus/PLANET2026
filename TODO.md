@@ -169,9 +169,22 @@ i.e. early by its intra-block offset (up to one buffer, ~12 ms at 512/44.1k). Im
 MIDI events in sample order, render audio in segments between events, apply each event at its true
 offset. Also fixes pitch-wheel/CC block-start quantization. Restructures the main processBlock loop.
 
-### 3c. Rename project PLANET2026 → ISHTAR in Projucer (wrong display name in Cubase)
-**Found 26 Jun 2026 (Gerard):** the built `.vst3` still shows the wrong display name in Cubase's
-plug-in list — it reads `PLANET2026`, not `ISHTAR`. Fix at source in Projucer (`PLANET2026.jucer`):
+### 3c. Rename project PLANET2026 → ISHTAR in Projucer (wrong display name in Cubase) ✅ CLOSED (28 Jun 2026)
+**Closed (28 Jun 2026):** Done as a *fork into a new plugin identity*, not an in-place rename — Gerard's
+call. The old **PLANET2026 / code `PL26`** plugin is **frozen** (its installed `.vst3` left untouched so
+existing Cubase projects keep loading it; the frozen source is the git tag `pl26-frozen`). Going forward
+the Projucer project is **ISHTAR / code `ISTA`**, building a separate `ISHTAR.vst3`. Both `.vst3`s now
+coexist in `C:\Program Files\Common Files\VST3\`. Scope = *project identity only* — source files keep
+their `PLANET` prefix (internal, invisible to host). Patch library stays `Documents/PLANET2026` (shared by
+both). Edits to the `.jucer`: `name`/`MAINGROUP`/`targetName` → ISHTAR; `pluginName` → ISHTAR; `pluginCode`
+`PL26` → `ISTA`; `bundleIdentifier` → `com.gerardjohnson.ISHTAR` (also fixed the old `gerardjonson` typo);
+`manufacturerCode` `Gera` kept; file renamed `PLANET2026.jucer` → `ISHTAR.jucer`. Regenerated clean via
+`Projucer --resave` (had to set the CLI global module path `C:\JUCE\modules` once), Release-built, installed,
+and verified in Cubase by Gerard: ISHTAR loads/plays/sees patches; an old song still loads its PLANET2026
+instance. **Item #3c fully closed.**
+
+**Original note (for history):** the built `.vst3` showed the wrong display name in Cubase's
+plug-in list — it read `PLANET2026`, not `ISHTAR`. Fix at source in Projucer (`PLANET2026.jucer`):
 update the project name / plugin name fields so the generated plugin advertises **ISHTAR** to the host.
 - Check all the relevant Projucer fields: **Project Name**, and under the VST3/plugin settings the
   **Plugin Name**, **Plugin Code**, **Plugin Manufacturer**, and the **VST3 Category** — the host
@@ -229,6 +242,12 @@ keepers, each with feasibility against the current `PLANETMainGui` / `IshtarLook
   past the geometric tip — that overhang, not the maths, was why points always reached the ring). Gerard
   likes the result; noted it reads slightly cog-wheel-ish, which the comet-tails (g) replacing the orbit
   rings should pull back toward "knob".
+  - **Future tweak (Gerard's idea, 28 Jun 2026) — make it less cog-like:** give the cardinal points
+    (N/S/E/W) a slightly *longer* ray than the intermediate diagonal points, breaking the uniform-spoke
+    symmetry that reads as a settings cog. Trivial in the 8-ray loop in `IshtarLookAndFeel::drawIshtarStar`:
+    cardinals are `i = 0,2,4,6`, diagonals `i = 1,3,5,7` — use the full `RAY_TIP_RATIO` for cardinals and
+    a slightly smaller ratio (new constant, e.g. `RAY_TIP_RATIO_DIAG`) for diagonals. Pairs naturally
+    with g (both de-cog the star); try alongside the comet-tails.
 - **d. Zone labels → top-left of each zone. ✅ DONE (28 Jun 2026, eye-tested).** All seven zone labels
   moved from bottom-centre to top-left, left-justified, via a `zoneLabelH = 24` top strip; each zone's
   contents translated down into the space freed by the old bottom labels (drawbars/effects also shrank
