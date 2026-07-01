@@ -430,6 +430,31 @@ polyphony for thickness:
   detuned; per-stack stereo spread yes/no; does stack count want to be a patch parameter (likely yes).
   **Design pass with Gerard before building.**
 
+### F7. Per-drawbar mute (toggle a drawbar on/off without losing its setting)
+**Idea (Gerard, 30 Jun 2026).** While sound-designing additively (e.g. building saws operator-by-operator),
+you want to A/B a single drawbar's contribution **without** zeroing its K/F/envelope and losing the setting.
+Add a per-drawbar mute that gates the operator's output while preserving all its values.
+
+**Proposed UX (Gerard's):** **ctrl-click** (cmd-click on Mac) on the drawbar to toggle mute. Needs a clear
+visual muted state — e.g. desaturate/grey the drawbar column + dim or hide its comet-tail.
+
+**Implementation sketch:**
+- **State:** 10 mute flags. Recommend a **saved APVTS param** per drawbar (`k{n}Mute`, 0/1) so mute is
+  recalled in patches and automatable — not just transient GUI state. (Decide: saved-in-patch vs live-only.)
+- **Engine:** gate in the coefficient assembly ([`Source/PLANETVoice.cpp`](Source/PLANETVoice.cpp) ~406–470):
+  if muted, set `stagedCoeffs[i] = 0`. It promotes at the carrier-cycle boundary where output = 0
+  (`sin(0)=0`), so the toggle is **click-free** — the same zero-crossing property the coefficient grid
+  already exploits. The fader value is left untouched; mute is an independent gate.
+- **GUI:** override `mouseDown` on the drawbar slider, detect `ModifierKeys::ctrlModifier` on a single
+  click (not a drag), toggle the param. Add a muted look in `DrawbarLookAndFeel` (grey/desaturate thumb +
+  column; suppress the comet-tail).
+- **Patch format:** add `k{n}Mute` to `PLANETPatchManager` save/load + `getParameterRanges` if it's a saved param.
+
+**Watch / decide:** confirm ctrl-click (and ctrl-drag) isn't already a JUCE `Slider` gesture (fine-adjust)
+that would conflict — if it is, fall back to cmd/alt-click or a small dedicated mute dot. UX tradeoff:
+ctrl-click is clutter-free but needs the learned gesture + a clear visual state; a tiny always-visible mute
+dot per drawbar is more discoverable at the cost of a little UI clutter (against ISHTAR's minimal aesthetic).
+
 ---
 
 ## Recently fixed (awaiting ear test)
