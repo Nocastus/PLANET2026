@@ -1,5 +1,5 @@
 # PLANET2026 — To-Do / Working Notes
-**Living task list.** Last updated: 26 June 2026
+**Living task list.** Last updated: 2 July 2026
 
 > The dated `*.md` files in this folder (`VERSION_0.4.0_MERGE_COMPLETE.md`,
 > `BUG_FIXES_v0.4.1.md`, etc.) are historical changelogs from January 2026 and are
@@ -373,6 +373,32 @@ reproduce sawtooth, square, and pulse, and ship them as `.md` presets.
   presets, plus printed F-and-K tables for hand-dialling. **Good entry point to the arc — pure offline
   analysis, no engine changes, and its output directly informs F5.**
 
+### Arc follow-on — F3b. Smoothness-weighted fitting (new standard fitter objective)
+**Finding (1–2 Jul 2026 "hole in the middle" analysis; full math in memory `hole-in-middle-analysis`,
+scripts in that session's scratchpad).** Gerard's observation — strong fundamental + high-harmonic
+cluster + weak/holey mids — is real, but it's a *findability* problem, not an engine limit:
+- Band-only or amplitude-only fitting (what F3/v7 did) lands in lumpy solutions with 10–28 dB
+  cancellation dips in individual mid harmonics (this is the v7 saw's "lumpiness").
+- Adding a **local-dip penalty over h2–h20** to the objective finds bright + full + *smooth* patches
+  within all existing limits: max dip 3.7 dB with 25% of energy in h9–24, on plain integer F=1..10,
+  every |K| ≤ 1.4. The smooth solutions exist; nothing steers hand-voicing or naive fitters to them.
+
+**Actions:**
+1. Add the dip penalty (max local dip in dB over h2–h20, computed on integer harmonics) to the
+   standard fitter objective alongside band energies / target amplitudes. Cheap, offline-only.
+2. **Ear test pending:** the discovered patch is banked as
+   `H:\OneDrive\Documents\PLANET2026\Patches\Hole Experiments\ISHTAR_BrightFull_SmoothMid.md` —
+   load it and judge whether the mid fullness is audible vs the hand-voiced bright patches.
+3. If the ear test passes, consider re-fitting the v7 saw with the dip penalty.
+
+**Hand-voicing rules of thumb from the same analysis (the J₀ tax):** every drawbar scales every
+*other* drawbar's harmonics by J₀(K) — K=0.5 → −0.6 dB, K=1 → −2.3 dB, K=2 → **−13 dB**. So:
+(a) brightness via **several bars at |K| ≲ 1**, never one bar slammed to 2; (b) after adding a
+top-end bar, re-raise the mid Ks to repay the tax; (c) half-integer bars at modest K (~0.7) are a
+*feature*, not leakage — f=0.5 = 16′ suboctave depth, f=1.5 = 5⅓′ quint density (doubles the line
+count in the low mid for only −1.1 dB tax). They add subharmonic-series thickness, not integer-
+harmonic fill — don't use them when fitting a specific classic waveform.
+
 ### Arc step 2 — F5. Experiment with non-sine source waveforms (alternate carrier LUT)
 **Exploratory, may not survive contact with the engine.** The engine is
 `output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — the *outer* `sin()` is the carrier/source wave, currently a
@@ -502,6 +528,56 @@ visual muted state — e.g. desaturate/grey the drawbar column + dim or hide its
 that would conflict — if it is, fall back to cmd/alt-click or a small dedicated mute dot. UX tradeoff:
 ctrl-click is clutter-free but needs the learned gesture + a clear visual state; a tiny always-visible mute
 dot per drawbar is more discoverable at the cost of a little UI clutter (against ISHTAR's minimal aesthetic).
+
+### F8. Per-drawbar ADDITIVE mode (the architectural "hole in the middle" fix)
+**Idea (from the 1–2 Jul 2026 spectrum analysis with Gerard; design settled in that session — see
+memory `hole-in-middle-analysis`).** A per-drawbar toggle: instead of adding `k·sin(f·x)` to the
+carrier's *phase* (PM operator), the bar adds it to the *output* (additive partial). Directly fills
+the mid harmonics with exact amplitudes, immune to the J₀ tax and to Bessel sign-cancellation —
+PM bars supply top-end sheen and character, additive bars fill h2–h8. Honours the drawbar-organ
+metaphor the UI already evokes.
+
+**Why it's cheap:** `sineLUT.lookup(modPhases[i])` is already computed per bar per sample in
+`applyPhaseDistortion` ([`Source/PLANETVoice.cpp`](Source/PLANETVoice.cpp) ~514–558) — additive mode
+reuses that value, adding it to the sample instead of the phase. Near-zero extra DSP.
+
+**Design decisions already settled (2 Jul 2026):**
+- **Pitch is free:** `modPhases[i]` advances at `f·angleDelta`, which already tracks vibrato /
+  pitch-wheel / pitch-envelope — additive partials inherit all pitch modulation automatically,
+  staying at a constant cents offset (musically correct). No special handling.
+- **Level limiting — per drawbar, at control rate:** additive amp = `clamp(k_eff, −2, +2) / 2`
+  applied at the staged-coefficient stage (~line 470). Linear across the whole fader range (keeps
+  fitted amplitudes exact — do NOT tanh-soften, it warps everything), hard ceiling only against
+  envelope/LFO/velocity overdrive (worst-case k_eff ≈ ±50: (2+20+5)·velScale 2 + seed). Clamps the
+  amplitude *trajectory*, not the audio → no distortion; an overdriven envelope plateaus at full
+  level like a pinned compressor. Brilliance (≤1) multiplies after, so the bound survives.
+- **NO additive-bus trim.** ISHTAR had a fixed output trim once and Gerard removed it (made
+  everything too quiet) in favour of the manual output level — same philosophy here. Per-bar clamp
+  + manual level only; multi-bar sums are no hotter than existing unnormalised polyphony.
+- **Carry-overs become features:** K envelope → true per-partial amplitude envelope; K LFO →
+  per-partial tremolo (the Cosmic-Dream morph trick translates directly); LIFE doublet → a
+  *beating partial*; default mode = PM, so all existing patches are bit-identical.
+- **Semantics note for patch design:** an additive bar at F lands ON harmonic F (a PM bar's
+  sidebands land at 1±F) — to fill h3 additively, set F=3. Half-integer additive F gives a clean
+  isolated suboctave/quint partial (16′ / 5⅓′ registration) without PM's cross-term scatter —
+  likely the most controllable "depth" control the engine could have.
+
+**Still to build/decide:** per-drawbar mode param (`k{n}Additive`? APVTS + patch format +
+`PLANETPatchManager`), GUI toggle + a visual distinction for additive bars (interacts with F7
+mute-state styling — design them together), `applyPhaseDistortion` needs to return/accumulate the
+additive sum alongside the distorted phase (out-param or member), multiply the additive sum by the
+same `ampEnvValue · velocityAmplitude` as the carrier. **Optional polish:** fade an additive
+partial as `f·f₀` approaches Nyquist (trivially possible here, unlike for PM sidebands).
+
+### F9. Feedback phase term (parked — revisit only if F8 + F3b leave a gap)
+**Idea (1 Jul 2026 hole analysis, second-ranked engine mitigation).** DX7-style operator feedback:
+`distortedPhase += kFB · previousSample`. Produces a dense ~1/n comb that fills the spectrum *by
+construction* — a single "fullness / saw" macro knob, and the classic FM route to a bright saw
+(relevant to Arc A / F5). Parked because F8 (additive mode) + F3b (smoothness fitter) likely cover
+the fullness need with less risk: feedback needs stability care at high kFB (chaos/noise onset),
+interacts with the per-cycle zero-crossing property (feedback breaks `sin(0)=0` at cycle
+boundaries — the click-free coefficient staging needs re-checking), and adds a genuinely new
+timbre dimension that deserves its own listening arc.
 
 ---
 
