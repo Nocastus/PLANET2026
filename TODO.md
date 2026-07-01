@@ -343,6 +343,10 @@ Two threads below: an **exploration arc** (the headline experiment — can ISHTA
 a classic subtractive synth?) and a set of **standalone features**. The `F#` numbers are stable IDs, so
 they're grouped here by theme rather than in numeric order.
 
+**Engine-modification items go on forks (Gerard, 2 Jul 2026):** F5 (carrier), F7 (mute), F8 (additive
+mode), F9 (feedback) are all engine changes — each gets its own branch/worktree, merged back only after
+ear-approval. F7/F8 are expected to merge quickly; F5/F9 are open explorations that may never merge.
+
 ---
 
 ## Exploration Arc A — "Can ISHTAR emulate a classic subtractive synth?"
@@ -418,6 +422,33 @@ see what the PM/phase-distortion structure does with a harmonically-rich source.
   the dual — change the carrier itself. They inform each other: a fitted-saw analysis (F3) might reveal
   what carrier shape would make saws/squares cheap to reach with only a few drawbars. **Start with one
   alternate LUT (saw) and listen.**
+
+**Refined concept (Gerard, 2 Jul 2026): sine → "soft sawtooth" MORPH knob, possibly an alternate
+Brilliance mode.** Not a LUT swap but a continuous morph: a single knob taking the carrier from pure
+sine to a *soft* saw — a wave the engine can brighten to a true sharp saw with relatively few
+modulators, while still allowing timbral variation back down to a mellow tone.
+- **Why the math favours it:** with a rich carrier `Σ cₘ·sin(mθ)` fed the distorted phase
+  `θ = x + φ(x)`, carrier harmonic m sees effective modulation index **m·K** — the same drawbar move
+  brightens a rich carrier multiplicatively harder than a sine. And carrier harmonics 2–8 fill the
+  mid floor before any drawbar moves — a direct second answer to the hole-in-the-middle (see F3b/F8).
+- **Click-free invariant PRESERVED (the key safety property, unlike F9):** build the soft saw as a
+  pure sine series `Σ (1/n)·rⁿ·sin(nθ)` (saw Fourier series, exponential taper r<1 softening the
+  corner, band-limited at N terms). A sine series is exactly 0 at θ=0, so output stays 0 at every
+  carrier cycle boundary and the coefficient-staging click-free property survives untouched.
+- **Implementation sketch:** two static LUTs (sine + soft saw), per-sample lerp by a smoothed morph
+  amount — one extra lookup + lerp against the existing 10-tap loop (~10% on the hot path), no new
+  state. Morph=0 → bit-identical sine path for old patches.
+- **Brilliance alternate mode — the main design decision:** wiring the morph to Brilliance is
+  attractive (velocity→Brilliance would then play carrier richness — expressive), but it must be a
+  per-patch *mode*, not a replacement: every fitted patch relies on Brilliance-scales-K (the free
+  sine→waveform morph). Decide on the fork: reassign vs blend vs separate Carrier knob.
+- **Offline pre-step (do BEFORE the fork, zero engine change):** extend the Python fitter with a
+  parametrized carrier (taper r, harmonic count N) and ask it directly: which (r, N) makes a bright
+  sharp saw reachable with ≤3 modulators, and how does the brightness range under Brilliance/K feel?
+  Output picks the LUT shape and answers feasibility before any C++ exists.
+- **Watch:** with index m·K on harmonic m, high carrier harmonics scatter aggressively under modest
+  K (the J₀(m·K) tax per carrier line) — the taper r is what keeps that under control; expect the
+  fitter to prefer gentle K values on rich carriers.
 
 ### Arc step 3 — F4. Simulate filter sweeps with the drawbar envelopes
 Idea (Gerard): each drawbar has its own envelope, so per-drawbar envelope depths/times across the
@@ -569,8 +600,15 @@ additive sum alongside the distorted phase (out-param or member), multiply the a
 same `ampEnvValue · velocityAmplitude` as the carrier. **Optional polish:** fade an additive
 partial as `f·f₀` approaches Nyquist (trivially possible here, unlike for PM sidebands).
 
-### F9. Feedback phase term (parked — revisit only if F8 + F3b leave a gap)
-**Idea (1 Jul 2026 hole analysis, second-ranked engine mitigation).** DX7-style operator feedback:
+### F9. Feedback phase term (parked — Gerard shares the click concern, 2 Jul 2026)
+**Gerard (2 Jul 2026): "I don't see how we can avoid a nightmare of clicks and discontinuities."**
+Concern confirmed by the math: at the carrier cycle boundary the phase becomes `kFB·y[n−1]` ≠ 0, so
+the output is no longer exactly zero there — every coefficient promotion becomes a potential click,
+and the whole 0.5-grid F-snap rationale weakens. Plus known high-feedback noise (the DX7 needed a
+two-sample average to stabilise its feedback path). Stays parked at the bottom of the pile; if ever
+attempted, it's a fork (see forks note at the top of the backlog).
+
+**Original idea (1 Jul 2026 hole analysis, second-ranked engine mitigation).** DX7-style operator feedback:
 `distortedPhase += kFB · previousSample`. Produces a dense ~1/n comb that fills the spectrum *by
 construction* — a single "fullness / saw" macro knob, and the classic FM route to a bright saw
 (relevant to Arc A / F5). Parked because F8 (additive mode) + F3b (smoothness fitter) likely cover
