@@ -202,12 +202,14 @@ Dropped the `-life` dev suffix now that LIFE is locked/shipped and bumped to **`
 ([`Source/PluginEditor.cpp:31`](Source/PluginEditor.cpp#L31)) to cover the focus fix + pitch-envelope
 work landing on top of the LIFE release.
 
-### 4. Decide the fate of `StereoSplitter.cpp`
-[`Source/StereoSplitter.cpp`](Source/StereoSplitter.cpp) is an untracked standalone console
-utility (drag-and-drop stereo WAV → `_L`/`_R` mono files + metadata dump). It is **not part of
-the plugin** and is not referenced in `PLANET2026.jucer`. It currently sits loose in the plugin
-source tree. Either move it to its own folder/project, or commit it deliberately with its own
-build target — but don't let it get compiled into the plugin.
+### 4. Decide the fate of `StereoSplitter.cpp` ✅ CLOSED (1 Jul 2026)
+**Closed (1 Jul 2026):** Moved out of the plugin tree entirely — it's a general WAV utility, nothing
+to do with ISHTAR (drag-and-drop stereo WAV → `_L`/`_R` mono files + metadata dump). New home:
+`N:\PLUGIN DEVELOPMENT\Tools\StereoSplitter\` (source + a README with build notes), a sibling to the
+plugin projects rather than inside any of them. It was actually **git-tracked** in the ISHTAR repo (the
+original note calling it "untracked" was wrong), so the move was `git rm Source/StereoSplitter.cpp` +
+commit here, plus dropping the byte-identical copy in the new folder. Never referenced in the `.jucer`,
+so it was never compiled into the plugin. **Item #4 fully closed.**
 
 ### 5. LFO visual feedback on drawbars (deferred since v0.4.1)
 Infrastructure is in place — `updateDrawbarColors()` sets a `hasActiveLFO` property on each
