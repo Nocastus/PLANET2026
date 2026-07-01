@@ -159,7 +159,7 @@ dropdown (no re-open); spacebar, locators 1/2, numeric-field Enter, and Load/Sav
 and the cycle key operate the transport as normal; patch-name and F-value text fields still
 accept typing when clicked.
 
-### 3. Sample-accurate MIDI timing (notes trigger early)
+### 3. Sample-accurate MIDI timing (notes trigger early) ✅ CLOSED (1 Jul 2026 — Cubase export test passed)
 **Found 12 Jun 2026 (Gerard, quantized-export test):** exported audio lands slightly *ahead* of
 the beat. Not latency reporting (we report 0; no `setLatencySamples` anywhere). Cause: the MIDI
 loop in `PluginProcessor.cpp` `processBlock` (~line 488) processes all events *before* the render
@@ -168,6 +168,26 @@ i.e. early by its intra-block offset (up to one buffer, ~12 ms at 512/44.1k). Im
 (reads as snappy response), systematic on export. **Fix:** standard split-block processing — walk
 MIDI events in sample order, render audio in segments between events, apply each event at its true
 offset. Also fixes pitch-wheel/CC block-start quantization. Restructures the main processBlock loop.
+
+**Implemented (1 Jul 2026), builds clean, awaiting Cubase export test.** `processBlock` restructured:
+the old MIDI loop became an `applyMidiMessage(message)` lambda and the old render loop a
+`renderSamples(start, end)` lambda; a new interleave loop walks events in sample order, calling
+`renderSamples` up to each event's `metadata.samplePosition` (jlimited to the block) before applying
+it, then renders the tail. Note/CC/pitch-wheel handling is byte-for-byte the same code — only *when*
+it runs changed. **No added live latency** (confirmed against the code): a live note arrives stamped
+at sample 0 and still renders from sample 0 exactly as before; only nonzero-stamped (sequenced) events
+move to their true offset, and causality means they can only move *later*, never earlier. **Free bonus:**
+pitch wheel is now sub-block accurate — `renderSamples` recomputes `pitchWheelSemitones` from the live
+`currentPitchWheelValue` at each segment (the per-sample arg is authoritative anyway; `PLANETVoice`
+rebuilds the pitch offset from it every sample, so the `setPitchWheelOffset` call in the MIDI handler
+was already being overwritten each sample — no double-application). Mod-wheel/brilliance deliberately
+left block-rate (smooth controller, inaudible; keeps the change tight and behaviour identical).
+**Acceptance test (Gerard, in Cubase):** re-run the quantized-export test — notes should now land *on*
+the grid, not ahead of it. Confirm live playing still feels identical (no new latency). If both pass,
+item #3 closes.
+
+**Test result (1 Jul 2026):** ✅ PASSED. Hard-quantized notes now render exactly on the beat
+(Gerard: "beautifully precise… a joy to behold"). Live play unaffected. **Item #3 fully closed.**
 
 ### 3c. Rename project PLANET2026 → ISHTAR in Projucer (wrong display name in Cubase) ✅ CLOSED (28 Jun 2026)
 **Closed (28 Jun 2026):** Done as a *fork into a new plugin identity*, not an in-place rename — Gerard's

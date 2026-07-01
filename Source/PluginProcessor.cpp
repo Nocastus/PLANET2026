@@ -491,10 +491,10 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float pitchAttackTime = pitchEnvTimeParameter->load();
 
 
-    // Process MIDI messages
-    for (const auto metadata : midiMessages)
+    // Apply a single MIDI message. Defined here, but invoked from the interleave loop
+    // below at each event's true sample offset rather than all-at-once at block start.
+    auto applyMidiMessage = [&](const juce::MidiMessage& message)
     {
-        auto message = metadata.getMessage();
         if (message.isNoteOn())
         {
             float velocity = message.getVelocity() / 127.0f;
@@ -581,7 +581,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             // Apply to all active voices
             voiceManager.setPitchWheelOffset(pitchWheelSemitones, getSampleRate());
         }
-    }
+    };
 
 
     // ======================== LOAD ALL PARAMETERS ONCE PER BLOCK ========================
@@ -594,7 +594,6 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float vibratoRate = vibratoRateParameter->load();
     float vibratoDepth = vibratoDepthParameter->load();
     float vibratoFadeIn = vibratoFadeInParameter->load();
-    float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
 
     // Update effects parameters once per block
     effects.updateDetuneParams(detuneAmount, detuneMix);
@@ -603,8 +602,15 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
  
 
     // ======================== GENERATE POLYPHONIC AUDIO ========================
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    // Render one contiguous segment [startSample, endSample) of the block. The interleave
+    // loop below calls this between MIDI events so each event lands at its true offset.
+    auto renderSamples = [&](int startSample, int endSample)
     {
+    for (int sample = startSample; sample < endSample; ++sample)
+    {
+        // Pitch wheel reflects the events applied so far this block (sub-block accurate)
+        float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
+
         // Advance beat position per sample for sub-block accuracy
         double beatPositionForSample = currentBeatPosition + (sample * currentBPM / (60.0 * getSampleRate()));
 
@@ -662,6 +668,26 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             rightData[sample] = stereoOutput.second * masterVol;
         }
     }
+    };
+
+    // ======================== INTERLEAVE MIDI + AUDIO (split-block timing) ========================
+    // Walk MIDI events in sample order: render audio up to each event, apply the event, repeat;
+    // then render whatever remains of the block. A live note stamped at sample 0 still renders
+    // from sample 0 (identical to before — no added latency); a sequenced event stamped mid-block
+    // now sounds at that offset instead of being pulled forward to the block start.
+    const int numSamples = buffer.getNumSamples();
+    int nextSampleToRender = 0;
+    for (const auto metadata : midiMessages)
+    {
+        const int eventSample = juce::jlimit(0, numSamples, metadata.samplePosition);
+        if (eventSample > nextSampleToRender)
+        {
+            renderSamples(nextSampleToRender, eventSample);
+            nextSampleToRender = eventSample;
+        }
+        applyMidiMessage(metadata.getMessage());
+    }
+    renderSamples(nextSampleToRender, numSamples);
 
     // Update waveform display state
     waveformActive.store(voiceManager.getActiveVoiceCount() > 0);
