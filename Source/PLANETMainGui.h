@@ -277,6 +277,19 @@ private:
     static constexpr float LFO_PULSE_DECAY      = 3.0f;    // exp decay rate across one cycle (lower = slower falloff / longer ping tail)
     static constexpr float LFO_PULSE_MAX_HZ     = 12.0f;   // cap visual rate so very fast LFOs flutter, not strobe
 
+    // ---- F1: copy envelope / mod params between drawbars by dragging a control's background ----
+    // Drag the harmonic-envelope graph background onto another drawbar to copy its ADSR + depth;
+    // drag the LFO/velocity zone background to copy the LFO + velocity params. Source = selected
+    // drawbar (that's what these controls edit). No modifier keys, no extra permanent widgets.
+    enum class CopyDragKind { None, Envelope, Mod };
+    CopyDragKind copyDrag = CopyDragKind::None;
+    int copyDragSource = -1;                          // drawbar copied FROM (the selected one)
+    int copyDragHoverTarget = -1;                     // drawbar column under the pointer (-1 = none)
+    juce::Rectangle<int> modZoneBounds;               // background-drag source region for the mod copy
+    int  drawbarColumnAt(juce::Point<int> p) const;   // drawbar column under a point, or -1
+    void copyEnvelopeParamsBetweenDrawbars(int from, int to);
+    void copyModParamsBetweenDrawbars(int from, int to);
+
     IshtarLookAndFeel ishtarLookAndFeel;          // Global star knobs — steel-grey accent
     IshtarLookAndFeel drawbarIshtarLookAndFeel;   // Per-drawbar star knobs — tracks selected drawbar's colour
 

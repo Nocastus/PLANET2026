@@ -1523,11 +1523,22 @@ void PLANETMainGui::paintOverChildren(juce::Graphics& g)
     // which drawbar the envelope / LFO / Vel-to-Drawbar controls are addressing. Drawn in
     // that drawbar's accent colour, matching the per-drawbar colour scheme.
     auto r = drawbarColumnBounds[selectedDrawbar].toFloat();
-    if (r.isEmpty())
-        return;
+    if (!r.isEmpty())
+    {
+        g.setColour(drawbarColours[selectedDrawbar]);
+        g.drawRoundedRectangle(r, 4.0f, 2.0f);
+    }
 
-    g.setColour(drawbarColours[selectedDrawbar]);
-    g.drawRoundedRectangle(r, 4.0f, 2.0f);
+    // F1: during a copy-drag, outline the drawbar column under the pointer as the drop target
+    // (in the source drawbar's colour, so it reads as "copying from N to here").
+    if (copyDrag != CopyDragKind::None && copyDragHoverTarget >= 0
+        && !drawbarColumnBounds[copyDragHoverTarget].isEmpty())
+    {
+        auto tr = drawbarColumnBounds[copyDragHoverTarget].toFloat();
+        juce::Colour hl = (copyDragSource >= 0) ? drawbarColours[copyDragSource] : juce::Colours::white;
+        g.setColour(hl.withAlpha(0.9f));
+        g.drawRoundedRectangle(tr, 4.0f, 3.0f);
+    }
 }
 
 void PLANETMainGui::resized()
@@ -1639,6 +1650,10 @@ void PLANETMainGui::resized()
     int syncX = lfoZoneX + 10 + comboHalfWidth;
     lfoSyncLabel.setBounds(syncX, comboY, comboLabelW, 22);
     lfoSyncCombo.setBounds(syncX + comboLabelW, comboY, comboHalfWidth - comboLabelW + 5, 22);
+
+    // F1: the LFO/velocity zone — a background drag anywhere in here (i.e. not on a knob/combo,
+    // which grab their own clicks) starts a mod-params copy. Spans the triangle down through the combos.
+    modZoneBounds = juce::Rectangle<int>(lfoZoneX, lfoZoneY, lfoZoneWidth, (comboY + 22) - lfoZoneY);
 
     // ======================== AMPLITUDE ADSR SECTION ========================
     int ampHeight = harmonicAndAmpHeight - harmonicHeight;
@@ -1874,8 +1889,18 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
             currentDragTarget = DragTarget::HarmonicRelease;
             return;
         }
+
+        // Not on a handle: begin a copy-drag of this drawbar's envelope from the graph background.
+        if (harmonicEnvBounds.contains(event.x, event.y))
+        {
+            copyDrag = CopyDragKind::Envelope;
+            copyDragSource = selectedDrawbar;
+            copyDragHoverTarget = -1;
+            setMouseCursor(juce::MouseCursor::CopyingCursor);
+            return;
+        }
     }
-    
+
     // Check amplitude envelope handles
     if (ampEnvBounds.contains(event.x, event.y) ||
         (event.x >= ampEnvBounds.getX() - handleRadius && 
@@ -1907,6 +1932,16 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
     }
     
+    // Background drag in the LFO/velocity zone: begin a copy-drag of this drawbar's mod params.
+    if (copyDrag == CopyDragKind::None && modZoneBounds.contains(event.x, event.y))
+    {
+        copyDrag = CopyDragKind::Mod;
+        copyDragSource = selectedDrawbar;
+        copyDragHoverTarget = -1;
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
+        return;
+    }
+
     // Check drawbar background area
     auto bounds = getLocalBounds();
     int leftWidth = (int)(bounds.getWidth() * leftWidthRatio);
@@ -1929,16 +1964,96 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
 
 void PLANETMainGui::mouseDrag(const juce::MouseEvent& event)
 {
+    // Copy-drag in progress: track which drawbar column the pointer is over (for the drop highlight).
+    if (copyDrag != CopyDragKind::None)
+    {
+        int t = drawbarColumnAt(event.getPosition());
+        if (t == copyDragSource) t = -1;      // the source itself isn't a valid drop target
+        if (t != copyDragHoverTarget)
+        {
+            copyDragHoverTarget = t;
+            repaint();
+        }
+        return;
+    }
+
     if (currentDragTarget == DragTarget::None)
         return;
-    
+
     updateAdsrFromDrag(event);
     repaint();
 }
 
 void PLANETMainGui::mouseUp(const juce::MouseEvent& event)
 {
+    // Complete a copy-drag: if released over a different drawbar's column, copy the params.
+    if (copyDrag != CopyDragKind::None)
+    {
+        const int target = drawbarColumnAt(event.getPosition());
+        if (target >= 0 && target != copyDragSource)
+        {
+            if (copyDrag == CopyDragKind::Envelope)
+                copyEnvelopeParamsBetweenDrawbars(copyDragSource, target);
+            else
+                copyModParamsBetweenDrawbars(copyDragSource, target);
+
+            // Switch focus to the target so you can immediately fine-tune what you just copied
+            // (e.g. tweak the env depth on the new drawbar). Rebinds all context controls.
+            selectedDrawbar = target;
+            updateAdsrDisplay();
+        }
+
+        copyDrag = CopyDragKind::None;
+        copyDragHoverTarget = -1;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+        return;
+    }
+
     currentDragTarget = DragTarget::None;
+}
+
+int PLANETMainGui::drawbarColumnAt(juce::Point<int> p) const
+{
+    for (int i = 0; i < 10; ++i)
+        if (drawbarColumnBounds[i].contains(p))
+            return i;
+    return -1;
+}
+
+void PLANETMainGui::copyEnvelopeParamsBetweenDrawbars(int from, int to)
+{
+    // ADSR + envelope depth. Copies the normalised value; every k{n} param shares the same range,
+    // so the normalised value maps to the identical real value on the target. Notifies the host so
+    // it's automatable/undoable and the GUI refreshes.
+    static const char* const suffixes[] =
+        { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime", "EnvelopeAmount" };
+    const juce::String fromPrefix = "k" + juce::String(from + 1);
+    const juce::String toPrefix   = "k" + juce::String(to + 1);
+    for (auto* s : suffixes)
+    {
+        auto* src = apvts.getParameter(fromPrefix + s);
+        auto* dst = apvts.getParameter(toPrefix + s);
+        if (src != nullptr && dst != nullptr)
+            dst->setValueNotifyingHost(src->getValue());
+    }
+}
+
+void PLANETMainGui::copyModParamsBetweenDrawbars(int from, int to)
+{
+    // LFO (shape/rate/amount/sync/division) + the per-drawbar velocity param. Same normalised-copy
+    // approach as the envelope copy above.
+    static const char* const suffixes[] =
+        { "LFOShape", "LFORate", "LFOAmount", "LFOSync", "LFOSyncDiv", "VelToHarmonic" };
+    const juce::String fromPrefix = "k" + juce::String(from + 1);
+    const juce::String toPrefix   = "k" + juce::String(to + 1);
+    for (auto* s : suffixes)
+    {
+        auto* src = apvts.getParameter(fromPrefix + s);
+        auto* dst = apvts.getParameter(toPrefix + s);
+        if (src != nullptr && dst != nullptr)
+            dst->setValueNotifyingHost(src->getValue());
+    }
 }
 
 juce::Point<float> PLANETMainGui::getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
