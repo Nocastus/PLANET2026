@@ -20,7 +20,9 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
         &audioProcessor.waveformSnapshotLength,
         &audioProcessor.waveformSnapshotReady,
         &audioProcessor.waveformSnapshotRequest,
-        &audioProcessor.waveformActive);
+        &audioProcessor.waveformActive,
+        &audioProcessor.displayBPM,
+        &audioProcessor.transportPlaying);
 
     addAndMakeVisible(*mainGui);
 

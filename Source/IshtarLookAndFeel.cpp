@@ -21,6 +21,22 @@ void IshtarLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wi
     // Draw the star
     drawIshtarStar(g, centreX, centreY, outerRadius, scale);
 
+    // LFO-rate "ping" dot filling the star's central hole. Only the LFO-speed knob sets
+    // "lfoActive" (via slider properties from the GUI), so every other star knob is untouched.
+    // Absent when the LFO is off; pulses white when free-running, amber when tempo-synced.
+    if ((bool) slider.getProperties().getWithDefault("lfoActive", false))
+    {
+        const float brightness  = (float) slider.getProperties().getWithDefault("lfoPulse", 1.0f);
+        const bool  synced      = (bool)  slider.getProperties().getWithDefault("lfoSynced", false);
+        const float innerRadius = outerRadius * INNER_CIRCLE_RATIO;
+        const float dotRadius   = innerRadius - (INNER_STROKE * scale) * 0.5f;  // fill the hole up to the ring
+        if (dotRadius > 0.0f)
+        {
+            g.setColour((synced ? juce::Colour(kLfoSyncColour) : juce::Colours::white).withAlpha(brightness));
+            g.fillEllipse(centreX - dotRadius, centreY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        }
+    }
+
     // Calculate indicator angle
     float startAngleRad = juce::degreesToRadians(START_ANGLE_DEG);
     float arcSpanRad = juce::degreesToRadians(ARC_SPAN_DEG);

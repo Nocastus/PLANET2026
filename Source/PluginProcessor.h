@@ -27,6 +27,11 @@ public:
     std::atomic<bool> waveformSnapshotRequest{ false };
     std::atomic<bool> waveformActive{ false };
 
+    // DAW transport state, published each block for the GUI's LFO-rate pulse indicators.
+    // transportPlaying=false OR displayBPM<=0 means "no tempo" -> a tempo-synced pulse shows solid on.
+    std::atomic<double> displayBPM{ 120.0 };
+    std::atomic<bool>   transportPlaying{ false };
+
     // Audio-thread only (not atomic)
     int snapshotWritePos = 0;
     int snapshotTargetLength = 0;

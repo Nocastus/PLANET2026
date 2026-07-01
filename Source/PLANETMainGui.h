@@ -43,12 +43,21 @@ public:
             bool hasLFO = slider.getProperties()["hasActiveLFO"];
             bool hasVelHarm = slider.getProperties()["hasActiveVelHarm"];
 
+            // LFO-rate pulse brightness [LFO_PULSE_FLOOR..1], set each timer tick by the GUI.
+            // Default 1.0 so the ring looks normal if the property is ever unset.
+            float lfoPulse = (float) slider.getProperties().getWithDefault("lfoPulse", 1.0f);
+
+            // Ring colour tells free-running from tempo-synced at a glance: white = free, amber = synced.
+            bool lfoSynced = slider.getProperties().getWithDefault("lfoSynced", false);
+            juce::Colour ringColour = (lfoSynced ? juce::Colour(kLfoSyncColour)
+                                                 : juce::Colours::white).withAlpha(lfoPulse);
+
             if (hasVelHarm)
             {
                 // Draw Ishtar star instead of circle (scaled up for visibility)
                 float starRadius = thumbRadius * 1.8f;
                 drawMiniIshtarStar(g, thumbCenterX, thumbCenterY, starRadius,
-                    slider.findColour(juce::Slider::thumbColourId), hasLFO);
+                    slider.findColour(juce::Slider::thumbColourId), hasLFO, ringColour);
             }
             else
             {
@@ -57,11 +66,11 @@ public:
                 g.fillEllipse(thumbCenterX - thumbRadius, thumbCenterY - thumbRadius,
                     thumbRadius * 2, thumbRadius * 2);
 
-                // If LFO is active, draw pale outline stroke (larger than thumb)
+                // If LFO is active, draw the ring, its brightness pulsing at the LFO rate.
                 if (hasLFO)
                 {
                     float outlineRadius = 10.0f;  // Original thumb size, now used just for LFO ring
-                    g.setColour(juce::Colour(0x99ffffff));
+                    g.setColour(ringColour);
                     g.drawEllipse(thumbCenterX - outlineRadius, thumbCenterY - outlineRadius,
                         outlineRadius * 2, outlineRadius * 2, 3.0f);
                 }
@@ -76,16 +85,16 @@ public:
 
 private:
     void drawMiniIshtarStar(juce::Graphics& g, float cx, float cy, float radius,
-        juce::Colour fillColour, bool hasLFO)
+        juce::Colour fillColour, bool hasLFO, juce::Colour ringColour = juce::Colours::white)
     {
         float outerRadius = radius;           // Ray tips extend to here
         float orbitRadius = radius * 0.6f;    // Orbit ring sits inside the rays
         float innerRadius = radius * 0.4f;
 
-        // Draw outer circle (like orbit) - sized to match normal thumb LFO ring
+        // Draw outer circle (like orbit) - the LFO ring, pulsing/coloured at the LFO rate
         if (hasLFO)
         {
-            g.setColour(juce::Colour(0x99ffffff));
+            g.setColour(ringColour);
             g.drawEllipse(cx - orbitRadius, cy - orbitRadius,
                 orbitRadius * 2, orbitRadius * 2, 3.0f);
         }
@@ -171,7 +180,9 @@ public:
         std::atomic<int>* snapshotLengthPtr = nullptr,
         std::atomic<bool>* snapshotReadyPtr = nullptr,
         std::atomic<bool>* snapshotRequestPtr = nullptr,
-        std::atomic<bool>* waveformActivePtr = nullptr);
+        std::atomic<bool>* waveformActivePtr = nullptr,
+        std::atomic<double>* bpmPtr = nullptr,
+        std::atomic<bool>* transportPlayingPtr = nullptr);
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
@@ -250,6 +261,21 @@ private:
     std::array<juce::Rectangle<int>, 10> drawbarColumnBounds;  // per-column bounds (set in resized()), used to outline the selected drawbar
     int selectedDrawbar = 0;
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
+
+    // ---- LFO-rate "ping" pulse indicators (item #5) ----
+    // Per-drawbar GUI-side phase [0,1); advanced in the timer at each drawbar's effective LFO
+    // rate (free = Hz param; sync = syncDivisionToHz(div, bpm)). Phase -> brightness drives the
+    // drawbar's LFO ring (indicator 1) and the selected drawbar's LFO-speed-knob inner circle
+    // (indicator 2). "Ping" = hard onset at phase 0, exponential decay across the cycle.
+    std::atomic<double>* dawBpm = nullptr;
+    std::atomic<bool>*   transportPlaying = nullptr;
+    std::array<double, 10> lfoPulsePhase {};
+    double lfoPulseLastMs = 0.0;                 // hi-res timestamp of last pulse advance (0 = uninit)
+    void updateLfoPulses();                      // advance phases + push brightness into slider properties
+    static constexpr float LFO_PULSE_FLOOR      = 0.30f;   // drawbar-ring brightness between pings (kept visible on slow rates)
+    static constexpr float LFO_PULSE_KNOB_FLOOR = 0.15f;   // LFO-speed-knob circle floor — lower than the ring so its ping is easy to see
+    static constexpr float LFO_PULSE_DECAY      = 3.0f;    // exp decay rate across one cycle (lower = slower falloff / longer ping tail)
+    static constexpr float LFO_PULSE_MAX_HZ     = 12.0f;   // cap visual rate so very fast LFOs flutter, not strobe
 
     IshtarLookAndFeel ishtarLookAndFeel;          // Global star knobs — steel-grey accent
     IshtarLookAndFeel drawbarIshtarLookAndFeel;   // Per-drawbar star knobs — tracks selected drawbar's colour

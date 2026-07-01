@@ -231,11 +231,27 @@ original note calling it "untracked" was wrong), so the move was `git rm Source/
 commit here, plus dropping the byte-identical copy in the new folder. Never referenced in the `.jucer`,
 so it was never compiled into the plugin. **Item #4 fully closed.**
 
-### 5. LFO visual feedback on drawbars (deferred since v0.4.1)
-Infrastructure is in place — `updateDrawbarColors()` sets a `hasActiveLFO` property on each
-drawbar slider — but nothing renders it. Needs a custom `LookAndFeel` that reads the property
-and draws an indicator (e.g. pulsing border) on `drawLinearSliderThumb()`. See
-`BUG_FIXES_v0.4.1.md` Bug #2 for the original write-up.
+### 5. LFO visual feedback on drawbars ✅ CLOSED (1 Jul 2026 — eye-tested)
+**Closed (1 Jul 2026).** Two "ping" indicators that pulse at the actual effective LFO rate, so you can
+read which drawbar's LFO is running at which speed at a glance. Both driven off LFO *config* (GUI-side
+phase accumulators in `updateLfoPulses()`, advanced by real elapsed time), so they animate even with no
+note playing; no audio-thread coupling.
+- **Indicator 1 — drawbar rings.** The existing `hasActiveLFO` ring now pulses: hard onset then
+  exponential decay across each cycle (a "ping", not a breath). White = free-running, **amber = tempo-
+  synced** (shared `kLfoSyncColour` in [`IshtarLookAndFeel.h`](Source/IshtarLookAndFeel.h)). Handled in
+  `DrawbarLookAndFeel` via a per-slider `lfoPulse`/`lfoSynced` property.
+- **Indicator 2 — LFO-speed knob.** A filled dot in the Star-of-Ishtar's central hole, pulsing at the
+  *selected* drawbar's rate; absent when that LFO's depth is zero, white free / amber synced. (First tried
+  pulsing the star's inner-circle outline — too subtle; the filled dot reads far better and keeps the star
+  looking normal for inactive LFOs.) Drawn in `IshtarLookAndFeel::drawRotarySlider`, gated by an
+  `lfoActive` property so no other star knob is affected.
+- **Rate math:** free = `LFORate` Hz; synced = existing `syncDivisionToHz(div, bpm)`. Tempo-synced pulses
+  animate while the transport runs and go **solid on** when there's no tempo (transport stopped / bpm≤0) —
+  needed exposing `displayBPM`/`transportPlaying` atomics from the processor to the editor.
+- **Tuning constants** (top of the pulse block in [`PLANETMainGui.h`](Source/PLANETMainGui.h)):
+  `LFO_PULSE_FLOOR` 0.30 (ring rest brightness), `LFO_PULSE_KNOB_FLOOR` 0.15 (dot rest, lower so the ping
+  pops), `LFO_PULSE_DECAY` 3.0 (lower = longer tail), `LFO_PULSE_MAX_HZ` 12 (fast LFOs flutter, not strobe).
+  All dialled in by eye with Gerard. **Item #5 fully closed.**
 
 ---
 

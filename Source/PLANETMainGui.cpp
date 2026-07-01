@@ -17,9 +17,13 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     std::atomic<int>* snapshotLengthPtr,
     std::atomic<bool>* snapshotReadyPtr,
     std::atomic<bool>* snapshotRequestPtr,
-    std::atomic<bool>* waveformActivePtr)
+    std::atomic<bool>* waveformActivePtr,
+    std::atomic<double>* bpmPtr,
+    std::atomic<bool>* transportPlayingPtr)
     : apvts(apvtsRef), audioProcessor(processor), rawModWheelValue(rawModWheelPtr), modWheelEngaged(modWheelEngagedPtr)
 {
+    dawBpm = bpmPtr;
+    transportPlaying = transportPlayingPtr;
     // Load custom fonts from embedded binary data
     auto regularTypeface = juce::Typeface::createSystemTypefaceFor(
         BinaryData::AmarnaRegular_ttf, BinaryData::AmarnaRegular_ttfSize);
@@ -992,6 +996,7 @@ void PLANETMainGui::timerCallback()
             repaint(lifeKnobBounds.getUnion(seedModuleBounds).expanded(12));
     }
 
+    updateLfoPulses();
     updateDrawbarColors();
 }
 
@@ -1110,6 +1115,88 @@ void PLANETMainGui::updateDrawbarColors()
 
         // Always trigger repaint to update visual state immediately
         drawbarSliders[i].repaint();
+    }
+}
+
+//==============================================================================
+// LFO-RATE "PING" PULSE INDICATORS (item #5)
+// Advances a per-drawbar phase at each drawbar's effective LFO rate and pushes a
+// brightness value into the slider properties: "lfoPulse" on every drawbar (its ring),
+// and on the LFO-speed knob for the selected drawbar (its inner circle). The pulse is a
+// hard onset (bright) at phase 0 that decays exponentially across the cycle. Tempo-synced
+// LFOs pulse at the tempo-derived rate while the transport runs; with no tempo (stopped or
+// bpm<=0) they show solid on. Driven off LFO config, so it shows without a note playing.
+//==============================================================================
+void PLANETMainGui::updateLfoPulses()
+{
+    // Elapsed time since last advance (real dt, robust to timer jitter). First call: dt=0.
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    double dt = (lfoPulseLastMs > 0.0) ? (nowMs - lfoPulseLastMs) / 1000.0 : 0.0;
+    lfoPulseLastMs = nowMs;
+    dt = juce::jlimit(0.0, 0.1, dt);   // clamp so a stalled/backgrounded editor can't jump the phase
+
+    const double bpm     = (dawBpm != nullptr) ? dawBpm->load() : 0.0;
+    const bool   playing = (transportPlaying != nullptr) && transportPlaying->load();
+
+    for (int i = 0; i < 10; ++i)
+    {
+        const juce::String n = juce::String(i + 1);
+        auto* amtPtr  = apvts.getRawParameterValue("k" + n + "LFOAmount");
+        auto* syncPtr = apvts.getRawParameterValue("k" + n + "LFOSync");
+        auto* ratePtr = apvts.getRawParameterValue("k" + n + "LFORate");
+        auto* divPtr  = apvts.getRawParameterValue("k" + n + "LFOSyncDiv");
+
+        const bool active = (amtPtr != nullptr) && std::abs(amtPtr->load()) > 0.001f;
+        const bool synced = (syncPtr != nullptr) && syncPtr->load() > 0.5f;
+
+        // Resolve the effective rate (Hz) and whether the pulse animates.
+        bool  solidOn = false;
+        float hz = 0.0f;
+        if (synced)
+        {
+            if (playing && bpm > 0.0)
+                hz = syncDivisionToHz(divPtr != nullptr ? divPtr->load() : 0.0f, bpm);
+            else
+                solidOn = true;                       // synced but no tempo -> constant on
+        }
+        else
+        {
+            hz = (ratePtr != nullptr) ? ratePtr->load() : 0.0f;   // free-running Hz
+        }
+
+        // Advance phase (capped so very fast LFOs flutter rather than strobe).
+        if (!solidOn && active)
+        {
+            const float visHz = juce::jmin(hz, LFO_PULSE_MAX_HZ);
+            lfoPulsePhase[i] += (double)visHz * dt;
+            lfoPulsePhase[i] -= std::floor(lfoPulsePhase[i]);   // wrap to [0,1)
+        }
+
+        // Phase -> brightness: hard onset (ping=1) at phase 0, exponential decay across the cycle.
+        // Ring and knob share the ping shape but use different floors (the knob's is lower so its
+        // subtler circle shows the ping clearly). solidOn / inactive -> steady full brightness.
+        float ringBrightness = 1.0f;
+        float knobBrightness = 1.0f;
+        if (active && !solidOn)
+        {
+            const float ping = std::exp(-LFO_PULSE_DECAY * (float)lfoPulsePhase[i]);
+            ringBrightness = LFO_PULSE_FLOOR      + (1.0f - LFO_PULSE_FLOOR)      * ping;
+            knobBrightness = LFO_PULSE_KNOB_FLOOR + (1.0f - LFO_PULSE_KNOB_FLOOR) * ping;
+        }
+
+        drawbarSliders[i].getProperties().set("lfoPulse", ringBrightness);
+        drawbarSliders[i].getProperties().set("lfoSynced", synced);   // colours the ring: synced vs free-running
+
+        // Indicator 2: a pulsing dot in the LFO-speed knob's central hole, tracking the selected
+        // drawbar's LFO — absent when its LFO is off, white free / amber synced (drawn in IshtarLookAndFeel).
+        if (i == selectedDrawbar)
+        {
+            auto& kp = lfoSpeedKnob.getProperties();
+            kp.set("lfoActive", active);
+            kp.set("lfoSynced", synced);
+            kp.set("lfoPulse", knobBrightness);
+            lfoSpeedKnob.repaint();
+        }
     }
 }
 

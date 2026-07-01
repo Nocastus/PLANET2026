@@ -8,6 +8,10 @@
 #pragma once
 #include <JuceHeader.h>
 
+// Shared "tempo-synced LFO" accent (amber). Free-running = white. Used by both the drawbar
+// ring (DrawbarLookAndFeel) and the LFO-speed knob's centre dot, so the two stay in step.
+static constexpr juce::uint32 kLfoSyncColour = 0xffffb04a;
+
 class IshtarLookAndFeel : public juce::LookAndFeel_V4
 {
 public:

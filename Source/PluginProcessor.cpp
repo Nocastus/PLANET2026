@@ -438,6 +438,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         buffer.clear(i, 0, buffer.getNumSamples());
 
     // Read DAW tempo and beat position for LFO sync
+    bool playing = false;
     if (auto* playHead = getPlayHead()) {
         auto posInfo = playHead->getPosition();
         if (posInfo.hasValue()) {
@@ -445,8 +446,12 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 currentBPM = *posInfo->getBpm();
             if (posInfo->getPpqPosition().hasValue())
                 currentBeatPosition = *posInfo->getPpqPosition();
+            playing = posInfo->getIsPlaying();
         }
     }
+    // Publish transport state for the GUI's LFO-rate pulse indicators (see PLANETMainGui).
+    displayBPM.store(currentBPM);
+    transportPlaying.store(playing);
 
     // Update global parameters (shared by all voices)
     coefficients.updateAllActiveValues();
