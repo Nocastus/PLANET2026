@@ -7,6 +7,38 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+namespace {
+    // Skew for the bipolar drawbar (k1..k10) and LFO-amount controls. Symmetric about 0 so small
+    // ± values get fine control; skew < 1 compresses knob/fader travel toward the centre. Tune by eye.
+    constexpr float kBipolarLowSkew = 0.5f;
+
+    // Env-depth low-value exponent (equivalent feel to the 0.5 skew above: 1/0.5 = 2). Higher = finer near 0.
+    constexpr float kEnvLowExponent = 2.0f;
+
+    // Custom NormalisableRange for the ASYMMETRIC bipolar env-depth range (min < 0 < max). Value 0 keeps
+    // its natural linear position (q), and each side uses a power law so both small +ve and small -ve
+    // depths get fine resolution while the extremes compress. Same min/max as before (range unchanged).
+    juce::NormalisableRange<float> makeBipolarLowRange(float minV, float maxV, float exponent)
+    {
+        const float q = -minV / (maxV - minV);   // proportion at which value 0 sits (unchanged from linear)
+        return juce::NormalisableRange<float>(
+            minV, maxV,
+            [q, exponent](float s, float e, float p) -> float          // normalised 0..1 -> value
+            {
+                if (p <= q) { float f = (q > 0.0f) ? (q - p) / q : 0.0f; return s * std::pow(f, exponent); }
+                float f = (p - q) / (1.0f - q);                          return e * std::pow(f, exponent);
+            },
+            [q, exponent](float s, float e, float v) -> float          // value -> normalised 0..1
+            {
+                if (v <= 0.0f) { float f = std::pow(v / s, 1.0f / exponent); return q * (1.0f - f); }
+                float f = std::pow(v / e, 1.0f / exponent);             return q + (1.0f - q) * f;
+            },
+            [](float s, float e, float v) -> float                     // snap to 0.01 (as the old range did)
+            {
+                return juce::jlimit(s, e, 0.01f * std::round(v / 0.01f));
+            });
+    }
+}
 
 //==============================================================================CONSTRUCTOR STARTS HERE
 // Here is the Constructor (THE BIG ONE - 101 parameters!)
@@ -27,16 +59,16 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("brilliance", "Brilliance", 0.0f, 1.0f, 0.5f),
 
             // ======================== K1-K10 COEFFICIENT PARAMETERS (10) ========================
-            std::make_unique<juce::AudioParameterFloat>("k1", "K1 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k2", "K2 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k3", "K3 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k4", "K4 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k5", "K5 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k6", "K6 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k7", "K7 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k8", "K8 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k9", "K9 Coefficient", -2.0f, 2.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k10", "K10 Coefficient", -2.0f, 2.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k1", "K1 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2", "K2 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3", "K3 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4", "K4 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5", "K5 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6", "K6 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7", "K7 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8", "K8 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9", "K9 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10", "K10 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
 
             // ======================== ATTACK TIME PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("k1AttackTime", "K1 Attack Time", 0.001f, 10.0f, 0.1f),
@@ -88,25 +120,25 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
             // ======================== ENVELOPE AMOUNT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("k1EnvelopeAmount", "K1 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k2EnvelopeAmount", "K2 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k3EnvelopeAmount", "K3 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k4EnvelopeAmount", "K4 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k5EnvelopeAmount", "K5 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k6EnvelopeAmount", "K6 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k7EnvelopeAmount", "K7 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k8EnvelopeAmount", "K8 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k9EnvelopeAmount", "K9 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k10EnvelopeAmount", "K10 Envelope Amount",
-                juce::NormalisableRange<float>(-5.0f, 20.0f, 0.01f, 0.5f), 0.0f),
+                makeBipolarLowRange(-5.0f, 20.0f, kEnvLowExponent), 0.0f),
 
             // ======================== LFO SHAPE PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("k1LFOShape", "K1 LFO Shape", 1.0f, 4.0f, 1.0f),
@@ -144,16 +176,16 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 juce::NormalisableRange<float>(0.05f, 1000.0f, 0.01f, 0.2f), 4.0f),
 
             // ======================== LFO AMOUNT PARAMETERS (10 - EXISTING) ========================
-            std::make_unique<juce::AudioParameterFloat>("k1LFOAmount", "K1 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k2LFOAmount", "K2 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k3LFOAmount", "K3 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k4LFOAmount", "K4 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k5LFOAmount", "K5 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k6LFOAmount", "K6 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k7LFOAmount", "K7 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k8LFOAmount", "K8 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k9LFOAmount", "K9 LFO Amount", -5.0f, 5.0f, 0.0f),
-            std::make_unique<juce::AudioParameterFloat>("k10LFOAmount", "K10 LFO Amount", -5.0f, 5.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k1LFOAmount", "K1 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2LFOAmount", "K2 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3LFOAmount", "K3 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4LFOAmount", "K4 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5LFOAmount", "K5 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6LFOAmount", "K6 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7LFOAmount", "K7 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8LFOAmount", "K8 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9LFOAmount", "K9 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10LFOAmount", "K10 LFO Amount", juce::NormalisableRange<float>(-5.0f, 5.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
 
             // ======================== VELOCITY TO HARMONIC PARAMETERS (10 - NEW) ========================
                 std::make_unique<juce::AudioParameterFloat>("k1VelToHarmonic", "K1 Vel To Harmonic", -100.0f, 100.0f, 0.0f),

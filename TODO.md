@@ -407,26 +407,38 @@ usable saw/square exists from steps 1–2.**
 
 ## Standalone features (not part of the arc)
 
-### F1. Copy envelope parameters between drawbars (drag & drop)
-**Quality-of-life — a confirmed keeper (Gerard, 29 Jun 2026: "certainly a useful ease-of-programming
-feature").** Setting up 10 drawbar envelopes by hand is tedious.
+### F1. Copy envelope / mod parameters between drawbars (drag & drop) ✅ CLOSED (1 Jul 2026 — eye-tested)
+**Closed (1 Jul 2026).** Shipped a cleaner UX than the original draggable-box sketch (Gerard's idea):
+**drag a control's background onto a target drawbar** — no extra widgets, no modifier keys.
+- **Envelope drag:** drag the harmonic-envelope graph background (anywhere not on an ADSR handle) onto
+  another drawbar → copies `AttackTime/DecayTime/SustainLevel/ReleaseTime` + `EnvelopeAmount`. The graph
+  background was already a dead zone, so it's a free gesture surface; the ADSR handle drags are untouched.
+- **Mod drag:** drag the LFO/velocity zone background (a `modZoneBounds` rect set in `resized()`; the
+  knobs/combos eat their own clicks so only the gaps around them start the drag) → copies
+  `LFOShape/LFORate/LFOAmount/LFOSync/LFOSyncDiv` + `VelToHarmonic` (the "Vel to Drawbar" knob is wired to
+  the `VelToHarmonic` param — one velocity param per drawbar).
+- **Source = the selected drawbar** (what those controls edit). Copy writes via `setValueNotifyingHost`
+  (automatable/undoable/GUI-refreshing). Drop only lands if released over a drawbar column, so a plain
+  click can't copy — no drag threshold needed (source and targets are in physically separate regions).
+- **Feedback:** cursor → copy cursor; the target column outlines **in the source drawbar's colour** during
+  the drag (reads as "copying from N to here"). Handled in `paintOverChildren` + `drawbarColumnAt()`.
+- **Auto-focus the target after a copy** (Gerard's follow-up): selection switches to the target so you can
+  immediately fine-tune what you just copied (e.g. the env depth). All context controls rebind via
+  `updateAdsrDisplay()`/`bindToSelectedDrawbar()`, pulling the freshly-copied values from the params.
+  **Item F1 fully closed.**
 
-**Proposed UX (Gerard's):** a small draggable box in each drawbar's envelope-control area.
-Drag it onto a different drawbar → that target drawbar's envelope is instantly set to match
-the source drawbar's.
-
-**Implementation sketch (JUCE):**
-- Put a `DragAndDropContainer` on `PLANETMainGui` (or a suitable parent).
-- The little box is the drag source — `startDragging(sourceDrawbarIndex, this)` on drag.
-- Each drawbar acts as a `DragAndDropTarget` (`isInterestedInDragSource` / `itemDropped`).
-- On drop, copy the source drawbar's envelope params to the target by writing through the
-  APVTS (`setValueNotifyingHost`) so changes are automatable, undoable, and refresh the GUI.
-
-**Open question — exactly which params copy?** Gerard said "envelope parameters", so at minimum
-the per-drawbar ADSR (`k{n}AttackTime/DecayTime/SustainLevel/ReleaseTime`) + `k{n}EnvelopeAmount`.
-**Decide:** include the per-drawbar LFO (shape/rate/amount/sync) too? And the `k{n}` coefficient
-value itself? Suggest: envelope-only by default, with LFO copied only on a modifier (e.g. hold a
-key while dropping) if we want it. Confirm with Gerard before building.
+### F1b. Exponential taper on drawbar / env-depth / LFO-amount controls ✅ CLOSED (1 Jul 2026 — eye-tested)
+**Closed (1 Jul 2026).** These three families were linear (or, for env depth, mildly skewed the wrong way),
+giving too little precision at low values. Re-skewed for fine control near 0, **same min/max** (so patches
+are byte-identical — they store real values and reload through the current range; only control travel and
+host-automation lanes remap, same as the pitch-env skew fix). All in [`PluginProcessor.cpp`](Source/PluginProcessor.cpp):
+- **Drawbars `k1..k10` (−2…+2)** and **`k{n}LFOAmount` (−5…+5)**: symmetric bipolar → `NormalisableRange`
+  with **symmetric skew** `kBipolarLowSkew = 0.5` (fine near 0, extremes compressed).
+- **`k{n}EnvelopeAmount` (−5…+20, asymmetric)**: a custom `makeBipolarLowRange()` power law with
+  `kEnvLowExponent = 2.0` — 0 keeps its natural ~20% position and each side gets fine-near-0 resolution;
+  verified `convertTo0to1` is the exact inverse so env-depth patches round-trip to float precision.
+- Attached faders/knobs adopt the skew automatically (SliderAttachment copies the param's range).
+  Tuning: `kBipolarLowSkew` (lower = more aggressive), `kEnvLowExponent` (higher = finer near 0). **Closed.**
 
 ### F2. Oscillator pitch — portamento + alternate tunings
 **Gerard (29 Jun 2026): portamento is "a nice thing to have" once we define the logic.** Two related
