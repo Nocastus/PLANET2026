@@ -449,6 +449,20 @@ modulators, while still allowing timbral variation back down to a mellow tone.
 - **Watch:** with index m·K on harmonic m, high carrier harmonics scatter aggressively under modest
   K (the J₀(m·K) tax per carrier line) — the taper r is what keeps that under control; expect the
   fitter to prefer gentle K values on rich carriers.
+- **UI concept (Gerard, 2 Jul 2026):** horizontal slider directly below Brilliance — sine carrier at
+  one end, soft sawtooth at the other — plus a **link button** tying it to Brilliance so both move
+  together ("if that sounds good"). Framing for the pair: *Brilliance = how hard the drawbars drive
+  the carrier (edge); the new control = how rich the carrier itself is (foundation).*
+  - **Name:** Gerard's working label "Harmonic Density"; candidate replacements in house style
+    (single perceptual word, cf. Brilliance/LIFE/Vintage): **"Richness"** (recommended — natural
+    sibling to Brilliance) or **"Body"** (most literal about filling the mid). Avoid "Density" —
+    already used in the analysis for the half-integer *inter*-harmonic effect. Decide on the fork.
+  - **Link caution:** carrier harmonic m sees index m·K, so a linear 1:1 link compounds steeply
+    toward buzz at high travel — the link will likely want a curve (morph lagging Brilliance).
+    Link should be GUI-level (like a stereo-link toggle) so host automation of the two params stays
+    independent and velocity→Brilliance keeps working unlinked.
+  - **Param ID:** keep it label-neutral (`carrierMorph`) so the faceplate name can change without
+    breaking patches.
 
 ### Arc step 3 — F4. Simulate filter sweeps with the drawbar envelopes
 Idea (Gerard): each drawbar has its own envelope, so per-drawbar envelope depths/times across the
