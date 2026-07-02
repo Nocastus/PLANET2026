@@ -510,7 +510,38 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     brillianceMainLabel.setJustificationType(juce::Justification::centred);
     brillianceMainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(brillianceMainLabel);
-    
+
+    // Density horizontal slider (F5 carrier morph) - sits below Brilliance in the Colour zone
+    densitySlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    densitySlider.setRange(0.0, 1.0, 0.01);
+    densitySlider.setValue(0.0);
+    densitySlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    densitySlider.setDoubleClickReturnValue(true, 0.0);
+    densitySlider.setColour(juce::Slider::thumbColourId, globalAccent);  // global control accent
+    addAndMakeVisible(densitySlider);
+
+    // Labels above each slider, left-aligned, styled like the Pitch Envelope knob labels
+    // (Distance / Time): white, amarnaSemiBold 18px.
+    brillianceSubLabel.setText("Brilliance", juce::dontSendNotification);
+    brillianceSubLabel.setJustificationType(juce::Justification::centredLeft);
+    brillianceSubLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    brillianceSubLabel.setFont(amarnaSemiBold.withHeight(18.0f));
+    addAndMakeVisible(brillianceSubLabel);
+    densitySubLabel.setText("Density", juce::dontSendNotification);
+    densitySubLabel.setJustificationType(juce::Justification::centredLeft);
+    densitySubLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    densitySubLabel.setFont(amarnaSemiBold.withHeight(18.0f));
+    addAndMakeVisible(densitySubLabel);
+    densityValue.setJustificationType(juce::Justification::centredRight);
+    densityValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    densityValue.setFont(amarnaRegular.withHeight(13.0f));
+    densityValue.setText("0.00", juce::dontSendNotification);
+    addChildComponent(densityValue);   // present but hidden, matching brillianceValue's minimal style
+
+    // Cache the per-slider mod-wheel mode params for the Colour-zone buttons.
+    brillianceMWParam = apvts.getRawParameterValue("brillianceModWheel");
+    densityMWParam    = apvts.getRawParameterValue("carrierMorphModWheel");
+
     // Effects vertical sliders
     auto setupVerticalSlider = [this](juce::Slider& slider, juce::Label& label, const juce::String& name,
                                       double min, double max, double defaultVal) {
@@ -577,6 +608,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     brillianceSlider.onValueChange = [this]() {
         brillianceValue.setText(juce::String(brillianceSlider.getValue(), 2), juce::dontSendNotification);
         };
+    densitySlider.onValueChange = [this]() {
+        densityValue.setText(juce::String(densitySlider.getValue(), 2), juce::dontSendNotification);
+        };
     vibratoRateKnob.onValueChange = [this]() {
         vibratoRateValue.setText(juce::String(vibratoRateKnob.getValue(), 2), juce::dontSendNotification);
         };
@@ -624,6 +658,8 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "pitchEnvTime", pitchTimeKnob);
     brillianceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "brilliance", brillianceSlider);
+    carrierMorphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "carrierMorph", densitySlider);
     detuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "detuneAmount", detuneAmountSlider);
     detuneMixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -1418,8 +1454,34 @@ void PLANETMainGui::paint(juce::Graphics& g)
     // Right column labels — top-left of each zone
     g.drawText("VIBRATO", rightX + labelLeftPad, rightSectionY + labelTopPad, labelW, labelHeight, juce::Justification::left);
     g.drawText("PITCH ENVELOPE", rightX + labelLeftPad, rightSectionY + rightSectionHeight + labelTopPad, labelW, labelHeight, juce::Justification::left);
-    g.drawText("BRILLIANCE", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 2 + labelTopPad, labelW, labelHeight, juce::Justification::left);
+    g.drawText("COLOUR", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 2 + labelTopPad, labelW, labelHeight, juce::Justification::left);
     g.drawText("EFFECTS", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 3 + labelTopPad - 8, labelW, labelHeight, juce::Justification::left);
+
+    // Colour-zone per-slider "Mod wheel" buttons: Off = grey outline; Normal = accent + up
+    // triangle (wheel up raises); Inverse = accent + down triangle (wheel up lowers).
+    auto drawMWButton = [&](juce::Rectangle<int> b, int mode)
+    {
+        if (b.isEmpty()) return;
+        auto rf = b.toFloat();
+        bool on = (mode != 0);
+        if (on) { g.setColour(globalAccent); g.fillRoundedRectangle(rf, 3.0f); }
+        else    { g.setColour(juce::Colour(0xff202020)); g.fillRoundedRectangle(rf, 3.0f);
+                  g.setColour(juce::Colour(0xff666666)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
+        g.setColour(on ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
+        g.setFont(11.0f);
+        g.drawText("MW", b.withTrimmedRight(11), juce::Justification::centred);
+        if (on)
+        {
+            float cx = rf.getRight() - 8.0f, cy = rf.getCentreY();
+            juce::Path tri;
+            if (mode == 1) tri.addTriangle(cx - 4, cy + 3, cx + 4, cy + 3, cx, cy - 4);   // up = Normal
+            else           tri.addTriangle(cx - 4, cy - 3, cx + 4, cy - 3, cx, cy + 4);   // down = Inverse
+            g.setColour(juce::Colours::black.withAlpha(0.85f));
+            g.fillPath(tri);
+        }
+    };
+    drawMWButton(brillianceMWButtonBounds, brillianceMWParam ? (int)brillianceMWParam->load() : 0);
+    drawMWButton(densityMWButtonBounds,    densityMWParam    ? (int)densityMWParam->load()    : 0);
 
     // ISHTAR name - aligned with left/right column divider
     g.setColour(accentColour.withAlpha(0.9f));
@@ -1831,14 +1893,40 @@ void PLANETMainGui::resized()
     pitchTimeKnob.setBounds(pkx1, pitchY + 16, rightKnobSize, rightKnobSize);
     pitchTimeValue.setBounds(pkx1 + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     
-    // Brilliance section
-    int brillianceY = waveformHeight + rightSectionHeight * 2 + 35;
+    // Colour section: Brilliance + Density, each a horizontal slider with its label ABOVE it,
+    // left-aligned. The pair sits low in the zone; sliders are shortened 10% at the right end
+    // (left end fixed) to leave room for a future per-slider "Mod wheel" button.
+    int colStartY = waveformHeight + rightSectionHeight * 2 + 40;   // dropped low in the zone
     int sliderMargin = 20;
-    int brillValueWidth = 50;
-    brillianceMainLabel.setBounds(rightX, brillianceY, rightContentWidth - brillValueWidth - 10, 18);
-    brillianceValue.setBounds(rightX + rightContentWidth - brillValueWidth - sliderMargin, brillianceY, brillValueWidth, 18);
-    brillianceSliderBounds = juce::Rectangle<int>(rightX + sliderMargin, brillianceY + 22, rightContentWidth - sliderMargin * 2, 40);
+    int colSliderX = rightX + sliderMargin;
+    int colFullW = rightContentWidth - sliderMargin * 2;
+    int colSliderW = (int)(colFullW * 0.9f);   // 10% shorter, left end fixed; right end reserved for Mod-wheel button
+    int colLabelH = 16;
+    int colSliderH = 26;
+    int colRowGap = 10;
+
+    brillianceMainLabel.setBounds(rightX, colStartY, rightContentWidth, 18);   // hidden; kept positioned
+
+    // Mod-wheel button geometry (in the reserved gap at the right of each slider)
+    int mwBtnW = 34, mwBtnH = 18;
+    int mwBtnX = colSliderX + colSliderW + 6;
+
+    // Brilliance: label above, slider below, mod-wheel button at the right
+    brillianceSubLabel.setBounds(colSliderX, colStartY, colFullW, colLabelH);
+    int brillSliderY = colStartY + colLabelH + 2;
+    brillianceSliderBounds = juce::Rectangle<int>(colSliderX, brillSliderY, colSliderW, colSliderH);
     brillianceSlider.setBounds(brillianceSliderBounds);
+    brillianceValue.setBounds(colSliderX, colStartY, colFullW, colLabelH);   // hidden
+    brillianceMWButtonBounds = juce::Rectangle<int>(mwBtnX, brillSliderY + (colSliderH - mwBtnH) / 2, mwBtnW, mwBtnH);
+
+    // Density: label above, slider below, mod-wheel button at the right
+    int densityRowY = colStartY + colLabelH + 2 + colSliderH + colRowGap;
+    densitySubLabel.setBounds(colSliderX, densityRowY, colFullW, colLabelH);
+    int densSliderY = densityRowY + colLabelH + 2;
+    densitySliderBounds = juce::Rectangle<int>(colSliderX, densSliderY, colSliderW, colSliderH);
+    densitySlider.setBounds(densitySliderBounds);
+    densityValue.setBounds(colSliderX, densityRowY, colFullW, colLabelH);   // hidden
+    densityMWButtonBounds = juce::Rectangle<int>(mwBtnX, densSliderY + (colSliderH - mwBtnH) / 2, mwBtnW, mwBtnH);
     
     // Effects section (5 sliders: Detune, Mix, Warmth, Punch, Freq)
     int effectsY = waveformHeight + rightSectionHeight * 3 + 1 + zoneLabelH;
@@ -1939,6 +2027,18 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
             toggleRoutingParam("k" + juce::String(i + 1) + "ToOut");
             return;
         }
+    }
+
+    // Colour-zone mod-wheel buttons: cycle Off -> Normal -> Inverse.
+    if (brillianceMWButtonBounds.contains(event.getPosition()))
+    {
+        cycleModWheelParam("brillianceModWheel");
+        return;
+    }
+    if (densityMWButtonBounds.contains(event.getPosition()))
+    {
+        cycleModWheelParam("carrierMorphModWheel");
+        return;
     }
 
     float handleRadius = 10.0f;
@@ -2113,6 +2213,18 @@ void PLANETMainGui::toggleRoutingParam(const juce::String& paramID)
     if (auto* p = apvts.getParameter(paramID))
         p->setValueNotifyingHost(p->getValue() >= 0.5f ? 0.0f : 1.0f);
 
+    repaint();
+}
+
+void PLANETMainGui::cycleModWheelParam(const juce::String& paramID)
+{
+    // Cycle a Colour-zone mod-wheel choice param Off(0) -> Normal(1) -> Inverse(2) -> Off.
+    if (auto* p = apvts.getParameter(paramID))
+    {
+        int cur  = (int)std::round(p->convertFrom0to1(p->getValue()));
+        int next = (cur + 1) % 3;
+        p->setValueNotifyingHost(p->convertTo0to1((float)next));
+    }
     repaint();
 }
 

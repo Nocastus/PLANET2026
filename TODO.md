@@ -7,6 +7,20 @@
 
 ---
 
+## ✅ Completed phase — "Additive + Density" (v0.6.0, 2 Jul 2026)
+A big palette-expanding phase (Gerard: "10x'd the sound palette"). Two engine features, both
+ear-approved, committed on forks, **not yet merged to main**:
+- **F8 per-drawbar Direct/additive routing** (unifies F7) — branch `f8-additive-routing`. Each drawbar
+  routes to phase-distortion ("Shape") and/or direct output ("Direct"); mute = both off. Fixes the
+  "hole in the middle" and turns ISHTAR into a live tonewheel — the basis of the **ENLIL** Hammond voice.
+- **F5 Density carrier morph** (sine → soft-saw) + Colour zone + per-slider mod-wheel buttons
+  (Off/Normal/Inverse) — branch `f5-carrier-morph` (forked off f8).
+- Offline analysis tool banked at `N:\PLUGIN DEVELOPMENT\Tools\ISHTAR-analysis\`; ENLIL starter patches in
+  `Patches/Hammond Experiments/`.
+- **Merge path when ready:** f8 → main, then f5 → main (f5 sits on f8).
+
+---
+
 ## Active tasks
 
 ### 1. Pitch envelope — restore exponential shape *without* the residual detune ✅ CLOSED (27 Jun 2026)
@@ -406,8 +420,24 @@ top-end bar, re-raise the mid Ks to repay the tax; (c) half-integer bars at mode
 count in the low mid for only −1.1 dB tax). They add subharmonic-series thickness, not integer-
 harmonic fill — don't use them when fitting a specific classic waveform.
 
-### Arc step 2 — F5. Experiment with non-sine source waveforms (alternate carrier LUT)
-**Exploratory, may not survive contact with the engine.** The engine is
+### Arc step 2 — F5. Density carrier morph (sine → soft-saw) ✅ IMPLEMENTED (2 Jul 2026, branch `f5-carrier-morph`)
+**✅ Built + ear-approved ("sounds amazing", "10x'd the sound palette").** Shipped as the **Density** slider
+in the renamed **Colour** zone (Brilliance + Density). Offline analysis first (memory
+`density-carrier-analysis`; tool at `N:\PLUGIN DEVELOPMENT\Tools\ISHTAR-analysis\`) chose a soft-saw LUT
+**r=0.8, N=16**, built as a sine series (`SoftSawLUT` in [`PLANETVoice.h`](Source/PLANETVoice.h)) so it is 0 at
+θ=0 → click-free preserved. Carrier lookup is now `(1-m)·sine + m·soft-saw`; morph cached at the cycle
+boundary (click-free), morph=0 takes a pure-sine fast path so old patches are bit-identical. **Carrier only** —
+additive/Direct partials stay pure sines (Gerard's call). `carrierMorph` param + patch save/load done.
+Two motivations both served: ISHTAR bright saw leads (high Density + a few drawbars) and ENLIL tonewheel
+warmth (low Density = imperfect sine). Partial morph (~0.5) gives the widest envelope-driven range.
+- **Colour-zone mod-wheel buttons (2 Jul 2026):** each slider (Brilliance, Density) has a **Mod wheel**
+  button cycling **Off / Normal / Inverse** (`brillianceModWheel` default Normal = old behaviour;
+  `carrierMorphModWheel` default Off). Inverse flips the wheel direction; soft-takeover centre preserved.
+  Saved in patch. *(Space is reserved but the "link Brilliance↔Density" button from the concept below is
+  not built — a possible follow-up.)*
+- **Shipped in v0.6.0** alongside F8 Direct mode.
+
+**Original exploratory note (for history).** The engine is
 `output(x) = sin(x + Σᵢ Kᵢ·sin(fᵢ·x))` — the *outer* `sin()` is the carrier/source wave, currently a
 sine lookup. Try swapping that carrier LUT for a different base wave (start with a **sawtooth** LUT) and
 see what the PM/phase-distortion structure does with a harmonically-rich source.

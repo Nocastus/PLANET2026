@@ -399,10 +399,22 @@ private:
     juce::Slider pitchDistKnob, pitchTimeKnob;
     juce::Label pitchDistLabel, pitchTimeLabel;
     
-    // Brilliance section
+    // Colour section (Brilliance + Density/carrier-morph)
     juce::Slider brillianceSlider;
     juce::Label brillianceMainLabel;
-    
+    juce::Slider densitySlider;                        // F5 "Density": carrier sine->soft-saw morph
+    juce::Label brillianceSubLabel, densitySubLabel;   // small labels under each slider
+    juce::Label densityValue;
+    juce::Rectangle<int> densitySliderBounds;
+
+    // Per-slider "Mod wheel" buttons in the reserved gap at the right of each Colour slider.
+    // Each cycles Off -> Normal -> Inverse (a saved choice param). Custom-drawn (paint) + hit-tested
+    // (mouseDown), like the drawbar routing circles.
+    juce::Rectangle<int> brillianceMWButtonBounds, densityMWButtonBounds;
+    std::atomic<float>* brillianceMWParam = nullptr;   // 0 Off / 1 Normal / 2 Inverse
+    std::atomic<float>* densityMWParam = nullptr;
+    void cycleModWheelParam(const juce::String& paramID);
+
     // Mod wheel tracking
     std::atomic<float>* rawModWheelValue = nullptr;
     std::atomic<bool>* modWheelEngaged = nullptr;
@@ -452,6 +464,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchDistAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchTimeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> brillianceAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> carrierMorphAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAmountAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneMixAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> warmthAttachment;

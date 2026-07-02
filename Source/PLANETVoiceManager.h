@@ -48,7 +48,7 @@ public:
     // Audio processing
     float processNextSample(const CoefficientArray& globalParams,
         float ampAttack, float ampDecay, float ampSustain, float ampRelease,
-        float brilliance, double sampleRate,
+        float brilliance, float carrierMorph, double sampleRate,
         float pitchWheelOffset,
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
         float velToAmplitude, float velToAttackTime, float vintageAmount,

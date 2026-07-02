@@ -52,6 +52,55 @@ private:
 };
 
 //==============================================================================
+// SOFT-SAW LOOKUP TABLE (F5 "Density" carrier morph)
+//==============================================================================
+// The alternate carrier the Density knob morphs toward. Built as a pure SINE
+// SERIES  sum_{n=1}^N (r^(n-1)/n) sin(n*theta)  so it is exactly 0 at theta=0 -
+// the same zero-at-cycle-boundary property SineLUT has, which is what keeps the
+// coefficient-staging click-free (see PLANETVoice.cpp). Shape (r=0.8, N=16) was
+// chosen by offline analysis: soft enough to leave morph range, yet a few drawbars
+// sharpen it to a real saw. Fundamental amplitude is 1 (matches sine), so morphing
+// preserves the fundamental and fades in the upper harmonics; peak ~1.16.
+class SoftSawLUT {
+public:
+    static constexpr int TABLE_SIZE = 8192;
+    static constexpr double TABLE_SIZE_OVER_2PI = TABLE_SIZE / (2.0 * juce::MathConstants<double>::pi);
+    static constexpr float  TAPER = 0.8f;   // r
+    static constexpr int    HARMONICS = 16; // N
+
+    SoftSawLUT() {
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            double theta = 2.0 * juce::MathConstants<double>::pi * i / TABLE_SIZE;
+            double v = 0.0, rp = 1.0;               // rp = TAPER^(n-1)
+            for (int n = 1; n <= HARMONICS; ++n) {
+                v += (rp / n) * std::sin(n * theta);
+                rp *= TAPER;
+            }
+            table[i] = (float)v;
+        }
+    }
+
+    inline float lookup(double phase) const {
+        while (phase < 0.0) phase += 2.0 * juce::MathConstants<double>::pi;
+        while (phase >= 2.0 * juce::MathConstants<double>::pi)
+            phase -= 2.0 * juce::MathConstants<double>::pi;
+        double indexDouble = phase * TABLE_SIZE_OVER_2PI;
+        int index1 = static_cast<int>(indexDouble) % TABLE_SIZE;
+        int index2 = (index1 + 1) % TABLE_SIZE;
+        float fraction = static_cast<float>(indexDouble - std::floor(indexDouble));
+        return table[index1] * (1.0f - fraction) + table[index2] * fraction;
+    }
+
+    static const SoftSawLUT& getInstance() {
+        static SoftSawLUT instance;
+        return instance;
+    }
+
+private:
+    std::array<float, TABLE_SIZE> table;
+};
+
+//==============================================================================
 // FAST EXPONENTIAL APPROXIMATION (Optimization)
 //==============================================================================
 
@@ -129,7 +178,7 @@ public:
     // Audio processing
     float processNextSample(const CoefficientArray& globalParams,
         float ampAttack, float ampDecay, float ampSustain, float ampRelease,
-        float brilliance, double sampleRate,
+        float brilliance, float carrierMorph, double sampleRate,
         float pitchWheelOffset,
         float vibratoRate, float vibratoDepth, float vibratoFadeIn,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
@@ -167,6 +216,7 @@ private:
     // Cache expensive velocity calculations
     float cachedVelocityAmplitude = 1.0f;
     float cachedVelocityBrilliance = 0.5f;
+    float cachedCarrierMorph = 0.0f;   // F5 Density: cached at cycle boundary (click-free, output=0 there)
 
     //Exponential envelope amount
     float exponentialControl = 0.5f;  // Now a member variable instead of constant

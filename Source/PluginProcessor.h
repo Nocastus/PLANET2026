@@ -111,6 +111,9 @@ private:
 
     // ======================== BASIC PARAMETERS ========================
     std::atomic<float>* brillianceParameter = nullptr;
+    std::atomic<float>* carrierMorphParameter = nullptr;   // F5 Density (carrier sine->soft-saw morph)
+    std::atomic<float>* brillianceModWheelParameter = nullptr;    // 0 Off / 1 Normal / 2 Inverse
+    std::atomic<float>* carrierMorphModWheelParameter = nullptr;  // 0 Off / 1 Normal / 2 Inverse
 
     // ========================Envelope exponential curve parameter==================
     std::atomic<float>* exponentialControlParameter = nullptr;
