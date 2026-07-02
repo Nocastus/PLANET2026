@@ -25,6 +25,32 @@ PLANETVoiceManager::PLANETVoiceManager()
 void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sampleRate, float currentPitchWheelOffset, float vintageAmount,
     float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed)
 {
+    // ======================== F10: resolve single-trigger firing for THIS note-on ========================
+    // A note-on that finds polyphony at 0 starts a new phrase: reload the grace window. Any note-on
+    // while the window still has samples fires the Single-trig drawbars (so a chord struck together
+    // all gets the percussion); once it drains with keys still held, later notes don't fire - and it
+    // only reloads after all keys release (polyphony back to 0). Multi drawbars always fire (unchanged).
+    // Re-arm is driven by physical keys held, NOT active voices: a voice stays active through its
+    // amp-release tail, so keying off getActiveVoiceCount() would delay re-arming until the release
+    // finished - defeating perc on detached playing. heldKeyCount is checked BEFORE registering
+    // this key, so the first key of a phrase (no keys currently down) is the phrase start.
+    const bool phraseStart = (heldKeyCount == 0);
+    if (phraseStart)
+        percGraceSamplesRemaining = (int)(kPercGraceSeconds * sampleRate);
+    const bool fireSingle = (percGraceSamplesRemaining > 0);
+
+    // Register this key as held (idempotent - a retriggered still-held note isn't a new phrase).
+    if (noteNumber >= 0 && noteNumber < 128 && !keyHeld[noteNumber]) {
+        keyHeld[noteNumber] = true;
+        ++heldKeyCount;
+    }
+
+    std::array<bool, NUM_COEFFICIENTS> drawbarFire;
+    for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
+        const bool isSingle = coeffParams && (*coeffParams)[i].trigSingle >= 0.5f;
+        drawbarFire[i] = isSingle ? fireSingle : true;   // Multi (or unwired) drawbars always fire
+    }
+
     // [Existing voice finding/allocation code...]
     auto* existingVoice = findVoiceForNote(noteNumber);
     if (existingVoice) {
@@ -37,7 +63,7 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
     }
 
     if (voice) {
-        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance, lifeAmount, lifeSeed);
+        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance, lifeAmount, lifeSeed, &drawbarFire);
 
         // Apply current pitch wheel state to new voice
         voice->setPitchOffset(currentPitchWheelOffset);
@@ -52,6 +78,14 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
 // Now with added sustain pedal functionality!
 void PLANETVoiceManager::stopNote(int noteNumber, bool sustainPedalDown)
 {
+    // Key physically up: clear held state so the perc re-arms on the key-lift itself, regardless of
+    // any amp-release tail still sounding (F10). We clear it even when the sustain pedal holds the
+    // sound - the pedal holds the note, not the key, and "all keys released" is what re-arms perc.
+    if (noteNumber >= 0 && noteNumber < 128 && keyHeld[noteNumber]) {
+        keyHeld[noteNumber] = false;
+        --heldKeyCount;
+    }
+
     auto* voice = findVoiceForNote(noteNumber);
     if (voice) {
         voice->stopNote(sustainPedalDown);
@@ -71,11 +105,22 @@ void PLANETVoiceManager::releaseSustainedNotes()
 
 void PLANETVoiceManager::stopAllNotes()
 {
+    // Clear key-held tracking too, so a panic / all-notes-off fully re-arms the perc (F10).
+    keyHeld.fill(false);
+    heldKeyCount = 0;
+
     for (auto& voice : voices) {
         if (voice.isActive()) {
             voice.stopNote(false);
         }
     }
+}
+
+// F10: drain the single-trigger grace window by one block's worth of samples. Once per block,
+// so the ~30 ms window is measured in real elapsed audio time (see startNote / the header note).
+void PLANETVoiceManager::advanceBlock(int numSamples)
+{
+    percGraceSamplesRemaining = juce::jmax(0, percGraceSamplesRemaining - numSamples);
 }
 
 //==============================================================================

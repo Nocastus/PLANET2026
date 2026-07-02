@@ -270,6 +270,22 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k9ToOut",  "K9 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k10ToOut", "K10 -> Direct Out", juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
 
+            // Per-drawbar envelope trigger mode (F10). 0 = Multi (retrigger the drawbar's envelope on
+            // every note, current behaviour); 1 = Single (fire only on the first note of a phrase -
+            // polyphony rising from 0 - and re-arm once all keys release). Single + a fast-decay
+            // envelope on a Direct drawbar gives Hammond-style single-trigger percussion. Default 0
+            // reproduces the old engine exactly, so existing patches are unchanged.
+            std::make_unique<juce::AudioParameterFloat>("k1TrigSingle",  "K1 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2TrigSingle",  "K2 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3TrigSingle",  "K3 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4TrigSingle",  "K4 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5TrigSingle",  "K5 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6TrigSingle",  "K6 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7TrigSingle",  "K7 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8TrigSingle",  "K8 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9TrigSingle",  "K9 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10TrigSingle", "K10 Trigger Single", juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+
             // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("input_f1", "Input F1 Spectral Multiplier", 0.5f, 30.0f, 1.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f2", "Input F2 Spectral Multiplier", 0.5f, 30.0f, 2.0f),
@@ -383,6 +399,10 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
     // Initialize clean array
     coefficients.initializeFromAPVTS(parameters);
+
+    // Give the voice manager read access to the per-drawbar params so it can resolve each
+    // drawbar's Single/Multi trigger mode at note-on (F10). Same lifetime as the processor.
+    voiceManager.setCoefficientParams(&coefficients);
 
     // Initialize exponential control parameter pointer
  // Initialize exponential control parameter pointer
@@ -526,6 +546,10 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // Update global parameters (shared by all voices)
     coefficients.updateAllActiveValues();
+
+    // F10: advance the single-trigger perc grace window by this block (before any note-on below,
+    // so a phrase starting this block reloads the full window rather than being pre-decremented).
+    voiceManager.advanceBlock(buffer.getNumSamples());
 
     // Colour zone with per-slider mod-wheel routing (soft takeover). Each slider can be Off (1),
     // Normal (2 - wheel up raises the value) or Inverse (2 - wheel up lowers it); the wheel centre

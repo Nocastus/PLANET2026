@@ -40,7 +40,8 @@ PLANETVoice::PLANETVoice()
 //==============================================================================
 
 void PLANETVoice::startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount,
-    float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed)
+    float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed,
+    const std::array<bool, NUM_COEFFICIENTS>* drawbarFire)
 {
     // [Existing initialization code...]
     currentNoteNumber = noteNumber;
@@ -147,10 +148,15 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     pitchEnvTime = 0.0;
     pitchEnvLevel = 0.0f;
 
-    for (auto& modState : coeffModStates) {
-        modState.envStage = EnvelopeStage::Attack;
-        modState.envTime = 0.0;
-        modState.envLevel = 0.0f;
+    // Per-drawbar envelope trigger (F10). Firing drawbars reset to Attack (the normal behaviour);
+    // a Single-trig drawbar that must not fire on this note is forced to Idle/silent so a reused
+    // voice can't leak a stale envelope. Only the envelope is gated - the drawbar's base level
+    // (globalParams[i].coefficient) is untouched, matching "the envelope is single-triggered".
+    for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
+        const bool fire = (drawbarFire == nullptr) || (*drawbarFire)[i];
+        coeffModStates[i].envStage = fire ? EnvelopeStage::Attack : EnvelopeStage::Idle;
+        coeffModStates[i].envTime = 0.0;
+        coeffModStates[i].envLevel = 0.0f;
     }
 
     cachedVelocityAmplitude = std::pow(velocity, velToAmplitude / 100.0f);

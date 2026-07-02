@@ -274,6 +274,21 @@ private:
     std::array<std::atomic<float>*, 10> toPMParamPtr {};
     std::array<std::atomic<float>*, 10> toOutParamPtr {};
     void toggleRoutingParam(const juce::String& paramID);
+
+    // ---- F10 per-drawbar single-trigger ("Perc") switch ----
+    // A third switch circle above the routing pair, labelled "Perc": off = Multi (retrigger every
+    // note, the default), on = Single (fire the drawbar's envelope only on the first note of a
+    // phrase - Hammond percussion). Shown/clickable ONLY when the drawbar's envelope is active
+    // (|EnvelopeAmount| > 0, the same condition that turns its fader thumb red), since single-trigger
+    // is meaningless without an envelope. Bounds set in resized(), drawn in paintOverChildren(),
+    // clicked in mouseDown(); toggled via toggleRoutingParam() like the routing switches.
+    std::array<juce::Rectangle<int>, 10> percSwitchBounds;
+    std::array<std::atomic<float>*, 10> trigSingleParamPtr {};
+    bool drawbarEnvelopeActive(int drawbarIndex) const;  // |EnvelopeAmount| > 0 for drawbar i
+    // Per-drawbar envelope-active state from the last updateDrawbarColors() pass. The Perc switch is
+    // drawn in paintOverChildren (parent), which the timer doesn't otherwise repaint - so when this
+    // flips we repaint the column strip to make the switch appear/disappear live.
+    std::array<bool, 10> prevEnvelopeActive {};
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
 
     // ---- LFO-rate "ping" pulse indicators (item #5) ----

@@ -6,6 +6,35 @@ history; this is the durable record of *what shipped and why*.
 
 ---
 
+## v0.6.1 — Hammond single-trigger percussion (F10) (3 Jul 2026)
+First feature on `main` after the v0.6.0 forks merged. A per-drawbar **envelope trigger mode**: **Multi**
+(default — retrigger the drawbar's envelope on every note, the old behaviour) or **Single** (fire only on
+the first note of a phrase, re-arming once all keys lift). Single + a fast-decay envelope on a Direct
+drawbar = authentic B3 single-trigger percussion: play detached to get the ping on each note; legato lines
+percuss only the first note; a chord struck together shares one ping. Param `k{n}TrigSingle` (default 0 =
+Multi) → existing patches unchanged.
+- **Phrase gating in `PLANETVoiceManager`.** Re-arm is driven by **physical keys held**, tracked directly
+  (128-key table + count, set on note-on / cleared on note-off), NOT `getActiveVoiceCount()` — a voice
+  lingers through its amp-release tail, so voice-count would delay re-arm until the release finished and
+  kill perc on detached playing. The first key of a phrase (no keys down) reloads a ~30 ms grace window,
+  drained once per block in `advanceBlock()` so the window is measured in real elapsed audio samples
+  without touching the per-sample path. Any note-on while the window has samples fires the Single drawbars
+  (chord coherence). **Sustain pedal deliberately does NOT hold the phrase open** (the pedal holds the
+  sound, not the key) — pedal-sustained + a new key re-fires the perc, a musically useful distinction
+  between holding-by-keys (no retrigger) and holding-by-pedal (retrigger).
+- **Voice.** `startNote` takes a per-drawbar fire mask: a firing drawbar resets its envelope to Attack; a
+  non-firing Single drawbar is forced Idle/silent so a reused voice can't leak a stale envelope. Only the
+  envelope is gated — the drawbar's base level is untouched.
+- **GUI.** A third switch circle **"Perc"** above the Shape/Direct routing pair, shown and clickable ONLY
+  when the drawbar's envelope is active (the same `|EnvelopeAmount|>0` test that reddens the fader thumb);
+  on = Single, off = Multi. The routing stack is bottom-anchored (Direct legend at the fader bottom) so the
+  Perc switch has room to appear at the top of the strip without hitting the F-number box; visibility
+  tracks the thumb live (repaint on the active-state edge in `updateDrawbarColors`).
+- Test patch: `Patches/Hammond Experiments/Hammond - Jazz Perc (Single Trigger).md`. Ear-approved
+  ("that's a lock … functionality spot on").
+
+---
+
 ## v0.6.0 — "Additive + Density" (2 Jul 2026)
 The palette-expanding phase (Gerard: "10x'd the sound palette"). Built on forks off `main`
 (`f8-additive-routing`, then `f5-carrier-morph` on top).

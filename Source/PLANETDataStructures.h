@@ -50,6 +50,7 @@ struct CoefficientParams {
     std::atomic<float>* lfoSyncDivPtr = nullptr;         // LFO sync division index (0-12)
     std::atomic<float>* toPMPtr = nullptr;               // Route to phase-distortion path (0=off, 1=on)
     std::atomic<float>* toOutPtr = nullptr;              // Route direct to output / additive path (0=off, 1=on)
+    std::atomic<float>* trigSinglePtr = nullptr;         // Envelope trigger mode (0=Multi/retrigger, 1=Single/phrase-start)
 
     // Active values (cached at zero-crossings)
     float coefficient = 0.0f;
@@ -68,6 +69,7 @@ struct CoefficientParams {
     float lfoSyncDiv = 7.0f;                            // Sync division index (default 7 = 1/4 note)
     float toPM = 1.0f;                                  // Route to phase distortion (default ON = classic PM operator)
     float toOut = 0.0f;                                 // Route direct to output / additive (default OFF)
+    float trigSingle = 0.0f;                            // 0 = Multi (retrigger per note), 1 = Single (fire on phrase start only)
 
     // Initialize parameter pointers for this coefficient
     void initializePointers(juce::AudioProcessorValueTreeState& apvts, int coeffIndex) {
@@ -88,6 +90,7 @@ struct CoefficientParams {
         lfoSyncDivPtr = apvts.getRawParameterValue(prefix + "LFOSyncDiv");
         toPMPtr = apvts.getRawParameterValue(prefix + "ToPM");
         toOutPtr = apvts.getRawParameterValue(prefix + "ToOut");
+        trigSinglePtr = apvts.getRawParameterValue(prefix + "TrigSingle");
     }
 
     // Update active values from parameter pointers
@@ -107,6 +110,7 @@ struct CoefficientParams {
         if (lfoSyncDivPtr) lfoSyncDiv = lfoSyncDivPtr->load();
         if (toPMPtr) toPM = toPMPtr->load();
         if (toOutPtr) toOut = toOutPtr->load();
+        if (trigSinglePtr) trigSingle = trigSinglePtr->load();
     }
 
     // NEW: Update effective spectral multiplier with LFO modulation

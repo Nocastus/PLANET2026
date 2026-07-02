@@ -157,8 +157,12 @@ public:
     PLANETVoice();
 
     // Voice control
+    // drawbarFire (F10): per-drawbar gate for this note-on. drawbarFire[i] == true resets that
+    // drawbar's envelope to Attack (fires it - the normal Multi behaviour); false forces it to
+    // Idle/silent (a Single-trig drawbar that must not fire on this note). null = all fire.
     void startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount = 0.0f,
-        float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0);
+        float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0,
+        const std::array<bool, NUM_COEFFICIENTS>* drawbarFire = nullptr);
     void stopNote(bool sustainPedalDown = false);  // KEEP ONLY THIS ONE
     void setLifeVoicingParams(const LifeVoicingParams* p) { lifeVoicing = p; }
     void triggerRelease();  // New method for forced release

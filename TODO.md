@@ -1,13 +1,15 @@
 # ISHTAR — To-Do / Working Notes
-**Living task list.** Last updated: 2 July 2026. Forward-looking only — **completed work is archived in
+**Living task list.** Last updated: 3 July 2026. Forward-looking only — **completed work is archived in
 [DevHistory.md](DevHistory.md)**.
 
 ---
 
 ## Shipped so far
+- **v0.6.1 "ENLIL percussion"** (3 Jul 2026): F10 Hammond single-trigger percussion — per-drawbar
+  Single/Multi envelope trigger mode + "Perc" GUI switch. *Merged to main.*
 - **v0.6.0 "Additive + Density"** (2 Jul 2026): per-drawbar Direct/additive routing (F7+F8), Density
   carrier morph + Colour zone + mod-wheel routing (F5), ENLIL groundwork, offline analysis tool.
-  *Committed on forks — **not yet merged to main.***
+  *Merged to main (3 Jul 2026): `f8-additive-routing` then `f5-carrier-morph`.*
 - **v0.5.x** (Jun–Jul 2026): GUI batch #6, ISHTAR rename, keyboard-focus fix, pitch envelope,
   sample-accurate MIDI timing, F1 copy-params, F1b taper, LFO visual feedback, envelope-tail fix.
 - **LIFE** — per-partial doublet engine (earlier release).
@@ -17,11 +19,14 @@ Detail for all of the above: [DevHistory.md](DevHistory.md).
 ---
 
 ## ▶ Next session
-1. **Merge the forks to main** — `f8-additive-routing → main`, then `f5-carrier-morph → main` (f5 sits
-   on f8) — once the v0.6.0 features have had enough playing time to trust.
-2. Then pick a thread:
-   - **ENLIL momentum:** **F10 Hammond percussion** — well-scoped, DSP already proven by the Jazz Perc
-     patch; the work is the single-trigger gating (Gerard has a design — see F10). *Recommended next build.*
+*(Done 3 Jul 2026: forks merged to main — `f8-additive-routing` then `f5-carrier-morph`; F10 Hammond
+single-trigger percussion built, ear-approved, shipped as v0.6.1.)*
+
+1. Pick a thread:
+   - **ENLIL momentum:** **F11 Leslie sim** (T202 rotary — the big research-first task) or **F13
+     Performance page** (fast MIDI patch switching — new, see Standalone features). With perc (F10) done,
+     Leslie is the remaining ENLIL engine piece; the identity decision (preset family vs own mode) can be
+     taken once F11 exists.
    - **Quick wins:** Density / ENLIL showcase presets (the "ISHTAR Sharp Saw" now falls straight out of
      the offline fit); **F3** classic-waveform preset fitter, now the `ISHTAR-analysis` tool exists.
    - **Arc A payoff:** **F4** filter sweeps via drawbar envelopes — Density made this more reachable
@@ -51,11 +56,12 @@ almost onto polishing.** Feature-wise it's nearly there; the remaining gap is pa
 
 Two threads: an **exploration arc** (can ISHTAR be pushed to sound like a classic subtractive synth?) and
 a set of **standalone features**. `F#` numbers are stable IDs, grouped by theme not numeric order.
-Completed items (F1, F1b, F5, F7, F8) are in [DevHistory.md](DevHistory.md).
+Completed items (F1, F1b, F5, F7, F8, F10) are in [DevHistory.md](DevHistory.md).
 
-**Engine-modification items go on forks (Gerard, 2 Jul 2026):** F10 (Hammond percussion), F11 (Leslie
-sim) are engine changes — each gets its own branch/worktree, merged back only after ear-approval.
-(F5/F7/F8 shipped this way in v0.6.0.)
+**Engine-modification items go on forks (Gerard, 2 Jul 2026):** F11 (Leslie sim) is an engine change —
+gets its own branch/worktree, merged back only after ear-approval. (F5/F7/F8 shipped this way in v0.6.0.)
+*Exception (3 Jul 2026): F10 was built directly on `main` — well-defined and low-risk enough that Gerard
+judged a fork unnecessary; it earned its keep after an ear test. Fork when the risk warrants it, not by rote.*
 
 ---
 
@@ -142,29 +148,15 @@ Decide once F10 (perc) and F11 (Leslie) exist and it's clear how Hammond-specifi
 A "carrier level / carrier off" control would let pure-additive patches set the fundamental independently
 — a natural companion to the F5 sine→soft-saw morph. Consider the two together.
 
-### F10. Hammond percussion (single-trigger)
-**Idea (Gerard, 2 Jul 2026).** Proper B3/C3-style percussion: a single decaying harmonic on the attack.
-The `Jazz Perc` patch already *fakes* it with a per-drawbar envelope (Direct drawbar at f=3, 2 ms attack →
-0.18 s decay → zero sustain), which proves the DSP — but it retriggers on **every** note because ISHTAR is
-per-voice. Real percussion is **single-trigger**: it sounds only on the first note of a legato phrase and
-re-arms only after all keys are released.
+### F10. Hammond percussion (single-trigger) — ✅ DONE (v0.6.1, 3 Jul 2026)
+Shipped: per-drawbar **Single / Multi** envelope trigger toggle, re-arming on physical key-lift (not voice
+release), ~30 ms chord grace window, "Perc" GUI switch that appears with the drawbar's envelope. Full write-up
+in [DevHistory.md](DevHistory.md). *Optional authenticity extras not built (and maybe never needed): dedicated
+B3 harmonic-2nd/3rd, decay fast/slow, soft/normal volume, the real-B3 1'-cancel + level drop when perc is on.*
 
-**Design (Gerard, 2 Jul 2026): a per-drawbar-envelope Single / Multi trigger toggle.** Generalises B3
-percussion — any drawbar's envelope can be **Multi** (retrigger per note, current behaviour) or **Single**
-(fire only on the first note of a phrase). Hammond percussion is then just a Single-trigger drawbar with a
-fast-decay envelope. A per-drawbar param, saved in the patch, with a toggle in each drawbar's envelope zone.
-- **Voice-allocation check (verified in code, 2 Jul 2026):** `PLANETVoiceManager::findFreeVoice()` returns
-  the first inactive voice in array order, so after all keys release the next note-on takes **voice 0** —
-  Gerard's memory is correct, so "Single = fire only when voice 0 activates" is viable and cheap.
-- **Refinement for chords (Gerard's concern):** voice-0-only gives the perc to just the first-*struck*
-  chord note. Better: arm on the **polyphony-rises-from-0** edge and open a short **grace window (~20–40 ms)**
-  so every note struck in that window gets it (coherent chord attack), then disarm until polyphony returns
-  to 0. This also removes any dependence on the exact allocation order.
-- **B3 controls (optional authenticity):** harmonic 2nd (4', f=2) / 3rd (2⅔', f=3); decay fast/slow;
-  volume soft/normal; real B3 cancels the 1' and drops level a touch when perc is on.
-- Under the hood it's the additive/Direct path + a decaying envelope on the selected harmonic — the DSP is
-  done (see Jazz Perc); F10 is the Single/Multi trigger layer + UI + APVTS param, gated in
-  `PLANETVoiceManager` (note-on). **Engine change → fork.**
+**B3 controls (optional, deferred):** harmonic 2nd (4', f=2) / 3rd (2⅔', f=3); decay fast/slow; volume
+soft/normal; real B3 cancels the 1' and drops level a touch when perc is on. Revisit only if ENLIL gets its
+own Hammond-styled mode.
 
 ### F11. Leslie sim — T202 rotating-reflector type (NOT a 122 cabinet), integrated not standalone
 **Idea (Gerard, 2 Jul 2026).** If ENLIL is real, ISHTAR wants its own Leslie — but modelled on the
@@ -242,6 +234,20 @@ red (clipping) — with a **sensible time constant / peak-hold** so even very sh
 Needs the processor to publish a peak level atomic to the GUI (the same pattern as the mod-wheel effective
 values) and the thumb draw to read it. Small, self-contained, good pre-release polish. *(Not referenced
 anywhere else in this doc.)*
+
+### F13. Performance page — fast patch switching via MIDI Program Change
+**Idea (Gerard, 3 Jul 2026).** A live-performance layer. Assign some number of patches (**~16?**) to
+**performance slots**, held **in memory (not re-read from disc)** so switching between them is as fast as
+possible, and select between them with **MIDI Program Change** messages. The **Performance Page** takes over
+the **Drawbar Envelope / LFO zone** when invoked — the **drawbars and global params stay visible**, so the
+live sound is still shown (and tweakable); only the envelope/LFO editor is replaced by the slot grid.
+- **Open questions:** slot count (16?); how slots get populated (drag patches in / capture current state /
+  pick from library); where the in-memory bank is persisted (folded into plugin state? a separate
+  performance file? both?); PC→slot mapping (1:1, bank offset, PC 0-based vs 1-based); click-free switching
+  (hard switch vs short crossfade) and what happens to notes ringing when a PC lands mid-phrase; whether the
+  slot grid also shows patch name/category per slot.
+- **Why in-memory:** the point is instant switching for live use — pre-load all slot patches' parameter sets
+  at assign-time so a PC is just a parameter-bank swap, never a disc read/parse.
 
 ### F9. Feedback phase term — ❌ effectively rejected (Gerard, 2 Jul 2026)
 **Gerard (2 Jul 2026): "I honestly think this is a non-starter. Everything we wanted to achieve with this

@@ -135,6 +135,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
     markdown << "# VelToHarmonic = -100 to 100\n";
     markdown << "# ToPM = 0 (off) or 1 (on) - route drawbar to phase-distortion path\n";
     markdown << "# ToOut = 0 (off) or 1 (on) - route drawbar direct to output (additive partial)\n";
+    markdown << "# TrigSingle = 0 (Multi/retrigger) or 1 (Single/phrase-start) - single-trigger envelope (Hammond perc)\n";
 
     // Generate all 10 drawbar sections
     for (int i = 1; i <= 10; ++i) {
@@ -156,7 +157,8 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
             "k" + drawbarNum + "LFOSync",
             "k" + drawbarNum + "LFOSyncDiv",
             "k" + drawbarNum + "ToPM",
-            "k" + drawbarNum + "ToOut"
+            "k" + drawbarNum + "ToOut",
+            "k" + drawbarNum + "TrigSingle"
         };
 
         for (const auto& paramID : drawbarParams) {
@@ -435,6 +437,7 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "LFOSyncDiv"] = ParameterRange(0.0f, 12.0f);
         ranges[prefix + "ToPM"] = ParameterRange(0.0f, 1.0f);
         ranges[prefix + "ToOut"] = ParameterRange(0.0f, 1.0f);
+        ranges[prefix + "TrigSingle"] = ParameterRange(0.0f, 1.0f);
     }
 
     return ranges;
@@ -443,7 +446,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
 juce::String PLANETPatchManager::formatParameterValue(float value, const juce::String& parameterID) {
     // Integer parameters
     if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv")
-        || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID.contains("ModWheel")
+        || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID.contains("TrigSingle")
+        || parameterID.contains("ModWheel")
         || parameterID == "punchFrequency") {
         return juce::String((int)value);
     }

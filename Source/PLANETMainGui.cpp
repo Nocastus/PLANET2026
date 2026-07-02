@@ -71,6 +71,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         // Cache the routing-switch param atomics for live read while drawing the switches.
         toPMParamPtr[i]  = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToPM");
         toOutParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToOut");
+        trigSingleParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "TrigSingle");  // F10 Perc switch
     }
 
     // Set up F value labels (editable)
@@ -1125,6 +1126,16 @@ void PLANETMainGui::updateDrawbarColors()
             envAmount = envPtr->load();
         bool hasActiveEnvelope = std::abs(envAmount) > 0.001f;
 
+        // F10: the Perc switch is shown only while the envelope is active and is drawn in
+        // paintOverChildren (parent), which the timer doesn't otherwise repaint. When the
+        // active-state flips, repaint this column's strip so the switch appears/disappears live.
+        if (hasActiveEnvelope != prevEnvelopeActive[i])
+        {
+            prevEnvelopeActive[i] = hasActiveEnvelope;
+            if (!drawbarColumnBounds[i].isEmpty())
+                repaint(drawbarColumnBounds[i]);
+        }
+
         // Get LFO amount (use RawParameterValue for direct access)
         juce::String lfoParamID = "k" + juce::String(i + 1) + "LFOAmount";
         float lfoAmount = 0.0f;
@@ -1652,6 +1663,15 @@ void PLANETMainGui::paintOverChildren(juce::Graphics& g)
 
         drawSwitch(pmSwitchBounds[i],  pmOn,  "Shape");
         drawSwitch(outSwitchBounds[i], outOn, "Direct");
+
+        // F10 "Perc" switch, above the routing pair. Only shown when this drawbar's envelope is
+        // active (the red-thumb condition) - single-trigger is meaningless without an envelope.
+        // On = Single (fire only on a phrase start); off = Multi (retrigger every note, default).
+        if (drawbarEnvelopeActive(i))
+        {
+            const bool percOn = trigSingleParamPtr[i] && trigSingleParamPtr[i]->load() >= 0.5f;
+            drawSwitch(percSwitchBounds[i], percOn, "Perc");
+        }
     }
 }
 
@@ -1695,12 +1715,21 @@ void PLANETMainGui::resized()
         // circle bounds in paintOverChildren().
         const int circleD    = 14;
         const int groupH     = circleD + 2 + 12;   // circle + gap + legend label
-        const int gapBetween = 18;                 // space between the two labelled groups
-        const int totalH     = groupH * 2 + gapBetween;
-        const int startY     = faderTop + (drawbarHeight - totalH) / 2;
+        const int gapBetween = 18;                 // space between successive labelled groups
+        const int step       = groupH + gapBetween;// vertical pitch from one switch to the next
         const int cx         = x + faderLeftPad + faderW + 4 + routeStripW / 2;  // centre of the routing strip
-        pmSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, startY,                       circleD, circleD);
-        outSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, startY + groupH + gapBetween, circleD, circleD);
+
+        // Anchor the switch stack from the BOTTOM so the Direct switch's legend lines up with the
+        // bottom of the fader. This pushes the whole group (Perc / Shape / Direct) down, leaving a
+        // clear gap at the top for the conditionally-shown Perc switch to appear without colliding
+        // with the F-number box above the fader. Direct (bottom) -> Shape -> Perc, evenly spaced.
+        const int faderBottom = faderTop + drawbarHeight;
+        const int outY  = faderBottom - groupH;   // Direct: circle + legend end at the fader bottom
+        const int pmY   = outY - step;            // Shape
+        const int percY = pmY  - step;            // Perc (topmost, only painted when envelope active)
+        pmSwitchBounds[i]   = juce::Rectangle<int>(cx - circleD / 2, pmY,   circleD, circleD);
+        outSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, outY,  circleD, circleD);
+        percSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, percY, circleD, circleD);
     }
 
     // Position ADSR labels and value editors
@@ -2022,6 +2051,12 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
     // parent background, so the event reaches here rather than a slider.)
     for (int i = 0; i < 10; ++i)
     {
+        // F10 Perc switch (only live when the drawbar's envelope is active - matches its visibility).
+        if (drawbarEnvelopeActive(i) && percSwitchBounds[i].contains(event.getPosition()))
+        {
+            toggleRoutingParam("k" + juce::String(i + 1) + "TrigSingle");
+            return;
+        }
         if (pmSwitchBounds[i].contains(event.getPosition()))
         {
             toggleRoutingParam("k" + juce::String(i + 1) + "ToPM");
@@ -2219,6 +2254,17 @@ void PLANETMainGui::toggleRoutingParam(const juce::String& paramID)
         p->setValueNotifyingHost(p->getValue() >= 0.5f ? 0.0f : 1.0f);
 
     repaint();
+}
+
+// F10: is drawbar i's envelope active? Same test that turns its fader thumb red (see the thumb-colour
+// logic in the timer update). Gates whether the "Perc" single-trigger switch is shown / clickable.
+bool PLANETMainGui::drawbarEnvelopeActive(int drawbarIndex) const
+{
+    if (drawbarIndex < 0 || drawbarIndex >= 10)
+        return false;
+    if (auto* envPtr = apvts.getRawParameterValue("k" + juce::String(drawbarIndex + 1) + "EnvelopeAmount"))
+        return std::abs(envPtr->load()) > 0.001f;
+    return false;
 }
 
 void PLANETMainGui::handleMWButtonClick(const juce::String& paramID, juce::Rectangle<int> bounds,
