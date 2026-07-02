@@ -41,6 +41,11 @@ public:
     std::atomic<float> rawModWheelValue{ 0.5f };      // 0-1, MIDI 0-127 normalized, default center
     std::atomic<bool> modWheelEngaged{ false };       // Has mod wheel "picked up" since patch load?
 
+    // Published effective (post mod-wheel / latch) Colour values, for the GUI diff indicators to
+    // draw exactly what's heard - including Inverse direction and the Off-latch hold.
+    std::atomic<float> effectiveBrillianceDisplay{ 0.5f };
+    std::atomic<float> effectiveCarrierMorphDisplay{ 0.0f };
+
     // LIFE voicing dev scaffold (see PLANETDataStructures.h) - written by the dev
     // panel in the GUI, read per-cycle by the voices. Not part of saved state.
     LifeVoicingParams lifeVoicing;
@@ -114,6 +119,17 @@ private:
     std::atomic<float>* carrierMorphParameter = nullptr;   // F5 Density (carrier sine->soft-saw morph)
     std::atomic<float>* brillianceModWheelParameter = nullptr;    // 0 Off / 1 Normal / 2 Inverse
     std::atomic<float>* carrierMorphModWheelParameter = nullptr;  // 0 Off / 1 Normal / 2 Inverse
+
+    // Colour-zone mod-wheel latch state (audio thread). When a slider's button is switched to Off
+    // while the wheel has pushed the value off the thumb, the last effective value is latched and
+    // held (heard) until the button is re-armed. held tracks the live effective while armed.
+    float heldBrilliance = 0.5f;
+    float heldCarrierMorph = 0.0f;
+    bool  brillMWLatched = false;
+    bool  densMWLatched = false;
+    int   prevBrillMWMode = 1;   // Brilliance default = Normal
+    int   prevDensMWMode = 0;    // Density default = Off
+    bool  colourStateInitialised = false;   // sync held/prevMode to params on the first audio block
 
     // ========================Envelope exponential curve parameter==================
     std::atomic<float>* exponentialControlParameter = nullptr;

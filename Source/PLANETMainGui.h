@@ -182,7 +182,9 @@ public:
         std::atomic<bool>* snapshotRequestPtr = nullptr,
         std::atomic<bool>* waveformActivePtr = nullptr,
         std::atomic<double>* bpmPtr = nullptr,
-        std::atomic<bool>* transportPlayingPtr = nullptr);
+        std::atomic<bool>* transportPlayingPtr = nullptr,
+        std::atomic<float>* effectiveBrilliancePtr = nullptr,
+        std::atomic<float>* effectiveCarrierMorphPtr = nullptr);
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
@@ -410,10 +412,22 @@ private:
     // Per-slider "Mod wheel" buttons in the reserved gap at the right of each Colour slider.
     // Each cycles Off -> Normal -> Inverse (a saved choice param). Custom-drawn (paint) + hit-tested
     // (mouseDown), like the drawbar routing circles.
+    // Two-zone button: left "MW" half toggles Off<->On (at the remembered polarity); right half is a
+    // big up/down triangle that flips Normal<->Inverse. So disconnecting (-> Off) is one clean click on
+    // the MW half and never passes through a polarity flip. lastPolarity remembers 1/2 across Off.
     juce::Rectangle<int> brillianceMWButtonBounds, densityMWButtonBounds;
     std::atomic<float>* brillianceMWParam = nullptr;   // 0 Off / 1 Normal / 2 Inverse
     std::atomic<float>* densityMWParam = nullptr;
-    void cycleModWheelParam(const juce::String& paramID);
+    int brillLastPolarity = 1;
+    int densLastPolarity = 1;
+    void handleMWButtonClick(const juce::String& paramID, juce::Rectangle<int> bounds,
+                             juce::Point<int> pos, int& lastPolarity);
+
+    // Published effective (post mod-wheel / latch) values from the processor, so the diff indicators
+    // draw exactly what's heard. Also cached for change-detection in the timer.
+    std::atomic<float>* effectiveBrillianceValue = nullptr;
+    std::atomic<float>* effectiveCarrierMorphValue = nullptr;
+    float cachedEffectiveCarrierMorph = 0.0f;
 
     // Mod wheel tracking
     std::atomic<float>* rawModWheelValue = nullptr;

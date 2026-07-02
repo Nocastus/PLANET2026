@@ -19,11 +19,15 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     std::atomic<bool>* snapshotRequestPtr,
     std::atomic<bool>* waveformActivePtr,
     std::atomic<double>* bpmPtr,
-    std::atomic<bool>* transportPlayingPtr)
+    std::atomic<bool>* transportPlayingPtr,
+    std::atomic<float>* effectiveBrilliancePtr,
+    std::atomic<float>* effectiveCarrierMorphPtr)
     : apvts(apvtsRef), audioProcessor(processor), rawModWheelValue(rawModWheelPtr), modWheelEngaged(modWheelEngagedPtr)
 {
     dawBpm = bpmPtr;
     transportPlaying = transportPlayingPtr;
+    effectiveBrillianceValue = effectiveBrilliancePtr;
+    effectiveCarrierMorphValue = effectiveCarrierMorphPtr;
     // Load custom fonts from embedded binary data
     auto regularTypeface = juce::Typeface::createSystemTypefaceFor(
         BinaryData::AmarnaRegular_ttf, BinaryData::AmarnaRegular_ttfSize);
@@ -607,9 +611,11 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         };
     brillianceSlider.onValueChange = [this]() {
         brillianceValue.setText(juce::String(brillianceSlider.getValue(), 2), juce::dontSendNotification);
+        repaint(brillianceSliderBounds.expanded(5));   // keep the diff bar's thumb-end in sync
         };
     densitySlider.onValueChange = [this]() {
         densityValue.setText(juce::String(densitySlider.getValue(), 2), juce::dontSendNotification);
+        repaint(densitySliderBounds.expanded(5));
         };
     vibratoRateKnob.onValueChange = [this]() {
         vibratoRateValue.setText(juce::String(vibratoRateKnob.getValue(), 2), juce::dontSendNotification);
@@ -1006,24 +1012,24 @@ PLANETMainGui::~PLANETMainGui()
 
 void PLANETMainGui::timerCallback()
 {
-    if (rawModWheelValue != nullptr && modWheelEngaged != nullptr)
+    // Repaint the Colour-zone diff indicators when the published effective values move (so they
+    // track the wheel, and settle/freeze exactly where the sound is).
+    if (effectiveBrillianceValue != nullptr)
     {
-        float S = (float)brillianceSlider.getValue();
-        float newEffective = S;  // Default to slider
-
-        if (modWheelEngaged->load())
+        float e = effectiveBrillianceValue->load();
+        if (std::abs(e - cachedEffectiveBrilliance) > 0.001f)
         {
-            float M = rawModWheelValue->load();
-            if (M < 0.5f)
-                newEffective = M * 2.0f * S;
-            else
-                newEffective = S + (M - 0.5f) * 2.0f * (1.0f - S);
-        }
-
-        if (std::abs(newEffective - cachedEffectiveBrilliance) > 0.001f)
-        {
-            cachedEffectiveBrilliance = newEffective;
+            cachedEffectiveBrilliance = e;
             repaint(brillianceSliderBounds.expanded(5));
+        }
+    }
+    if (effectiveCarrierMorphValue != nullptr)
+    {
+        float e = effectiveCarrierMorphValue->load();
+        if (std::abs(e - cachedEffectiveCarrierMorph) > 0.001f)
+        {
+            cachedEffectiveCarrierMorph = e;
+            repaint(densitySliderBounds.expanded(5));
         }
     }
 
@@ -1457,76 +1463,74 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawText("COLOUR", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 2 + labelTopPad, labelW, labelHeight, juce::Justification::left);
     g.drawText("EFFECTS", rightX + labelLeftPad, rightSectionY + rightSectionHeight * 3 + labelTopPad - 8, labelW, labelHeight, juce::Justification::left);
 
-    // Colour-zone per-slider "Mod wheel" buttons: Off = grey outline; Normal = accent + up
-    // triangle (wheel up raises); Inverse = accent + down triangle (wheel up lowers).
-    auto drawMWButton = [&](juce::Rectangle<int> b, int mode)
+    // Colour-zone per-slider "Mod wheel" buttons. Two zones: left "MW" half toggles Off<->On;
+    // right half is a big polarity triangle (up = Normal / wheel-up-raises, down = Inverse). Off =
+    // greyed; the triangle still shows the remembered polarity (dim) so you can pre-set it.
+    auto drawMWButton = [&](juce::Rectangle<int> b, int mode, int lastPol)
     {
         if (b.isEmpty()) return;
         auto rf = b.toFloat();
         bool on = (mode != 0);
+        int pol = on ? mode : lastPol;   // triangle shows live polarity, or the remembered one when Off
+
         if (on) { g.setColour(globalAccent); g.fillRoundedRectangle(rf, 3.0f); }
         else    { g.setColour(juce::Colour(0xff202020)); g.fillRoundedRectangle(rf, 3.0f);
-                  g.setColour(juce::Colour(0xff666666)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
+                  g.setColour(juce::Colour(0xff555555)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
+
+        int splitX = b.getCentreX();
+        g.setColour((on ? juce::Colours::black : juce::Colour(0xff555555)).withAlpha(0.4f));
+        g.drawLine((float)splitX, rf.getY() + 3.0f, (float)splitX, rf.getBottom() - 3.0f, 1.0f);
+
+        // "MW" (left zone)
         g.setColour(on ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
         g.setFont(11.0f);
-        g.drawText("MW", b.withTrimmedRight(11), juce::Justification::centred);
-        if (on)
-        {
-            float cx = rf.getRight() - 8.0f, cy = rf.getCentreY();
-            juce::Path tri;
-            if (mode == 1) tri.addTriangle(cx - 4, cy + 3, cx + 4, cy + 3, cx, cy - 4);   // up = Normal
-            else           tri.addTriangle(cx - 4, cy - 3, cx + 4, cy - 3, cx, cy + 4);   // down = Inverse
-            g.setColour(juce::Colours::black.withAlpha(0.85f));
-            g.fillPath(tri);
-        }
+        g.drawText("MW", juce::Rectangle<int>(b.getX(), b.getY(), splitX - b.getX(), b.getHeight()),
+                   juce::Justification::centred);
+
+        // Big polarity triangle (right zone)
+        float cx = (float)(splitX + b.getRight()) * 0.5f, cy = rf.getCentreY();
+        float hw = 5.5f, hh = 5.0f;
+        juce::Path tri;
+        if (pol == 2) tri.addTriangle(cx - hw, cy - hh, cx + hw, cy - hh, cx, cy + hh);   // down = Inverse
+        else          tri.addTriangle(cx - hw, cy + hh, cx + hw, cy + hh, cx, cy - hh);   // up = Normal
+        g.setColour(on ? juce::Colours::black.withAlpha(0.9f) : juce::Colour(0xff777777));
+        g.fillPath(tri);
     };
-    drawMWButton(brillianceMWButtonBounds, brillianceMWParam ? (int)brillianceMWParam->load() : 0);
-    drawMWButton(densityMWButtonBounds,    densityMWParam    ? (int)densityMWParam->load()    : 0);
+
+    int brillMode = brillianceMWParam ? (int)brillianceMWParam->load() : 0;
+    int densMode  = densityMWParam    ? (int)densityMWParam->load()    : 0;
+    if (brillMode != 0) brillLastPolarity = brillMode;   // keep remembered polarity in sync with the param
+    if (densMode  != 0) densLastPolarity  = densMode;
+    drawMWButton(brillianceMWButtonBounds, brillMode, brillLastPolarity);
+    drawMWButton(densityMWButtonBounds,    densMode,  densLastPolarity);
 
     // ISHTAR name - aligned with left/right column divider
     g.setColour(accentColour.withAlpha(0.9f));
     g.setFont(amarnaSemiBold.withHeight(30.0f));
     g.drawText("ISHTAR", leftWidth + 10, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::left);
 
-    // Draw effective brilliance indicator (only when mod wheel is engaged and not at center)
-    if (rawModWheelValue != nullptr && modWheelEngaged != nullptr && brillianceSliderBounds.getWidth() > 0)
+    // Colour-zone mod-wheel diff indicators (Brilliance + Density). Draw the effective (heard) value
+    // as a bar from the slider thumb (the null) to the effective position, with a marker. Reads the
+    // processor's PUBLISHED effective value, so it matches the sound exactly - including Inverse
+    // direction and the Off-latch hold (frozen and persisting when the button is switched Off while
+    // off the thumb). Hidden when the effective value sits at the thumb (no diff).
+    auto drawColourDiff = [&](juce::Rectangle<int> bounds, float sliderVal, std::atomic<float>* effPtr)
     {
-        if (modWheelEngaged->load())
-        {
-            float M = rawModWheelValue->load();
+        if (bounds.getWidth() <= 0 || effPtr == nullptr) return;
+        float eff = effPtr->load();
+        if (std::abs(eff - sliderVal) <= 0.005f) return;   // at null: nothing to show
 
-            // Only show indicator when mod wheel is away from center
-            if (std::abs(M - 0.5f) > 0.01f)
-            {
-                float S = (float)brillianceSlider.getValue();
-                float effectiveBrilliance;
+        int sx = bounds.getX(), sw = bounds.getWidth(), sy = bounds.getY(), sh = bounds.getHeight();
+        int baseX = sx + (int)(sliderVal * sw);
+        int effX  = sx + (int)(eff * sw);
 
-                if (M < 0.5f)
-                    effectiveBrilliance = M * 2.0f * S;
-                else
-                    effectiveBrilliance = S + (M - 0.5f) * 2.0f * (1.0f - S);
-
-                int sliderX = brillianceSliderBounds.getX();
-                int sliderWidth = brillianceSliderBounds.getWidth();
-                int sliderY = brillianceSliderBounds.getY();
-                int sliderHeight = brillianceSliderBounds.getHeight();
-
-                int baseX = sliderX + (int)(S * sliderWidth);
-                int effectiveX = sliderX + (int)(effectiveBrilliance * sliderWidth);
-
-                g.setColour(globalAccent.withAlpha(0.5f));  // Brilliance is a global control
-                int barY = sliderY + sliderHeight / 2 - 3;
-
-                // Draw bar from slider position to effective position
-                int barLeft = juce::jmin(baseX, effectiveX);
-                int barRight = juce::jmax(baseX, effectiveX);
-                g.fillRect(barLeft, barY, barRight - barLeft, 6);
-
-                g.setColour(globalAccent);
-                g.fillRect(effectiveX - 2, sliderY + 5, 4, sliderHeight - 10);
-            }
-        }
-    }
+        g.setColour(globalAccent.withAlpha(0.5f));
+        g.fillRect(juce::jmin(baseX, effX), sy + sh / 2 - 3, std::abs(effX - baseX), 6);
+        g.setColour(globalAccent);
+        g.fillRect(effX - 2, sy + 5, 4, sh - 10);
+    };
+    drawColourDiff(brillianceSliderBounds, (float)brillianceSlider.getValue(), effectiveBrillianceValue);
+    drawColourDiff(densitySliderBounds,    (float)densitySlider.getValue(),    effectiveCarrierMorphValue);
     
     
 
@@ -1907,9 +1911,10 @@ void PLANETMainGui::resized()
 
     brillianceMainLabel.setBounds(rightX, colStartY, rightContentWidth, 18);   // hidden; kept positioned
 
-    // Mod-wheel button geometry (in the reserved gap at the right of each slider)
-    int mwBtnW = 34, mwBtnH = 18;
-    int mwBtnX = colSliderX + colSliderW + 6;
+    // Mod-wheel button geometry (in the reserved gap at the right of each slider); two zones -
+    // "MW" (left half) + polarity triangle (right half).
+    int mwBtnW = 38, mwBtnH = 20;
+    int mwBtnX = colSliderX + colSliderW + 4;
 
     // Brilliance: label above, slider below, mod-wheel button at the right
     brillianceSubLabel.setBounds(colSliderX, colStartY, colFullW, colLabelH);
@@ -2029,15 +2034,15 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
     }
 
-    // Colour-zone mod-wheel buttons: cycle Off -> Normal -> Inverse.
+    // Colour-zone mod-wheel buttons: left "MW" half toggles on/off, right half flips polarity.
     if (brillianceMWButtonBounds.contains(event.getPosition()))
     {
-        cycleModWheelParam("brillianceModWheel");
+        handleMWButtonClick("brillianceModWheel", brillianceMWButtonBounds, event.getPosition(), brillLastPolarity);
         return;
     }
     if (densityMWButtonBounds.contains(event.getPosition()))
     {
-        cycleModWheelParam("carrierMorphModWheel");
+        handleMWButtonClick("carrierMorphModWheel", densityMWButtonBounds, event.getPosition(), densLastPolarity);
         return;
     }
 
@@ -2216,14 +2221,40 @@ void PLANETMainGui::toggleRoutingParam(const juce::String& paramID)
     repaint();
 }
 
-void PLANETMainGui::cycleModWheelParam(const juce::String& paramID)
+void PLANETMainGui::handleMWButtonClick(const juce::String& paramID, juce::Rectangle<int> bounds,
+                                        juce::Point<int> pos, int& lastPolarity)
 {
-    // Cycle a Colour-zone mod-wheel choice param Off(0) -> Normal(1) -> Inverse(2) -> Off.
-    if (auto* p = apvts.getParameter(paramID))
+    auto* p = apvts.getParameter(paramID);
+    if (p == nullptr) return;
+
+    int cur = (int)std::round(p->convertFrom0to1(p->getValue()));   // 0 Off / 1 Normal / 2 Inverse
+    bool triangleZone = pos.getX() >= bounds.getCentreX();
+
+    if (triangleZone)
     {
-        int cur  = (int)std::round(p->convertFrom0to1(p->getValue()));
-        int next = (cur + 1) % 3;
-        p->setValueNotifyingHost(p->convertTo0to1((float)next));
+        // Right half: flip polarity. If on, apply live; if off, just flip the remembered polarity
+        // (stays off) so it can be pre-set without connecting.
+        if (cur != 0)
+        {
+            lastPolarity = (cur == 1) ? 2 : 1;
+            p->setValueNotifyingHost(p->convertTo0to1((float)lastPolarity));
+        }
+        else
+        {
+            lastPolarity = (lastPolarity == 1) ? 2 : 1;
+        }
+    }
+    else
+    {
+        // Left "MW" half: toggle on/off. Turning off remembers the polarity; turning on restores it.
+        // Reaching Off is one clean click and never passes through a polarity flip.
+        if (cur == 0)
+            p->setValueNotifyingHost(p->convertTo0to1((float)lastPolarity));
+        else
+        {
+            lastPolarity = cur;
+            p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+        }
     }
     repaint();
 }
