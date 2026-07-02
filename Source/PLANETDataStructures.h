@@ -48,6 +48,8 @@ struct CoefficientParams {
     std::atomic<float>* velToHarmonicPtr = nullptr;     // Per-drawbar velocity to harmonic
     std::atomic<float>* lfoSyncPtr = nullptr;            // LFO tempo sync on/off (0=free, 1=synced)
     std::atomic<float>* lfoSyncDivPtr = nullptr;         // LFO sync division index (0-12)
+    std::atomic<float>* toPMPtr = nullptr;               // Route to phase-distortion path (0=off, 1=on)
+    std::atomic<float>* toOutPtr = nullptr;              // Route direct to output / additive path (0=off, 1=on)
 
     // Active values (cached at zero-crossings)
     float coefficient = 0.0f;
@@ -64,6 +66,8 @@ struct CoefficientParams {
     float velToHarmonic = 0.0f;                         // -100 to +100
     float lfoSync = 0.0f;                               // 0=free, 1=synced to tempo
     float lfoSyncDiv = 7.0f;                            // Sync division index (default 7 = 1/4 note)
+    float toPM = 1.0f;                                  // Route to phase distortion (default ON = classic PM operator)
+    float toOut = 0.0f;                                 // Route direct to output / additive (default OFF)
 
     // Initialize parameter pointers for this coefficient
     void initializePointers(juce::AudioProcessorValueTreeState& apvts, int coeffIndex) {
@@ -82,6 +86,8 @@ struct CoefficientParams {
         velToHarmonicPtr = apvts.getRawParameterValue(prefix + "VelToHarmonic");
         lfoSyncPtr = apvts.getRawParameterValue(prefix + "LFOSync");
         lfoSyncDivPtr = apvts.getRawParameterValue(prefix + "LFOSyncDiv");
+        toPMPtr = apvts.getRawParameterValue(prefix + "ToPM");
+        toOutPtr = apvts.getRawParameterValue(prefix + "ToOut");
     }
 
     // Update active values from parameter pointers
@@ -99,6 +105,8 @@ struct CoefficientParams {
         if (velToHarmonicPtr) velToHarmonic = velToHarmonicPtr->load();
         if (lfoSyncPtr) lfoSync = lfoSyncPtr->load();
         if (lfoSyncDivPtr) lfoSyncDiv = lfoSyncDivPtr->load();
+        if (toPMPtr) toPM = toPMPtr->load();
+        if (toOutPtr) toOut = toOutPtr->load();
     }
 
     // NEW: Update effective spectral multiplier with LFO modulation

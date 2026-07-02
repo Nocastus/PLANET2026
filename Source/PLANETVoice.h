@@ -234,8 +234,19 @@ private:
     // Per-voice coefficient grid (each voice calculates its own modulated coefficients)
     CoefficientGrid voiceCoeffGrid;
 
+    // ======================== PER-DRAWBAR ROUTING (F7/F8) ========================
+    // Two independent destinations per drawbar, snapshotted at the carrier-cycle boundary
+    // (alongside coefficient promotion) so toggling is click-free - at that boundary every
+    // sin(modPhases[i]) is exactly 0, so both the phase and the additive contribution are 0.
+    //   routePMGain[i] : 1 if the bar's k*sin term feeds the phase-distortion path, else 0.
+    //   routeAddAmp[i] : additive amplitude (clamped k_eff / 2) if routed direct-to-output, else 0.
+    // Both destinations off = muted (subsumes the old "mute" idea); both on = feeds both.
+    std::array<float, NUM_COEFFICIENTS> routePMGain;
+    std::array<float, NUM_COEFFICIENTS> routeAddAmp;
+
     // Helper functions
-    double applyPhaseDistortion(double normalizedPhase, float morphAmount, const CoefficientArray& globalParams);
+    double applyPhaseDistortion(double normalizedPhase, float morphAmount, const CoefficientArray& globalParams,
+        double& additiveOut);
     float generateLFOWaveform(double phase, float shape);
     float processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel,
         double deltaTime, float attackTime, float decayTime,

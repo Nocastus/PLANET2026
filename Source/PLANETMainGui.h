@@ -260,6 +260,18 @@ private:
     std::array<juce::Label, 10> fValueLabels;
     std::array<juce::Rectangle<int>, 10> drawbarColumnBounds;  // per-column bounds (set in resized()), used to outline the selected drawbar
     int selectedDrawbar = 0;
+
+    // ---- F7/F8 per-drawbar routing switches (console channel-strip paradigm) ----
+    // Two circles in a routing strip to the RIGHT of each fader (like a mixer's channel routing
+    // buttons): top "P" = route to phase-distortion path; bottom "A" = route direct to output
+    // (additive partial). Both on = feeds both; both off = muted. Bounds set in resized(), drawn in
+    // paintOverChildren(), clicked in mouseDown(). Live param values are read from cached atomics.
+    // First-pass visual state (circle colours + muted-column wash) — to be dialled in by eye.
+    std::array<juce::Rectangle<int>, 10> pmSwitchBounds;
+    std::array<juce::Rectangle<int>, 10> outSwitchBounds;
+    std::array<std::atomic<float>*, 10> toPMParamPtr {};
+    std::array<std::atomic<float>*, 10> toOutParamPtr {};
+    void toggleRoutingParam(const juce::String& paramID);
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
 
     // ---- LFO-rate "ping" pulse indicators (item #5) ----

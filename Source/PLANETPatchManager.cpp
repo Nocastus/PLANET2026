@@ -133,6 +133,8 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
     markdown << "# LFOSync = 0 (Free) or 1 (Tempo Sync)\n";
     markdown << "# LFOSyncDiv = 0-12 (4/1, 2/1, 1/1, 1/2., 1/2, 1/2T, 1/4., 1/4, 1/4T, 1/8., 1/8, 1/8T, 1/16)\n\n";
     markdown << "# VelToHarmonic = -100 to 100\n";
+    markdown << "# ToPM = 0 (off) or 1 (on) - route drawbar to phase-distortion path\n";
+    markdown << "# ToOut = 0 (off) or 1 (on) - route drawbar direct to output (additive partial)\n";
 
     // Generate all 10 drawbar sections
     for (int i = 1; i <= 10; ++i) {
@@ -152,7 +154,9 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
             "k" + drawbarNum + "LFOShape",
             "k" + drawbarNum + "LFORate",
             "k" + drawbarNum + "LFOSync",
-            "k" + drawbarNum + "LFOSyncDiv"
+            "k" + drawbarNum + "LFOSyncDiv",
+            "k" + drawbarNum + "ToPM",
+            "k" + drawbarNum + "ToOut"
         };
 
         for (const auto& paramID : drawbarParams) {
@@ -426,6 +430,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "VelToHarmonic"] = ParameterRange(-100.0f, 100.0f);
         ranges[prefix + "LFOSync"] = ParameterRange(0.0f, 1.0f);
         ranges[prefix + "LFOSyncDiv"] = ParameterRange(0.0f, 12.0f);
+        ranges[prefix + "ToPM"] = ParameterRange(0.0f, 1.0f);
+        ranges[prefix + "ToOut"] = ParameterRange(0.0f, 1.0f);
     }
 
     return ranges;
@@ -433,7 +439,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
 
 juce::String PLANETPatchManager::formatParameterValue(float value, const juce::String& parameterID) {
     // Integer parameters
-    if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv") || parameterID == "punchFrequency") {
+    if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv")
+        || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID == "punchFrequency") {
         return juce::String((int)value);
     }
 

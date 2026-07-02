@@ -234,6 +234,33 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k10LFOSyncDiv", "K10 LFO Sync Div",
                 juce::NormalisableRange<float>(0.0f, 12.0f, 1.0f), 7.0f),
 
+            // ======================== PER-DRAWBAR ROUTING SWITCHES (F7/F8) ========================
+            // Two independent destinations per drawbar. ToPM = feed the phase-distortion path
+            // (classic PM operator); ToOut = add straight to the output (additive partial at
+            // harmonic f). Default ToPM=1 / ToOut=0 reproduces the old engine exactly, so existing
+            // patches are bit-identical. Both off = muted; both on = the bar feeds both paths.
+            std::make_unique<juce::AudioParameterFloat>("k1ToPM",  "K1 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2ToPM",  "K2 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3ToPM",  "K3 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4ToPM",  "K4 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5ToPM",  "K5 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6ToPM",  "K6 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7ToPM",  "K7 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8ToPM",  "K8 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9ToPM",  "K9 -> Phase Dist",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10ToPM", "K10 -> Phase Dist", juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f),
+
+            std::make_unique<juce::AudioParameterFloat>("k1ToOut",  "K1 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2ToOut",  "K2 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3ToOut",  "K3 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4ToOut",  "K4 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5ToOut",  "K5 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6ToOut",  "K6 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7ToOut",  "K7 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8ToOut",  "K8 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9ToOut",  "K9 -> Direct Out",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10ToOut", "K10 -> Direct Out", juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+
             // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("input_f1", "Input F1 Spectral Multiplier", 0.5f, 30.0f, 1.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f2", "Input F2 Spectral Multiplier", 0.5f, 30.0f, 2.0f),
