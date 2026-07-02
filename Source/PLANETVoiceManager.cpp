@@ -84,7 +84,7 @@ void PLANETVoiceManager::stopAllNotes()
 
 float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams,
     float ampAttack, float ampDecay, float ampSustain, float ampRelease,
-    float brilliance, double sampleRate,
+    float brilliance, float carrierMorph, double sampleRate,
     float pitchWheelOffset,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
@@ -101,7 +101,7 @@ float PLANETVoiceManager::processNextSample(const CoefficientArray& globalParams
         if (voice.isActive()) {
             float voiceSample = voice.processNextSample(globalParams,
                 ampAttack, ampDecay, ampSustain, ampRelease,
-                brilliance, sampleRate,
+                brilliance, carrierMorph, sampleRate,
                 pitchWheelOffset,
                 vibratoRate, vibratoDepth, vibratoFadeIn,
                 velToAmplitude, velToAttackTime, vintageAmount,

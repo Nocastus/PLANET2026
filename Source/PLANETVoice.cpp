@@ -269,7 +269,7 @@ void PLANETVoice::triggerRelease()
 
 float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float ampAttack, float ampDecay, float ampSustain, float ampRelease,
-    float brilliance, double sampleRate,
+    float brilliance, float carrierMorph, double sampleRate,
     float pitchWheelOffset,
     float vibratoRate, float vibratoDepth, float vibratoFadeIn,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
@@ -501,6 +501,11 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         // Cache brilliance value at cycle boundaries
         cachedVelocityBrilliance = brilliance;
 
+        // F5 Density: cache the carrier morph at the boundary too. Updating here is
+        // click-free - the carrier output is exactly 0 at the boundary (both sine and
+        // soft-saw LUTs are 0 at theta=0), so a step in the morph amount is inaudible.
+        cachedCarrierMorph = carrierMorph;
+
 
 
     }
@@ -518,9 +523,17 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
   // Use cached value instead of recalculating every sample
     float velocityAmplitude = cachedVelocityAmplitude;
 
-    // Use sine LUT for final synthesis (optimization)
+    // Carrier lookup, with the F5 Density morph sine -> soft-saw. morph=0 takes the
+    // pure-sine fast path (bit-identical to the old engine, so patches are unchanged).
+    // The morph touches ONLY the carrier - the additive partials (additiveOut) stay pure
+    // sines by design (Gerard, 2 Jul 2026).
     const auto& sineLUT = SineLUT::getInstance();
-    auto sample = (sineLUT.lookup(distortedPhase) + (float)additiveOut) * ampEnvValue * velocityAmplitude;
+    float m = cachedCarrierMorph;
+    float carrierSample = (m <= 0.0f)
+        ? sineLUT.lookup(distortedPhase)
+        : (1.0f - m) * sineLUT.lookup(distortedPhase)
+          + m * SoftSawLUT::getInstance().lookup(distortedPhase);
+    auto sample = (carrierSample + (float)additiveOut) * ampEnvValue * velocityAmplitude;
 
 
     return sample;

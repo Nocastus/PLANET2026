@@ -100,8 +100,8 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
         { "velToAmplitude", "velToAttackTime", "vintageAmount" },
         patch);
 
-    markdown << generateParameterSection("Brilliance",
-        { "brilliance" },
+    markdown << generateParameterSection("Colour",
+        { "brilliance", "carrierMorph", "brillianceModWheel", "carrierMorphModWheel" },
         patch);
 
     markdown << generateParameterSection("Vibrato",
@@ -395,8 +395,11 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
     ranges["velToAttackTime"] = ParameterRange(0.0f, 100.0f);
     ranges["vintageAmount"] = ParameterRange(0.0f, 100.0f);
 
-    // Brilliance
+    // Colour (Brilliance + Density) + their mod-wheel modes (0 Off / 1 Normal / 2 Inverse)
     ranges["brilliance"] = ParameterRange(0.0f, 1.0f);
+    ranges["carrierMorph"] = ParameterRange(0.0f, 1.0f);
+    ranges["brillianceModWheel"] = ParameterRange(0.0f, 2.0f);
+    ranges["carrierMorphModWheel"] = ParameterRange(0.0f, 2.0f);
 
     // Vibrato
     ranges["vibratoRate"] = ParameterRange(0.5f, 12.0f);
@@ -440,7 +443,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
 juce::String PLANETPatchManager::formatParameterValue(float value, const juce::String& parameterID) {
     // Integer parameters
     if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv")
-        || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID == "punchFrequency") {
+        || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID.contains("ModWheel")
+        || parameterID == "punchFrequency") {
         return juce::String((int)value);
     }
 

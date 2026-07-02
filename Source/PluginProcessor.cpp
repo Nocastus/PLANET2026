@@ -57,6 +57,15 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
         {
             // ======================== BASIC PARAMETERS (1) ========================
             std::make_unique<juce::AudioParameterFloat>("brilliance", "Brilliance", 0.0f, 1.0f, 0.5f),
+            // F5 "Density": morph the carrier sine -> soft-saw (0 = pure sine, patch-compatible default).
+            std::make_unique<juce::AudioParameterFloat>("carrierMorph", "Density", 0.0f, 1.0f, 0.0f),
+            // Per-slider mod-wheel routing for the Colour zone. Off/Normal/Inverse. Brilliance
+            // defaults to Normal (preserves the previous always-on mod-wheel-brilliance behaviour);
+            // Density defaults to Off. Inverse flips the wheel direction (centre preserved).
+            std::make_unique<juce::AudioParameterChoice>("brillianceModWheel", "Brilliance Mod Wheel",
+                juce::StringArray{ "Off", "Normal", "Inverse" }, 1),
+            std::make_unique<juce::AudioParameterChoice>("carrierMorphModWheel", "Density Mod Wheel",
+                juce::StringArray{ "Off", "Normal", "Inverse" }, 0),
 
             // ======================== K1-K10 COEFFICIENT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("k1", "K1 Coefficient", juce::NormalisableRange<float>(-2.0f, 2.0f, 0.0f, kBipolarLowSkew, true), 0.0f),
@@ -326,6 +335,9 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 {
     // ======================== INITIALIZE BASIC PARAMETER POINTERS ========================
     brillianceParameter = parameters.getRawParameterValue("brilliance");
+    carrierMorphParameter = parameters.getRawParameterValue("carrierMorph");
+    brillianceModWheelParameter = parameters.getRawParameterValue("brillianceModWheel");
+    carrierMorphModWheelParameter = parameters.getRawParameterValue("carrierMorphModWheel");
 
     // ======================== INITIALIZE AMPLITUDE ENVELOPE PARAMETER POINTERS ========================
     ampEnvAttackTimeParameter = parameters.getRawParameterValue("ampEnvAttackTime");
@@ -514,25 +526,61 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
     // Update global parameters (shared by all voices)
     coefficients.updateAllActiveValues();
-    float sliderBrilliance = brillianceParameter->load();
-    float effectiveBrilliance = sliderBrilliance;  // Default to slider value
 
-    if (modWheelEngaged.load())
+    // Colour zone with per-slider mod-wheel routing (soft takeover). Each slider can be Off (1),
+    // Normal (2 - wheel up raises the value) or Inverse (2 - wheel up lowers it); the wheel centre
+    // (0.5) always maps to the slider value, so it's a soft-takeover sweep around the set point.
+    float sliderBrilliance   = brillianceParameter->load();
+    float sliderCarrierMorph = carrierMorphParameter->load();
+    int   brillMWMode = (int)brillianceModWheelParameter->load();     // 0 Off / 1 Normal / 2 Inverse
+    int   densMWMode  = (int)carrierMorphModWheelParameter->load();
+    bool  mwEngaged   = modWheelEngaged.load();
+    float M           = rawModWheelValue.load();                      // 0-1, centre 0.5
+
+    // Sync the latch state to the params on the first audio block (robust to host state-restore order).
+    if (!colourStateInitialised)
     {
-        float M = rawModWheelValue.load();  // 0-1, center at 0.5
-        float S = sliderBrilliance;
-
-        if (M < 0.5f)
-        {
-            // Below center: interpolate from 0 (at MW=0) to S (at MW=0.5)
-            effectiveBrilliance = M * 2.0f * S;
-        }
-        else
-        {
-            // At/above center: interpolate from S (at MW=0.5) to 1 (at MW=1)
-            effectiveBrilliance = S + (M - 0.5f) * 2.0f * (1.0f - S);
-        }
+        heldBrilliance = sliderBrilliance;   heldCarrierMorph = sliderCarrierMorph;
+        brillMWLatched = false;              densMWLatched = false;
+        prevBrillMWMode = brillMWMode;       prevDensMWMode = densMWMode;
+        colourStateInitialised = true;
     }
+
+    // Soft-takeover sweep about the slider set point. mode 1 Normal (wheel up raises), 2 Inverse
+    // (wheel up lowers); the wheel centre (0.5) always maps to the slider value.
+    auto sweep = [mwEngaged, M](float S, int mode) -> float {
+        if (!mwEngaged) return S;                                     // not picked up yet
+        float m = (mode == 2) ? (1.0f - M) : M;
+        return (m < 0.5f) ? (m * 2.0f * S)
+                          : (S + (m - 0.5f) * 2.0f * (1.0f - S));
+    };
+
+    // Per slider: while armed (Normal/Inverse) the value follows the wheel and is remembered; when
+    // the button is switched Off with the value off the thumb, that value LATCHES and is held (heard)
+    // until re-armed. Otherwise Off simply follows the slider.
+    auto computeColour = [&sweep](float slider, int mode, int& prevMode, bool& latched, float& held) -> float {
+        float eff;
+        if (mode != 0) {                                             // armed
+            eff = sweep(slider, mode);
+            held = eff;
+            latched = false;
+        } else {                                                     // Off = "disconnected"
+            if (prevMode != 0)                                       // just switched Off: latch iff off the thumb
+                latched = (std::abs(held - slider) > 0.001f);
+            eff = latched ? held : slider;
+        }
+        prevMode = mode;
+        return eff;
+    };
+
+    float effectiveBrilliance = computeColour(sliderBrilliance, brillMWMode, prevBrillMWMode, brillMWLatched, heldBrilliance);
+    // F5 Density morph amount (block-rate; the voice caches it at each carrier-cycle boundary,
+    // where the morph switch is click-free).
+    float carrierMorph        = computeColour(sliderCarrierMorph, densMWMode, prevDensMWMode, densMWLatched, heldCarrierMorph);
+
+    // Publish the effective values so the GUI diff indicators draw exactly what's heard.
+    effectiveBrillianceDisplay.store(effectiveBrilliance);
+    effectiveCarrierMorphDisplay.store(carrierMorph);
 
     // Get envelope exponential parameters
     float currentExponentialControl = exponentialControlParameter->load();
@@ -680,7 +728,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
         float mixedSample = voiceManager.processNextSample(coefficients,
             ampAttackTime, ampDecayTime, ampSustainLevel, ampReleaseTime,
-            effectiveBrilliance, getSampleRate(),
+            effectiveBrilliance, carrierMorph, getSampleRate(),
             pitchWheelSemitones,
             vibratoRate, vibratoDepth, vibratoFadeIn,
             velToAmplitude, velToAttackTime, vintageAmount,
@@ -819,6 +867,14 @@ void PLANETtest4AudioProcessor::loadPatch(const juce::File& patchFile) {
         // Reset mod wheel engagement for new patch
         modWheelEngaged.store(false);
         lastRawModWheelValue = 0.5f;
+
+        // Reset Colour-zone latch state to the freshly-loaded slider values (no stale latch).
+        heldBrilliance = brillianceParameter->load();
+        heldCarrierMorph = carrierMorphParameter->load();
+        brillMWLatched = false;
+        densMWLatched = false;
+        prevBrillMWMode = (int)brillianceModWheelParameter->load();
+        prevDensMWMode = (int)carrierMorphModWheelParameter->load();
 
         // Store patch metadata in processor
         currentPatchName = patch.patchName;

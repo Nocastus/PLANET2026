@@ -22,7 +22,9 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
         &audioProcessor.waveformSnapshotRequest,
         &audioProcessor.waveformActive,
         &audioProcessor.displayBPM,
-        &audioProcessor.transportPlaying);
+        &audioProcessor.transportPlaying,
+        &audioProcessor.effectiveBrillianceDisplay,
+        &audioProcessor.effectiveCarrierMorphDisplay);
 
     addAndMakeVisible(*mainGui);
 
@@ -30,7 +32,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     mainGui->setLifeVoicingParams(&audioProcessor.lifeVoicing);
 
     // Version label
-    versionLabel.setText("v0.5.1", juce::dontSendNotification);
+    versionLabel.setText("v0.6.0", juce::dontSendNotification);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey.withAlpha(0.6f));
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setFont(juce::Font(11.0f));
