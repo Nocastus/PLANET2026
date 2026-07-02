@@ -344,8 +344,11 @@ a classic subtractive synth?) and a set of **standalone features**. The `F#` num
 they're grouped here by theme rather than in numeric order.
 
 **Engine-modification items go on forks (Gerard, 2 Jul 2026):** F5 (carrier), F7 (mute), F8 (additive
-mode), F9 (feedback) are all engine changes — each gets its own branch/worktree, merged back only after
-ear-approval. F7/F8 are expected to merge quickly; F5/F9 are open explorations that may never merge.
+mode), F9 (feedback), F10 (Hammond percussion), F11 (Leslie sim) are all engine changes — each gets its
+own branch/worktree, merged back only after ear-approval. F5/F9 are open explorations that may never
+merge. **F7+F8 are DONE — unified into one design and implemented together on branch `f8-additive-routing`,
+ear-approved 2 Jul 2026 (see their entries); awaiting merge.** F10/F11 grew out of that additive work and
+belong to the new **ENLIL** thread (see the ENLIL section below).
 
 ---
 
@@ -550,7 +553,13 @@ polyphony for thickness:
   detuned; per-stack stereo spread yes/no; does stack count want to be a patch parameter (likely yes).
   **Design pass with Gerard before building.**
 
-### F7. Per-drawbar mute (toggle a drawbar on/off without losing its setting)
+### F7. Per-drawbar mute → SUBSUMED into F8's routing ✅ IMPLEMENTED (2 Jul 2026, branch `f8-additive-routing`)
+**Unified with F8 (Gerard's call, 2 Jul 2026).** Rather than a standalone mute, F7 and F8 became **two
+per-drawbar routing switches** — "Shape" (→ phase-distortion path) and "Direct" (→ output / additive
+partial). **Mute = both switches off**, so the mute need is met without a dedicated control; both on =
+the bar feeds both paths. Ear-approved, awaiting merge. See F8 for the shared implementation. The
+original mute-specific design notes are kept below for history.
+
 **Idea (Gerard, 30 Jun 2026).** While sound-designing additively (e.g. building saws operator-by-operator),
 you want to A/B a single drawbar's contribution **without** zeroing its K/F/envelope and losing the setting.
 Add a per-drawbar mute that gates the operator's output while preserving all its values.
@@ -575,7 +584,17 @@ that would conflict — if it is, fall back to cmd/alt-click or a small dedicate
 ctrl-click is clutter-free but needs the learned gesture + a clear visual state; a tiny always-visible mute
 dot per drawbar is more discoverable at the cost of a little UI clutter (against ISHTAR's minimal aesthetic).
 
-### F8. Per-drawbar ADDITIVE mode (the architectural "hole in the middle" fix)
+### F8. Per-drawbar ADDITIVE mode (the architectural "hole in the middle" fix) ✅ IMPLEMENTED (with F7) — 2 Jul 2026
+**✅ Built + ear-approved 2 Jul 2026 ("the sound is fantastic"), branch `f8-additive-routing`, awaiting merge.**
+Shipped (unified with F7) as two per-drawbar switches `k{n}ToPM` / `k{n}ToOut` (defaults 1/0 → existing
+patches bit-identical). Each bar's `k·sin` term is computed once and gated to the phase path and/or summed
+into the output; additive amp = `clamp(k_eff, ±2)/2 · brilliance`, boundary-snapshotted so toggling is
+click-free (every `sin(modPhases[i])` is 0 at the carrier-cycle boundary). Params + patch save/load +
+`PLANETPatchManager` done. GUI = console channel-strip: two routing circles in a strip to the right of each
+fader, legends "Shape" / "Direct", filled = routed (drawbar colour), muted column (both off) gets a faint
+wash. This is the engine under the **ENLIL** Hammond work (see below). *Optional polish still open:* fade an
+additive partial as `f·f₀` approaches Nyquist. Original design notes below stand.
+
 **Idea (from the 1–2 Jul 2026 spectrum analysis with Gerard; design settled in that session — see
 memory `hole-in-middle-analysis`).** A per-drawbar toggle: instead of adding `k·sin(f·x)` to the
 carrier's *phase* (PM operator), the bar adds it to the *output* (additive partial). Directly fills
@@ -631,6 +650,66 @@ the fullness need with less risk: feedback needs stability care at high kFB (cha
 interacts with the per-cycle zero-crossing property (feedback breaks `sin(0)=0` at cycle
 boundaries — the click-free coefficient staging needs re-checking), and adds a genuinely new
 timbre dimension that deserves its own listening arc.
+
+---
+
+## ENLIL — a Hammond-organ voice folded into ISHTAR
+**Name (Gerard, 2 Jul 2026): ENLIL** — the Hammond-organ identity within ISHTAR (a sibling name to
+ISHTAR itself), after Gerard's own instrument, a 1969 Hammond **T202** spinet.
+
+**Where it came from.** F8's per-drawbar Direct (additive) mode makes ISHTAR behave as a tonewheel: a
+drawbar routed to Direct drops a pure sine partial ON harmonic f, so a set of drawbars at the Hammond
+footages *is* a drawbar registration. Confirmed by ear 2 Jul 2026 — clean, and convincing through the
+UAD Waterfall Leslie sim — good enough that Gerard flagged it may make the mooted **T202-sampling
+project redundant**: a sample is one frozen wheel-set; this is the live additive sum (responds to LIFE,
+brilliance, per-drawbar envelopes, per-partial routing). Starter patches shipped in
+`Patches/Hammond Experiments/`: Jimmy Smith, Full Organ, Gospel Bright, Mellow Flutes, Jazz Perc.
+
+**Hammond footage → ISHTAR F (all land on the 0.5 grid):** 16'→0.5, 5⅓'→1.5, 8'→1, 4'→2, 2⅔'→3, 2'→4,
+1⅗'→5, 1⅓'→6, 1'→8. DB1–9 in that order even mirror a real console left-to-right.
+
+**Carrier-fundamental finding (2 Jul 2026).** In Direct-ONLY patches (nothing routed to Shape) the
+carrier stays an undistorted sine and is ALWAYS present as a full 8' fundamental. The Hammond patches
+exploit this: leave DB3 (f=1) at 0 and let the carrier *be* the 8', with brilliance=1.0 so each full
+drawbar matches the carrier's level. **Possible feature (ties to F5):** a "carrier level / carrier off"
+control would let pure-additive patches set the fundamental independently — a natural companion to the
+F5 sine→soft-saw carrier morph; consider the two together.
+
+**Open question:** is ENLIL just a preset family riding the additive engine, or does it get its own
+mode/skin (Hammond-styled faceplate, footage labels on the drawbars, dedicated perc + Leslie controls)?
+Decide once F10 (perc) and F11 (Leslie) exist and it's clear how Hammond-specific they need to be.
+
+### F10. Hammond percussion (single-trigger)
+**Idea (Gerard, 2 Jul 2026).** Proper B3/C3-style percussion: a single decaying harmonic on the attack.
+The `Jazz Perc` patch already *fakes* it with a per-drawbar envelope (Direct drawbar at f=3, 2 ms attack →
+0.18 s decay → zero sustain), which proves the DSP — but it retriggers on **every** note because ISHTAR is
+per-voice. Real percussion is **single-trigger**: it sounds only on the first note of a legato phrase and
+re-arms only after all keys are released. A dedicated feature adds:
+- **Single-trigger logic** (the hard part) — track legato/held state across voices so percussion fires
+  only on the first key-down after all keys are up. Lives in `PLANETVoiceManager` (note-on gating).
+- **Controls** (classic B3): harmonic **2nd (4', f=2) / 3rd (2⅔', f=3)**; decay **fast / slow**; volume
+  **soft / normal**; real B3 also **cancels the 1'** and drops overall level a touch when perc is on.
+- Under the hood it's the additive/Direct path + a percussion envelope on the selected harmonic — the DSP
+  is done (see Jazz Perc); F10 is mostly the single-trigger control layer + UI + APVTS params (saved in patch).
+- **Engine change → fork** (voice-manager note-on gating).
+
+### F11. Leslie sim — T202 rotating-reflector type (NOT a 122 cabinet), integrated not standalone
+**Idea (Gerard, 2 Jul 2026).** If ENLIL is real, ISHTAR wants its own Leslie — but modelled on the
+**T202's built-in rotary**, which is unusual: a single **backward-facing loudspeaker with a rotating
+polystyrene reflector**, NOT the bass-drum + twin-horn system of a 122/147 cabinet. Heard from the
+player's seat it gives a **rotary sweep in a VERTICAL orientation, surrounding the player** — a very
+different spatial image from the horizontal horn/drum throw of a 122.
+- **Character to capture:** one rotating source (no separate bass-rotor / treble-horn split, no crossover),
+  so a more uniform Doppler + amplitude sweep, plus that enveloping vertical motion. Likely amplitude
+  tremolo + pitch/Doppler wobble + a moving reflection/comb, single rotor, with the vertical/surround
+  image rendered into the stereo field. Speed switch with realistic **ramp up / down (chorale ↔ tremolo,
+  and brake)**.
+- **Integrated, not standalone** (Gerard) — a built-in ISHTAR/ENLIL effect in the Effects zone alongside
+  detune / warmth / punch, not a separate Leslie plugin.
+- **Relationship to LIFE:** LIFE already supplies some aperiodic, Leslie-*like* motion (irregular doublet
+  beating) — a genuine partial substitute, noted by Gerard as "the motion the Leslie gives without the
+  regularity." F11 is the true spatial rotary; LIFE stays the no-two-notes-alike shimmer. They stack.
+- **Engine/DSP change → fork.**
 
 ---
 

@@ -27,6 +27,12 @@ PLANETVoice::PLANETVoice()
         modState.lfoPhase = 0.0;
         modState.lfoPhaseDelta = 0.0;
     }
+
+    // Routing defaults until the first cycle-boundary snapshot: all bars feed the phase
+    // path (classic PM), none go additive - matches the "first cycle is a pure sine"
+    // start behaviour (coefficient grid is zero until the first promotion anyway).
+    routePMGain.fill(1.0f);
+    routeAddAmp.fill(0.0f);
 }
 
 //==============================================================================
@@ -76,6 +82,11 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     doubletRatioA.fill(1.0);
     doubletRatioB.fill(1.0);
     doubletEngaged.fill(false);
+
+    // Reset routing to defaults for the first cycle (recomputed at the first cycle boundary);
+    // keeps a reused voice's opening cycle clean rather than carrying stale routing.
+    routePMGain.fill(1.0f);
+    routeAddAmp.fill(0.0f);
 
     {
         std::mt19937 lifeGen((uint32_t)lifeSeed);
@@ -467,7 +478,18 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 seed = seedStrength * velContribution * 0.5f;  // Max seed coefficient = 0.5
             }
 
-            stagedCoeffs[i] = finalCoeff * velScale + seed;
+            float stagedCoeff = finalCoeff * velScale + seed;
+            stagedCoeffs[i] = stagedCoeff;
+
+            // Snapshot per-drawbar routing at the cycle boundary (click-free, same as the
+            // coefficient promotion below). Additive amplitude = clamp(k_eff, -2..2) / 2 -
+            // a hard ceiling only against envelope/LFO/velocity overdrive; the fitted
+            // amplitude is otherwise linear (no soft-clip that would warp the partial).
+            // Brilliance (morphAmount) multiplies later, in applyPhaseDistortion.
+            routePMGain[i] = (globalParams[i].toPM >= 0.5f) ? 1.0f : 0.0f;
+            routeAddAmp[i] = (globalParams[i].toOut >= 0.5f)
+                ? juce::jlimit(-2.0f, 2.0f, stagedCoeff) * 0.5f
+                : 0.0f;
         }
 
         // Promote staged coefficients to active
@@ -487,15 +509,18 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     // Note: cachedVelocityBrilliance already includes base brilliance + velocity offset
     float velocityBrilliance = cachedVelocityBrilliance;
 
-    // Apply phase distortion using velocity-influenced brilliance and pre-calculated spectral multipliers
-    auto distortedPhase = applyPhaseDistortion(normalizedPhase, velocityBrilliance, globalParams);
+    // Apply phase distortion using velocity-influenced brilliance and pre-calculated spectral multipliers.
+    // additiveOut accumulates any drawbars routed direct-to-output (additive partials), summed with
+    // the carrier below and sharing the same amp-envelope / velocity scaling.
+    double additiveOut = 0.0;
+    auto distortedPhase = applyPhaseDistortion(normalizedPhase, velocityBrilliance, globalParams, additiveOut);
     // Apply user-controllable velocity to amplitude scaling
   // Use cached value instead of recalculating every sample
     float velocityAmplitude = cachedVelocityAmplitude;
 
     // Use sine LUT for final synthesis (optimization)
     const auto& sineLUT = SineLUT::getInstance();
-    auto sample = sineLUT.lookup(distortedPhase) * ampEnvValue * velocityAmplitude;
+    auto sample = (sineLUT.lookup(distortedPhase) + (float)additiveOut) * ampEnvValue * velocityAmplitude;
 
 
     return sample;
@@ -512,7 +537,7 @@ bool PLANETVoice::shouldBeRemoved() const
 
 // Simplified phase distortion function - direct spectral multiplier usage
 double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmount,
-    const CoefficientArray& globalParams)
+    const CoefficientArray& globalParams, double& additiveOut)
 {
     constexpr double twoPi = 2.0 * juce::MathConstants<double>::pi;
     auto x = normalizedPhase * twoPi;
@@ -522,10 +547,17 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
     const auto& sineLUT = SineLUT::getInstance();
 
     auto distortedPhase = x;
+    additiveOut = 0.0;
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
         const double f = globalParams[i].inputSpectralMultiplier;
 
+        // modWave is the drawbar's sin term for THIS sample (doublet-aware). It is computed
+        // once, then fed to either destination per the routing snapshot - so a bar can drive
+        // the carrier phase (PM), add straight to the output (additive partial at harmonic f),
+        // both, or neither (muted). The phase accumulators advance regardless of routing, so
+        // toggling a destination never jumps the partial's phase.
+        float modWave;
         if (doubletEngaged[i])
         {
             // Stage 3 doublet: two components either side of f, energy-shared by s.
@@ -534,8 +566,8 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // s = 0.5 beats through a true null; away from 0.5 it beats shallower with
             // a slight pitch wobble. Both are wanted flavours.
             const float sB = doubletMixB[i];
-            distortedPhase += k * ((1.0f - sB) * sineLUT.lookup(modPhases[i])
-                                 + sB          * sineLUT.lookup(modPhasesB[i]));
+            modWave = (1.0f - sB) * sineLUT.lookup(modPhases[i])
+                    + sB          * sineLUT.lookup(modPhasesB[i]);
             modPhases[i]  += f * doubletRatioA[i] * angleDelta;
             modPhasesB[i] += f * doubletRatioB[i] * angleDelta;
             while (modPhases[i]  >= twoPi) modPhases[i]  -= twoPi;
@@ -546,12 +578,20 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // Single-accumulator path (Stage 1): use-then-advance, so with integer f
             // this equals sin(f*x) exactly and LIFE-off patches are unchanged.
             // angleDelta already tracks vibrato / pitch-wheel / pitch-envelope.
-            distortedPhase += k * sineLUT.lookup(modPhases[i]);
+            modWave = sineLUT.lookup(modPhases[i]);
             modPhases[i] += f * angleDelta;
             // Multipliers go up to 30, so f*angleDelta can exceed 2pi on high notes;
             // a while-wrap stays correct where a single subtraction would not.
             while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
         }
+
+        // Phase-distortion path (routePMGain is 1 or 0). Default patches route every bar
+        // here, so with routePMGain[i] == 1 this is byte-identical to the old sum.
+        distortedPhase += routePMGain[i] * k * modWave;
+
+        // Additive path: routeAddAmp[i] is the pre-clamped amplitude (0 when not routed).
+        // Brilliance (morphAmount) multiplies here too, so the additive bound survives it.
+        additiveOut += routeAddAmp[i] * morphAmount * modWave;
     }
 
     return distortedPhase;

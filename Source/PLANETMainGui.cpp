@@ -63,6 +63,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         drawbarSliders[i].addMouseListener(this, false);
         drawbarSliders[i].setLookAndFeel(&drawbarLookAndFeel);  // Apply custom LookAndFeel for LFO feedback
         addAndMakeVisible(drawbarSliders[i]);
+
+        // Cache the routing-switch param atomics for live read while drawing the switches.
+        toPMParamPtr[i]  = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToPM");
+        toOutParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToOut");
     }
 
     // Set up F value labels (editable)
@@ -1539,6 +1543,50 @@ void PLANETMainGui::paintOverChildren(juce::Graphics& g)
         g.setColour(hl.withAlpha(0.9f));
         g.drawRoundedRectangle(tr, 4.0f, 3.0f);
     }
+
+    // ---- F7/F8 per-drawbar routing switches (console channel-strip paradigm) ----
+    // Two circles in a routing strip to the right of each fader, each with a legend label below:
+    // top circle -> phase-distortion path ("Shape"), bottom -> direct output / additive ("Direct").
+    // On = filled in the drawbar's colour; off = hollow/grey ring. Both off = the bar is muted,
+    // shown as a faint wash over the whole column. Circle size echoes the Ishtar-star centre.
+    for (int i = 0; i < 10; ++i)
+    {
+        const bool pmOn  = toPMParamPtr[i]  && toPMParamPtr[i]->load()  >= 0.5f;
+        const bool outOn = toOutParamPtr[i] && toOutParamPtr[i]->load() >= 0.5f;
+
+        // Muted (neither destination): dim the whole column so it reads as "off" at a glance.
+        if (!pmOn && !outOn && !drawbarColumnBounds[i].isEmpty())
+        {
+            g.setColour(juce::Colours::black.withAlpha(0.4f));
+            g.fillRoundedRectangle(drawbarColumnBounds[i].toFloat(), 4.0f);
+        }
+
+        auto drawSwitch = [&](juce::Rectangle<int> b, bool on, const juce::String& legend)
+        {
+            auto rf = b.toFloat();
+            if (on)
+            {
+                g.setColour(drawbarColours[i]);
+                g.fillEllipse(rf);
+            }
+            else
+            {
+                g.setColour(juce::Colour(0xff202020));
+                g.fillEllipse(rf);
+                g.setColour(juce::Colour(0xff666666));
+                g.drawEllipse(rf, 1.2f);
+            }
+
+            // Legend label below the circle (brightens when routed, to reinforce the state).
+            g.setFont(juce::Font(10.0f));
+            g.setColour(on ? juce::Colour(0xffd6d6d6) : juce::Colour(0xff8a8a8a));
+            g.drawText(legend, juce::Rectangle<int>(b.getCentreX() - 24, b.getBottom() + 1, 48, 12),
+                       juce::Justification::centred);
+        };
+
+        drawSwitch(pmSwitchBounds[i],  pmOn,  "Shape");
+        drawSwitch(outSwitchBounds[i], outOn, "Direct");
+    }
 }
 
 void PLANETMainGui::resized()
@@ -1557,15 +1605,36 @@ void PLANETMainGui::resized()
     int drawbarTop = zoneLabelH;
     int drawbarHeight = drawbarSectionHeight - drawbarMargin - drawbarTop - fLabelHeight - 5;
 
+    // Console channel-strip paradigm: fader on the left, routing controls in a strip to its right.
+    // The fader is narrowed and shifted left to open a dedicated routing strip on the right side
+    // of each column, holding the two routing circles + a legend label under each.
+    const int routeStripW  = 36;   // width reserved on the right of each column for the routing controls
+    const int faderLeftPad = 8;    // fader inset from the column's left edge
     for (int i = 0; i < 10; ++i)
     {
         int x = drawbarMargin + i * drawbarWidth;
-        fValueLabels[i].setBounds(x + 5, drawbarTop, drawbarWidth - 10, fLabelHeight);
-        drawbarSliders[i].setBounds(x + 10, drawbarTop + fLabelHeight + 5, drawbarWidth - 20, drawbarHeight);
+        int faderTop = drawbarTop + fLabelHeight + 5;
+        int faderW   = drawbarWidth - faderLeftPad - routeStripW - 4;  // leave the strip + a small gap
 
-        // Full column (F-value label + fader) — used to outline the selected drawbar in paintOverChildren()
+        fValueLabels[i].setBounds(x + 5, drawbarTop, drawbarWidth - 10, fLabelHeight);
+        drawbarSliders[i].setBounds(x + faderLeftPad, faderTop, faderW, drawbarHeight);
+
+        // Full column (F-value label + fader + routing strip) — outlines the selected drawbar
         drawbarColumnBounds[i] = juce::Rectangle<int>(x + 2, drawbarTop - 2,
             drawbarWidth - 4, fLabelHeight + 5 + drawbarHeight + 4);
+
+        // Two routing circles (~Ishtar-star-centre size), each with a legend label below it,
+        // stacked vertically in the right strip and centred on the fader travel. Top = phase-
+        // distortion path, bottom = direct/additive path. The label rects are derived from these
+        // circle bounds in paintOverChildren().
+        const int circleD    = 14;
+        const int groupH     = circleD + 2 + 12;   // circle + gap + legend label
+        const int gapBetween = 18;                 // space between the two labelled groups
+        const int totalH     = groupH * 2 + gapBetween;
+        const int startY     = faderTop + (drawbarHeight - totalH) / 2;
+        const int cx         = x + faderLeftPad + faderW + 4 + routeStripW / 2;  // centre of the routing strip
+        pmSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, startY,                       circleD, circleD);
+        outSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, startY + groupH + gapBetween, circleD, circleD);
     }
 
     // Position ADSR labels and value editors
@@ -1854,7 +1923,24 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
             return;
         }
     }
-    
+
+    // F7/F8 routing switches: two small squares per drawbar column, below the fader. A click
+    // toggles the destination without changing which drawbar is selected. (These sit on the
+    // parent background, so the event reaches here rather than a slider.)
+    for (int i = 0; i < 10; ++i)
+    {
+        if (pmSwitchBounds[i].contains(event.getPosition()))
+        {
+            toggleRoutingParam("k" + juce::String(i + 1) + "ToPM");
+            return;
+        }
+        if (outSwitchBounds[i].contains(event.getPosition()))
+        {
+            toggleRoutingParam("k" + juce::String(i + 1) + "ToOut");
+            return;
+        }
+    }
+
     float handleRadius = 10.0f;
     
     // Check harmonic envelope handles
@@ -2019,6 +2105,15 @@ int PLANETMainGui::drawbarColumnAt(juce::Point<int> p) const
         if (drawbarColumnBounds[i].contains(p))
             return i;
     return -1;
+}
+
+void PLANETMainGui::toggleRoutingParam(const juce::String& paramID)
+{
+    // Flip the 0/1 routing switch via the host (automatable / undoable / notifies listeners).
+    if (auto* p = apvts.getParameter(paramID))
+        p->setValueNotifyingHost(p->getValue() >= 0.5f ? 0.0f : 1.0f);
+
+    repaint();
 }
 
 void PLANETMainGui::copyEnvelopeParamsBetweenDrawbars(int from, int to)
