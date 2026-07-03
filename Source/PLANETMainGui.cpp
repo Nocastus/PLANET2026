@@ -502,6 +502,11 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // Pitch knobs
     setupKnob(pitchDistKnob, pitchDistLabel, "Distance", -12.0, 12.0, 0.0);
     setupKnob(pitchTimeKnob, pitchTimeLabel, "Time", 0.01, 5.0, 0.5);
+
+    // Portamento (F2a): glide-time knob + a Rate/Time mode toggle. 0 s = off. The knob shares the
+    // pitch zone with Distance/Time; the toggle is custom-painted (see paint()) to match the
+    // Colour-zone mod-wheel buttons it sits above.
+    setupKnob(portamentoTimeKnob, portamentoLabel, "Porta", 0.0, 5.0, 0.0);
     
     // Brilliance horizontal slider
     brillianceSlider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -593,6 +598,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     setupValueLabel(vibratoFadeValue, "2.00");
     setupValueLabel(pitchDistValue, "0.00");
     setupValueLabel(pitchTimeValue, "0.50");
+    setupValueLabel(portamentoValue, "0.00");
 
     // Wire up value display updates via onValueChange
     detuneAmountSlider.onValueChange = [this]() {
@@ -633,6 +639,9 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     pitchTimeKnob.onValueChange = [this]() {
         pitchTimeValue.setText(juce::String(pitchTimeKnob.getValue(), 2), juce::dontSendNotification);
         };
+    portamentoTimeKnob.onValueChange = [this]() {
+        portamentoValue.setText(juce::String(portamentoTimeKnob.getValue(), 2), juce::dontSendNotification);
+        };
     lfoSpeedKnob.onValueChange = [this]() {
         lfoSpeedValue.setText(juce::String(lfoSpeedKnob.getValue(), 2), juce::dontSendNotification);
         };
@@ -663,6 +672,11 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         apvts, "pitchEnvDistance", pitchDistKnob);
     pitchTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "pitchEnvTime", pitchTimeKnob);
+    portamentoTimeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "portamentoTime", portamentoTimeKnob);
+    // portamentoMode is a custom-painted toggle (no attachment): paint() reads the param, mouseDown()
+    // flips it via the host. Cache the pointer for paint().
+    portamentoModeParam = apvts.getRawParameterValue("portamentoMode");
     brillianceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "brilliance", brillianceSlider);
     carrierMorphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -922,8 +936,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(vibratoFadeValue, true);
     styleLabel(pitchDistLabel);
     styleLabel(pitchTimeLabel);
+    styleLabel(portamentoLabel);
     styleLabel(pitchDistValue, true);
     styleLabel(pitchTimeValue, true);
+    styleLabel(portamentoValue, true);
     styleLabel(brillianceMainLabel);
     styleLabel(brillianceValue, true);
     styleLabel(detuneAmountLabel);
@@ -974,6 +990,7 @@ PLANETMainGui::~PLANETMainGui()
     vibratoFadeKnob.setLookAndFeel(nullptr);
     pitchDistKnob.setLookAndFeel(nullptr);
     pitchTimeKnob.setLookAndFeel(nullptr);
+    portamentoTimeKnob.setLookAndFeel(nullptr);
     lfoSpeedKnob.setLookAndFeel(nullptr);
     lfoDepthKnob.setLookAndFeel(nullptr);
     velToDrawbarKnob.setLookAndFeel(nullptr);
@@ -1515,6 +1532,20 @@ void PLANETMainGui::paint(juce::Graphics& g)
     drawMWButton(brillianceMWButtonBounds, brillMode, brillLastPolarity);
     drawMWButton(densityMWButtonBounds,    densMode,  densLastPolarity);
 
+    // Portamento Rate/Time toggle (F2a) - same visual language as the MW buttons above it:
+    // dark/grey rounded rect = off = "Time" (the subtler default), accent fill = on = "Rate".
+    if (!portamentoModeButtonBounds.isEmpty())
+    {
+        auto rf = portamentoModeButtonBounds.toFloat();
+        bool rate = portamentoModeParam && portamentoModeParam->load() > 0.5f;
+        if (rate) { g.setColour(globalAccent); g.fillRoundedRectangle(rf, 3.0f); }
+        else      { g.setColour(juce::Colour(0xff202020)); g.fillRoundedRectangle(rf, 3.0f);
+                    g.setColour(juce::Colour(0xff555555)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
+        g.setColour(rate ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
+        g.setFont(11.0f);
+        g.drawText(rate ? "Rate" : "Time", portamentoModeButtonBounds, juce::Justification::centred);
+    }
+
     // ISHTAR name - aligned with left/right column divider
     g.setColour(accentColour.withAlpha(0.9f));
     g.setFont(amarnaSemiBold.withHeight(30.0f));
@@ -1892,40 +1923,55 @@ void PLANETMainGui::resized()
     int remainingHeight = mainHeight - waveformHeight;
     int rightSectionHeight = remainingHeight / 4;
     
-    // Vibrato section
-    int vibratoY = waveformHeight + 5 + zoneLabelH;
-    int vibratoKnobSpacing = rightContentWidth / 3;
+    // Vibrato + Pitch sections share one 3-knob row (F2a). The right-hand column - aligned above
+    // the Colour-zone mod-wheel buttons - holds the Portamento Rate/Time toggle in the Pitch row and
+    // is left empty in the Vibrato row (reserved for a future control). Both rows spread their knobs
+    // evenly in the space LEFT of that column, so the two rows line up vertically.
     int knobValueHeight = 20;
 
-    int vkx0 = rightX + (vibratoKnobSpacing - rightKnobSize) / 2;
-    vibratoRateLabel.setBounds(vkx0, vibratoY, rightKnobSize, 16);
-    vibratoRateKnob.setBounds(vkx0, vibratoY + 16, rightKnobSize, rightKnobSize);
-    vibratoRateValue.setBounds(vkx0 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+    // Right-hand reserved column X mirrors the Colour-section mod-wheel-button formula below.
+    const int mwBtnW_       = 38;
+    const int rightColX     = (rightX + 20) + (int)((rightContentWidth - 40) * 0.9f) + 4;
+    const int mwCenterX     = rightColX + mwBtnW_ / 2;
+    const int knobAreaRight = rightColX - 6;                  // small gap before the column
+    const int triKnobSpacing = (knobAreaRight - rightX) / 3;  // three evenly-spaced knob slots
 
-    int vkx1 = rightX + vibratoKnobSpacing + (vibratoKnobSpacing - rightKnobSize) / 2;
-    vibratoDepthLabel.setBounds(vkx1, vibratoY, rightKnobSize, 16);
-    vibratoDepthKnob.setBounds(vkx1, vibratoY + 16, rightKnobSize, rightKnobSize);
-    vibratoDepthValue.setBounds(vkx1 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+    auto triKnobX = [&](int i) {
+        return rightX + i * triKnobSpacing + (triKnobSpacing - rightKnobSize) / 2;
+    };
 
-    int vkx2 = rightX + vibratoKnobSpacing * 2 + (vibratoKnobSpacing - rightKnobSize) / 2;
-    vibratoFadeLabel.setBounds(vkx2, vibratoY, rightKnobSize, 16);
-    vibratoFadeKnob.setBounds(vkx2, vibratoY + 16, rightKnobSize, rightKnobSize);
-    vibratoFadeValue.setBounds(vkx2 + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
-    
-    // Pitch section
+    // ---- Vibrato section: Rate / Depth / Fade (right slot intentionally empty) ----
+    int vibratoY = waveformHeight + 5 + zoneLabelH;
+    juce::Slider* vibKnobs[3]  = { &vibratoRateKnob,  &vibratoDepthKnob,  &vibratoFadeKnob };
+    juce::Label*  vibLabels[3] = { &vibratoRateLabel, &vibratoDepthLabel, &vibratoFadeLabel };
+    juce::Label*  vibValues[3] = { &vibratoRateValue, &vibratoDepthValue, &vibratoFadeValue };
+    for (int i = 0; i < 3; ++i) {
+        int x = triKnobX(i);
+        vibLabels[i]->setBounds(x, vibratoY, rightKnobSize, 16);
+        vibKnobs[i]->setBounds(x, vibratoY + 16, rightKnobSize, rightKnobSize);
+        vibValues[i]->setBounds(x + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+    }
+
+    // ---- Pitch section: Distance / Time / Porta, with the Rate/Time toggle in the right column ----
     int pitchY = waveformHeight + rightSectionHeight + 5 + zoneLabelH;
-    int pitchKnobSpacing = rightContentWidth / 2;
+    juce::Slider* pitchKnobs[3]  = { &pitchDistKnob,  &pitchTimeKnob,  &portamentoTimeKnob };
+    juce::Label*  pitchLabels[3] = { &pitchDistLabel, &pitchTimeLabel, &portamentoLabel };
+    juce::Label*  pitchValues[3] = { &pitchDistValue, &pitchTimeValue, &portamentoValue };
+    for (int i = 0; i < 3; ++i) {
+        int x = triKnobX(i);
+        pitchLabels[i]->setBounds(x, pitchY, rightKnobSize, 16);
+        pitchKnobs[i]->setBounds(x, pitchY + 16, rightKnobSize, rightKnobSize);
+        pitchValues[i]->setBounds(x + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+    }
 
-    int pkx0 = rightX + (pitchKnobSpacing - rightKnobSize) / 2;
-    pitchDistLabel.setBounds(pkx0, pitchY, rightKnobSize, 16);
-    pitchDistKnob.setBounds(pkx0, pitchY + 16, rightKnobSize, rightKnobSize);
-    pitchDistValue.setBounds(pkx0 + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
+    // Rate/Time toggle: same size as the Colour-zone MW buttons and left-aligned to the same column
+    // (mwCenterX - mwBtnW_/2 == rightColX), so it sits directly above them. Vertically centred on the
+    // Pitch-row knob bodies. Drawn in paint(); hit-tested in mouseDown().
+    const int toggleH = 20;   // == mwBtnH below
+    portamentoModeButtonBounds = juce::Rectangle<int>(mwCenterX - mwBtnW_ / 2,
+                                                      pitchY + 16 + (rightKnobSize - toggleH) / 2,
+                                                      mwBtnW_, toggleH);
 
-    int pkx1 = rightX + pitchKnobSpacing + (pitchKnobSpacing - rightKnobSize) / 2;
-    pitchTimeLabel.setBounds(pkx1, pitchY, rightKnobSize, 16);
-    pitchTimeKnob.setBounds(pkx1, pitchY + 16, rightKnobSize, rightKnobSize);
-    pitchTimeValue.setBounds(pkx1 + 10, pitchY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
-    
     // Colour section: Brilliance + Density, each a horizontal slider with its label ABOVE it,
     // left-aligned. The pair sits low in the zone; sliders are shortened 10% at the right end
     // (left end fixed) to leave room for a future per-slider "Mod wheel" button.
@@ -2078,6 +2124,13 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
     if (densityMWButtonBounds.contains(event.getPosition()))
     {
         handleMWButtonClick("carrierMorphModWheel", densityMWButtonBounds, event.getPosition(), densLastPolarity);
+        return;
+    }
+
+    // Portamento Rate/Time toggle: a plain binary flip via the host (like the routing switches).
+    if (portamentoModeButtonBounds.contains(event.getPosition()))
+    {
+        toggleRoutingParam("portamentoMode");
         return;
     }
 

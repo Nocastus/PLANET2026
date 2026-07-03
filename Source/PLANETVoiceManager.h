@@ -44,7 +44,8 @@ public:
 
     // Voice control
     void startNote(int noteNumber, float velocity, double sampleRate, float pitchWheelOffset = 0.0f, float vintageAmount = 0.0f,
-        float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0);
+        float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0,
+        float portamentoTime = 0.0f, int portamentoMode = 0);
     void stopNote(int noteNumber, bool sustainPedalDown = false);  // Updated
     void releaseSustainedNotes();  // New method
     void stopAllNotes();

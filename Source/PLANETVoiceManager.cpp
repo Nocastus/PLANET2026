@@ -23,7 +23,8 @@ PLANETVoiceManager::PLANETVoiceManager()
 //==============================================================================
 
 void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sampleRate, float currentPitchWheelOffset, float vintageAmount,
-    float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed)
+    float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed,
+    float portamentoTime, int portamentoMode)
 {
     // ======================== F10: resolve single-trigger firing for THIS note-on ========================
     // A note-on that finds polyphony at 0 starts a new phrase: reload the grace window. Any note-on
@@ -63,7 +64,14 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
     }
 
     if (voice) {
-        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance, lifeAmount, lifeSeed, &drawbarFire);
+        // Portamento origin (F2a): in the per-voice-history model, a voice glides from the pitch
+        // IT last played, so we read the chosen voice's live glide pitch BEFORE startNote()
+        // overwrites it. --- MODEL-2 PIVOT POINT: to switch to legato/nearest-held glide, replace
+        // this one line with the nearest currently-held note's pitch; nothing else changes. ---
+        float glideFromHz = voice->getCurrentGlidePitchHz();
+
+        voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance, lifeAmount, lifeSeed, &drawbarFire,
+            glideFromHz, portamentoTime, portamentoMode);
 
         // Apply current pitch wheel state to new voice
         voice->setPitchOffset(currentPitchWheelOffset);

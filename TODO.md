@@ -193,8 +193,16 @@ different spatial image from the horizontal horn/drum throw of a 122.
 pitch features. Current pitch is hardcoded equal temperament at
 [`Source/PLANETVoice.cpp:44`](Source/PLANETVoice.cpp#L44): `440 * 2^((note-69)/12)`.
 
-**F2a. Portamento (glide).** ⚠️ Needs a design discussion before coding — polyphonic glide is
-not one obvious thing.
+**F2a. Portamento (glide).** ✅ *Designed & built 3 Jul 2026 (compiles clean; not yet ear-tested).*
+Chosen: **per-voice history** (each voice glides from its own last pitch — the deliberately
+less-predictable counterpart to the pitch envelope's parallel slide), **always** glide, **Rate/Time**
+a user toggle. Glide reuses the pitch-envelope machinery (signed per-voice offset decaying to 0). The
+glide origin is passed into `PLANETVoice::startNote` and computed in `PLANETVoiceManager::startNote`
+(`glideFromHz = voice->getCurrentGlidePitchHz()`) — **that one line is the pivot to a legato/nearest-held
+model** if the per-voice feel proves too chaotic. UI: Porta knob in the pitch zone (Distance/Time/Porta)
++ Rate/Time toggle above the Colour-zone MW buttons. Next: ear-test (chord bloom, big leaps), tune
+curve/range. See memory `portamento-design`. Original design notes below.
+
 - **Gerard's first thought (2 Jul 2026):** start with **"each voice slides to the next use of the same
   voice"** — poly glide where each voice glides from *its own* previous pitch. Note the **Pitch Envelope
   already gives the "all voices slide in parallel" flavour**, so portamento should target the per-voice

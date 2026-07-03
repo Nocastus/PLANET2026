@@ -162,7 +162,16 @@ public:
     // Idle/silent (a Single-trig drawbar that must not fire on this note). null = all fire.
     void startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount = 0.0f,
         float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0,
-        const std::array<bool, NUM_COEFFICIENTS>* drawbarFire = nullptr);
+        const std::array<bool, NUM_COEFFICIENTS>* drawbarFire = nullptr,
+        float glideFromHz = 0.0f, float portamentoTime = 0.0f, int portamentoMode = 0);
+
+    // Portamento (F2a): the live pitch this voice would glide FROM if reused now - its base
+    // pitch plus any still-decaying glide, EXCLUDING vibrato/wheel (those are momentary, not a
+    // glide origin). Returns 0 if the voice has never sounded (no glide-from-silence). The voice
+    // manager reads this before startNote() overwrites the pitch. It is deliberately the ONLY
+    // thing the manager needs to know the origin from: to pivot from per-voice history to a
+    // legato/nearest-held model, change what the manager passes as glideFromHz - not this voice.
+    float getCurrentGlidePitchHz() const;
     void stopNote(bool sustainPedalDown = false);  // KEEP ONLY THIS ONE
     void setLifeVoicingParams(const LifeVoicingParams* p) { lifeVoicing = p; }
     void triggerRelease();  // New method for forced release
@@ -284,6 +293,19 @@ private:
     EnvelopeStage pitchEnvStage = EnvelopeStage::Idle;
     double pitchEnvTime = 0.0;
     float pitchEnvLevel = 0.0f;
+
+    // ======================== PORTAMENTO / GLIDE (F2a) ========================
+    // Mechanically identical to the pitch attack envelope (a semitone offset that decays to
+    // zero over a set time, same normalised-exp curve), but the start distance is per-voice and
+    // signed: set at note-on to (originPitch - thisNote), so each voice slides FROM its own last
+    // pitch. glideLevel runs 0->1 over glideTimeSec; level 1 (the default) means "arrived" = no
+    // glide, so a note with portamento off costs nothing but a compare. hasEverSounded gates the
+    // first note (nothing to glide from).
+    float  glideStartOffset = 0.0f;   // signed semitones (origin - target), latched at note-on
+    float  glideLevel       = 1.0f;   // 0..1; 1 = arrived
+    double glideTime        = 0.0;    // elapsed seconds since note-on
+    double glideTimeSec     = 0.0;    // resolved glide duration for THIS note (Time/Rate applied)
+    bool   hasEverSounded   = false;  // false until the voice's first startNote()
 
     // Per-voice coefficient grid (each voice calculates its own modulated coefficients)
     CoefficientGrid voiceCoeffGrid;

@@ -412,9 +412,9 @@ private:
     juce::Slider vibratoRateKnob, vibratoDepthKnob, vibratoFadeKnob;
     juce::Label vibratoRateLabel, vibratoDepthLabel, vibratoFadeLabel;
     
-    // Pitch section
-    juce::Slider pitchDistKnob, pitchTimeKnob;
-    juce::Label pitchDistLabel, pitchTimeLabel;
+    // Pitch section (+ Portamento, F2a: Porta knob and a Rate/Time mode toggle)
+    juce::Slider pitchDistKnob, pitchTimeKnob, portamentoTimeKnob;
+    juce::Label pitchDistLabel, pitchTimeLabel, portamentoLabel;
     
     // Colour section (Brilliance + Density/carrier-morph)
     juce::Slider brillianceSlider;
@@ -431,8 +431,13 @@ private:
     // big up/down triangle that flips Normal<->Inverse. So disconnecting (-> Off) is one clean click on
     // the MW half and never passes through a polarity flip. lastPolarity remembers 1/2 across Off.
     juce::Rectangle<int> brillianceMWButtonBounds, densityMWButtonBounds;
+    // Portamento Rate/Time toggle (F2a): custom-painted to match the MW buttons above it - dark/grey
+    // = off = "Time" (the subtler default), accent fill = on = "Rate". Drawn in paint(), hit-tested
+    // in mouseDown(), toggled via toggleRoutingParam() like the routing switches.
+    juce::Rectangle<int> portamentoModeButtonBounds;
     std::atomic<float>* brillianceMWParam = nullptr;   // 0 Off / 1 Normal / 2 Inverse
     std::atomic<float>* densityMWParam = nullptr;
+    std::atomic<float>* portamentoModeParam = nullptr; // 0 = Time (off) / 1 = Rate (on)
     int brillLastPolarity = 1;
     int densLastPolarity = 1;
     void handleMWButtonClick(const juce::String& paramID, juce::Rectangle<int> bounds,
@@ -463,7 +468,7 @@ private:
     juce::Label detuneAmountValue, detuneMixValue, warmthValue, punchValue, punchFrequencyValue;
     juce::Label brillianceValue;
     juce::Label vibratoRateValue, vibratoDepthValue, vibratoFadeValue;
-    juce::Label pitchDistValue, pitchTimeValue;
+    juce::Label pitchDistValue, pitchTimeValue, portamentoValue;
 
     // ======================== PATCH MANAGEMENT UI ========================
     juce::TextButton loadPatchButton;
@@ -492,6 +497,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> vibratoFadeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchDistAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchTimeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> portamentoTimeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> brillianceAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> carrierMorphAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> detuneAmountAttachment;

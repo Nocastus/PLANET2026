@@ -175,6 +175,12 @@ private:
     std::atomic<float>* pitchEnvDistanceParameter = nullptr;
     std::atomic<float>* pitchEnvTimeParameter = nullptr;
 
+    // ======================== PORTAMENTO (F2a) ========================
+    // Glide time (seconds in Time mode; seconds-per-octave in Rate mode). 0 = off.
+    // Mode: false = constant-Time, true = constant-Rate.
+    std::atomic<float>* portamentoTimeParameter = nullptr;
+    std::atomic<float>* portamentoModeParameter = nullptr;
+
     // ======================== EFFECTS PARAMETER POINTERS ========================
     std::atomic<float>* detuneAmountParameter = nullptr;
     std::atomic<float>* detuneMixParameter = nullptr;

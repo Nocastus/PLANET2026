@@ -41,7 +41,8 @@ PLANETVoice::PLANETVoice()
 
 void PLANETVoice::startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount,
     float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed,
-    const std::array<bool, NUM_COEFFICIENTS>* drawbarFire)
+    const std::array<bool, NUM_COEFFICIENTS>* drawbarFire,
+    float glideFromHz, float portamentoTime, int portamentoMode)
 {
     // [Existing initialization code...]
     currentNoteNumber = noteNumber;
@@ -67,6 +68,31 @@ if (vintageAmount > 0.0f) {
 
 currentFrequency = basePitchFrequency;
 angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRate;
+
+    // ---- Portamento glide setup (F2a) ----
+    // Default to "arrived" (no glide); engage only with a valid origin, a non-zero time, and a
+    // real interval to cover. glideFromHz already carries the origin voice's in-progress glide,
+    // so a voice reused mid-glide continues smoothly rather than jumping to a fresh origin.
+    glideStartOffset = 0.0f;
+    glideLevel       = 1.0f;
+    glideTime        = 0.0;
+    glideTimeSec     = 0.0;
+    if (glideFromHz > 0.0f && portamentoTime > 0.0f && basePitchFrequency > 0.0)
+    {
+        float offs = 12.0f * std::log2(glideFromHz / (float)basePitchFrequency);  // signed semitones
+        if (std::abs(offs) > 1.0e-4f)
+        {
+            glideStartOffset = offs;
+            // Time mode: fixed duration for every glide. Rate mode: portamentoTime is
+            // seconds-per-octave, so the duration scales with the interval (wide leaps glide longer).
+            glideTimeSec = (portamentoMode == 1)
+                         ? (double)portamentoTime * (std::abs(offs) / 12.0)
+                         : (double)portamentoTime;
+            if (glideTimeSec > 1.0e-4)
+                glideLevel = 0.0f;   // begin the glide (level runs 0 -> 1 across glideTimeSec)
+        }
+    }
+    hasEverSounded = true;
 
     totalPitchOffset = 0.0f;
     currentAngle = 0.0;
@@ -230,6 +256,19 @@ void PLANETVoice::updatePitchFromOffset(double sampleRate)
     angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRate;
 }
 
+// Portamento (F2a): the pitch a reused voice should glide FROM - base pitch plus any glide still
+// in progress, but WITHOUT vibrato/wheel (those are momentary displacements, not a glide origin).
+float PLANETVoice::getCurrentGlidePitchHz() const
+{
+    if (!hasEverSounded)
+        return 0.0f;   // never played - nothing to glide from (no glide-from-silence)
+
+    // (1 - glideLevel) * glideStartOffset is the still-decaying part of the last glide; it is 0
+    // once a note has arrived, so this returns the plain base pitch for a settled voice.
+    float glideSemis = (1.0f - glideLevel) * glideStartOffset;
+    return (float)(basePitchFrequency * std::pow(2.0, glideSemis / 12.0));
+}
+
 
 void PLANETVoice::stopNote(bool sustainPedalDown)
 {
@@ -373,7 +412,26 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         float pitchEnvOffset = (1.0f - pitchEnvValue) * pitchEnvDistance;
         addPitchOffset(pitchEnvOffset);    // Add pitch envelope
 
-
+        // ======================== PORTAMENTO GLIDE (F2a) ========================
+        // Same normalised-exp curve as the pitch envelope above (fast start, graceful slow-in,
+        // lands EXACTLY in tune at glideTimeSec), but the distance is the per-voice, signed
+        // glideStartOffset set at note-on. Advanced per carrier cycle, like the pitch envelope.
+        if (glideTimeSec <= 1.0e-4) {
+            glideLevel = 1.0f;
+        }
+        else if (glideLevel < 1.0f) {
+            glideTime += cycleDeltaTime;
+            if (glideTime >= glideTimeSec) {
+                glideLevel = 1.0f;
+            }
+            else {
+                float g01 = (float)(glideTime / glideTimeSec);
+                glideLevel = (1.0f - std::exp(-kPitchEnvCurve * g01))
+                           / (1.0f - std::exp(-kPitchEnvCurve));
+            }
+        }
+        float glideOffset = (1.0f - glideLevel) * glideStartOffset;
+        addPitchOffset(glideOffset);       // Add portamento glide
 
         updatePitchFromOffset(sampleRate); // Apply total pitch offset
 

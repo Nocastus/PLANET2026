@@ -326,6 +326,17 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("pitchEnvTime", "Pitch Env Time",
                 juce::NormalisableRange<float>(0.01f, 5.0f, 0.0f, 0.35f), 0.5f),
 
+            // ======================== PORTAMENTO PARAMETERS (F2a) ========================
+            // Per-voice glide: each voice slides from its own last pitch to the new note.
+            // Time = glide duration; interpretation depends on mode (see portamentoMode).
+            // 0 s = off, so existing patches (which default to 0) are unaffected. Same skewed
+            // range as the pitch envelope - the useful fast glides live below ~0.5 s.
+            std::make_unique<juce::AudioParameterFloat>("portamentoTime", "Portamento Time",
+                juce::NormalisableRange<float>(0.0f, 5.0f, 0.0f, 0.35f), 0.0f),
+            // false = constant-Time (every glide takes portamentoTime regardless of interval);
+            // true  = constant-Rate (portamentoTime is seconds-per-octave, so wide leaps glide longer).
+            std::make_unique<juce::AudioParameterBool>("portamentoMode", "Portamento Rate Mode", false),
+
             // ======================== AMPLITUDE ENVELOPE PARAMETERS (4) ========================
             std::make_unique<juce::AudioParameterFloat>("ampEnvAttackTime", "Amp Env Attack Time", 0.001f, 10.0f, 0.1f),
             std::make_unique<juce::AudioParameterFloat>("ampEnvDecayTime", "Amp Env Decay Time", 0.001f, 10.0f, 0.5f),
@@ -369,6 +380,10 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     // ======================== INITIALIZE PITCH ENVELOPE PARAMETER POINTERS ========================
     pitchEnvDistanceParameter = parameters.getRawParameterValue("pitchEnvDistance");
     pitchEnvTimeParameter = parameters.getRawParameterValue("pitchEnvTime");
+
+    // ======================== INITIALIZE PORTAMENTO PARAMETER POINTERS ========================
+    portamentoTimeParameter = parameters.getRawParameterValue("portamentoTime");
+    portamentoModeParameter = parameters.getRawParameterValue("portamentoMode");
 
     // ======================== INITIALIZE VELOCITY SCALING PARAMETER POINTERS ========================
     velToAmplitudeParameter = parameters.getRawParameterValue("velToAmplitude");
@@ -626,6 +641,11 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float pitchEnvDistance = pitchEnvDistanceParameter->load();
     float pitchAttackTime = pitchEnvTimeParameter->load();
 
+    // Portamento (F2a): latched into each voice at note-on, so held glides aren't disturbed
+    // by a mid-glide knob move. Mode: >0.5 = constant-Rate, else constant-Time.
+    float portamentoTime = portamentoTimeParameter->load();
+    int   portamentoMode = (portamentoModeParameter->load() > 0.5f) ? 1 : 0;
+
 
     // Apply a single MIDI message. Defined here, but invoked from the interleave loop
     // below at each event's true sample offset rather than all-at-once at block start.
@@ -644,7 +664,8 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
                 float pitchWheelSemitones = currentPitchWheelValue * pitchWheelRange;
 
                 voiceManager.startNote(transposedNote, velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
-                    velToAmplitude, brillianceParameter->load(), lifeAmount, lifeSeed);
+                    velToAmplitude, brillianceParameter->load(), lifeAmount, lifeSeed,
+                    portamentoTime, portamentoMode);
             }
             else
             {
