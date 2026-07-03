@@ -184,7 +184,8 @@ public:
         std::atomic<double>* bpmPtr = nullptr,
         std::atomic<bool>* transportPlayingPtr = nullptr,
         std::atomic<float>* effectiveBrilliancePtr = nullptr,
-        std::atomic<float>* effectiveCarrierMorphPtr = nullptr);
+        std::atomic<float>* effectiveCarrierMorphPtr = nullptr,
+        std::atomic<float>* outputPeakPtr = nullptr);
     ~PLANETMainGui() override;
 
     void paint(juce::Graphics&) override;
@@ -447,6 +448,13 @@ private:
     // draw exactly what's heard. Also cached for change-detection in the timer.
     std::atomic<float>* effectiveBrillianceValue = nullptr;
     std::atomic<float>* effectiveCarrierMorphValue = nullptr;
+
+    // Output-saturation meter state (F12). outputPeakValue is the processor's running peak (GUI
+    // exchanges it to 0 each frame). meterDisplayPeak is a GUI-side ballistic (fast attack, slow
+    // release) so amber/green track smoothly; redHoldFramesLeft latches red for a few seconds.
+    std::atomic<float>* outputPeakValue = nullptr;
+    float meterDisplayPeak = 0.0f;
+    int   redHoldFramesLeft = 0;
     float cachedEffectiveCarrierMorph = 0.0f;
 
     // Mod wheel tracking
@@ -483,7 +491,17 @@ private:
     juce::Label transposeLabel;
     juce::Label transposeValue;
 
+    // Unison controls in the patch bar (F6): Stack = editable numeric 1-4 (like Trans); Detune =
+    // horizontal slider next to Vol. Placed here so Stack & Vol sit adjacent (a stack change usually
+    // wants a volume tweak). Plus a static version label at the far right.
+    juce::Label unisonVoicesLabel;    // "Stack"
+    juce::Label unisonVoicesValue;    // editable 1-4
+    juce::Slider unisonDetuneSlider;
+    juce::Label unisonDetuneLabel;    // "Detune"
+    juce::Label versionLabel;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterVolumeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> unisonDetuneAttachment;
 
     void loadPatchButtonClicked();
     void savePatchButtonClicked();

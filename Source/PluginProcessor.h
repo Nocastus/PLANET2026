@@ -46,6 +46,11 @@ public:
     std::atomic<float> effectiveBrillianceDisplay{ 0.5f };
     std::atomic<float> effectiveCarrierMorphDisplay{ 0.0f };
 
+    // Output-saturation meter (F12): peak |sample| of the final output since the GUI last read it.
+    // Audio thread keeps the running max; the GUI exchanges it to 0 each frame (single producer /
+    // single consumer), so no short inter-frame peak is missed. Drives the Vol thumb traffic light.
+    std::atomic<float> outputPeak{ 0.0f };
+
     // LIFE voicing dev scaffold (see PLANETDataStructures.h) - written by the dev
     // panel in the GUI, read per-cycle by the voices. Not part of saved state.
     LifeVoicingParams lifeVoicing;
@@ -180,6 +185,11 @@ private:
     // Mode: false = constant-Time, true = constant-Rate.
     std::atomic<float>* portamentoTimeParameter = nullptr;
     std::atomic<float>* portamentoModeParameter = nullptr;
+
+    // ======================== VOICE STACKING / UNISON (F6) ========================
+    // Voices per note (1-4) and total detune spread in cents (symmetric, sums to zero).
+    std::atomic<float>* unisonVoicesParameter = nullptr;
+    std::atomic<float>* unisonDetuneParameter = nullptr;
 
     // ======================== EFFECTS PARAMETER POINTERS ========================
     std::atomic<float>* detuneAmountParameter = nullptr;

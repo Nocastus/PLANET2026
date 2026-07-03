@@ -21,13 +21,15 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     std::atomic<double>* bpmPtr,
     std::atomic<bool>* transportPlayingPtr,
     std::atomic<float>* effectiveBrilliancePtr,
-    std::atomic<float>* effectiveCarrierMorphPtr)
+    std::atomic<float>* effectiveCarrierMorphPtr,
+    std::atomic<float>* outputPeakPtr)
     : apvts(apvtsRef), audioProcessor(processor), rawModWheelValue(rawModWheelPtr), modWheelEngaged(modWheelEngagedPtr)
 {
     dawBpm = bpmPtr;
     transportPlaying = transportPlayingPtr;
     effectiveBrillianceValue = effectiveBrilliancePtr;
     effectiveCarrierMorphValue = effectiveCarrierMorphPtr;
+    outputPeakValue = outputPeakPtr;
     // Load custom fonts from embedded binary data
     auto regularTypeface = juce::Typeface::createSystemTypefaceFor(
         BinaryData::AmarnaRegular_ttf, BinaryData::AmarnaRegular_ttfSize);
@@ -569,7 +571,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         addAndMakeVisible(label);
     };
 
-    setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Detune", 0.0, 1.0, 0.0);
+    setupVerticalSlider(detuneAmountSlider, detuneAmountLabel, "Spread", 0.0, 1.0, 0.0);   // renamed from "Detune" (F6): unison now owns "Detune"
     setupVerticalSlider(detuneMixSlider, detuneMixLabel, "Mix", 0.0, 1.0, 0.0);
     setupVerticalSlider(warmthSlider, warmthLabel, "Warmth", 0.0, 1.0, 0.0);
     setupVerticalSlider(punchSlider, punchLabel, "Punch", 0.0, 1.0, 0.0);
@@ -803,6 +805,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     apvts.addParameterListener("lifeAmount", this);
     apvts.addParameterListener("lifeSeed", this);
     apvts.addParameterListener("transpose", this);
+    apvts.addParameterListener("unisonVoices", this);   // keep the Stack numeric field in sync
 
     // Register as listener for envelope depth parameters (K1-K10)
     for (int i = 1; i <= 10; ++i)
@@ -886,9 +889,56 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         transposeValue.setText(juce::String(newVal), juce::dontSendNotification);
         };
 
+    // Unison "Stack" (F6): editable numeric 1-4, styled exactly like Transpose.
+    unisonVoicesLabel.setText("Stack", juce::dontSendNotification);
+    unisonVoicesLabel.setJustificationType(juce::Justification::centredRight);
+    unisonVoicesLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.7f));
+    addAndMakeVisible(unisonVoicesLabel);
+
+    unisonVoicesValue.setJustificationType(juce::Justification::centred);
+    unisonVoicesValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    unisonVoicesValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    unisonVoicesValue.setColour(juce::Label::outlineColourId, juce::Colours::grey);
+    unisonVoicesValue.setEditable(true);
+    if (auto* p = apvts.getRawParameterValue("unisonVoices"))
+        unisonVoicesValue.setText(juce::String((int)p->load()), juce::dontSendNotification);
+    addAndMakeVisible(unisonVoicesValue);
+    unisonVoicesValue.onTextChange = [this]() {
+        int newVal = juce::jlimit(1, 4, unisonVoicesValue.getText().getIntValue());
+        if (auto* param = apvts.getParameter("unisonVoices"))
+            param->setValueNotifyingHost(param->convertTo0to1((float)newVal));
+        unisonVoicesValue.setText(juce::String(newVal), juce::dontSendNotification);
+        };
+
+    // Unison "Detune" (F6): horizontal slider next to Vol, same style.
+    unisonDetuneLabel.setText("Detune", juce::dontSendNotification);
+    unisonDetuneLabel.setJustificationType(juce::Justification::centredRight);
+    unisonDetuneLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.7f));
+    addAndMakeVisible(unisonDetuneLabel);
+
+    unisonDetuneSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    unisonDetuneSlider.setRange(0.0, 50.0, 0.01);
+    unisonDetuneSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    unisonDetuneSlider.setDoubleClickReturnValue(true, 12.0);
+    addAndMakeVisible(unisonDetuneSlider);
+
+    // Version number at the far right of the bar. Bump this string per release (matches the commit
+    // label; the .jucer's JucePlugin version is a separate JUCE field and not used here).
+    versionLabel.setText("v0.6.3", juce::dontSendNotification);
+    versionLabel.setJustificationType(juce::Justification::centredRight);
+    versionLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.5f));
+    addAndMakeVisible(versionLabel);
+
     // Attachments
     masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "masterVolume", masterVolumeSlider);
+    // Low-end-weighted taper for Vol: puts gain 0.3 at the slider's midpoint so most of the travel
+    // covers the quiet end - the region that matters for dialling in just under clipping on a 4x
+    // stack. Set AFTER the attachment (which copies the param's linear range onto the slider); this
+    // only reshapes thumb position vs value, so the stored/automated value stays linear 0-1.
+    masterVolumeSlider.setSkewFactorFromMidPoint(0.3);
+    unisonDetuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "unisonDetune", unisonDetuneSlider);
 
     addAndMakeVisible(waveformDisplay);
 
@@ -959,6 +1009,10 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     styleLabel(masterVolumeLabel);
     styleLabel(transposeLabel);
     styleLabel(transposeValue, true);
+    styleLabel(unisonVoicesLabel);
+    styleLabel(unisonVoicesValue, true);
+    styleLabel(unisonDetuneLabel);
+    versionLabel.setFont(amarnaRegular.withHeight(13.0f));   // subtle, smaller than the bar labels
 
     // ---- DAW keyboard pass-through ----
     // When any editable value field finishes editing, release keyboard focus so the host
@@ -1012,6 +1066,7 @@ PLANETMainGui::~PLANETMainGui()
     apvts.removeParameterListener("lifeAmount", this);
     apvts.removeParameterListener("lifeSeed", this);
     apvts.removeParameterListener("transpose", this);
+    apvts.removeParameterListener("unisonVoices", this);
 
     // Remove listeners for envelope depth parameters (K1-K10)
     for (int i = 1; i <= 10; ++i)
@@ -1048,6 +1103,35 @@ void PLANETMainGui::timerCallback()
         {
             cachedEffectiveCarrierMorph = e;
             repaint(densitySliderBounds.expanded(5));
+        }
+    }
+
+    // Vol thumb traffic light (F12): green < 70% FS, amber 70-98%, red >= 99% held a few seconds.
+    if (outputPeakValue != nullptr)
+    {
+        float p = outputPeakValue->exchange(0.0f);                  // peak since last frame (nothing missed)
+        meterDisplayPeak = juce::jmax(p, meterDisplayPeak * 0.85f); // fast attack, ~200 ms release
+        if (redHoldFramesLeft > 0) --redHoldFramesLeft;
+        if (meterDisplayPeak >= 0.99f) redHoldFramesLeft = 90;      // ~3 s hold at 30 Hz
+
+        juce::Colour c = (redHoldFramesLeft > 0)     ? juce::Colour(0xffe53935)   // red   (>= 99%, held)
+                       : (meterDisplayPeak >= 0.70f) ? juce::Colour(0xffffb300)   // amber (70-98%)
+                                                     : juce::Colour(0xff43c05a);  // green (< 70%)
+        if (masterVolumeSlider.findColour(juce::Slider::thumbColourId) != c)
+        {
+            masterVolumeSlider.setColour(juce::Slider::thumbColourId, c);
+            repaint(masterVolumeSlider.getBounds().expanded(4));
+        }
+    }
+
+    // Detune thumb greys out when Stack == 1 - there's nothing to detune (F6).
+    if (auto* uv = apvts.getRawParameterValue("unisonVoices"))
+    {
+        juce::Colour dc = ((int)uv->load() >= 2) ? globalAccent : juce::Colour(0xff555555);
+        if (unisonDetuneSlider.findColour(juce::Slider::thumbColourId) != dc)
+        {
+            unisonDetuneSlider.setColour(juce::Slider::thumbColourId, dc);
+            repaint(unisonDetuneSlider.getBounds().expanded(4));
         }
     }
 
@@ -1546,10 +1630,11 @@ void PLANETMainGui::paint(juce::Graphics& g)
         g.drawText(rate ? "Rate" : "Time", portamentoModeButtonBounds, juce::Justification::centred);
     }
 
-    // ISHTAR name - aligned with left/right column divider
+    // ISHTAR name - pulled ~80px left of the divider so the patch-bar cluster (Trans/Stack/Detune/
+    // Vol/Version) fits to its right. X MUST match resized()'s ishtarBarX.
     g.setColour(accentColour.withAlpha(0.9f));
     g.setFont(amarnaSemiBold.withHeight(30.0f));
-    g.drawText("ISHTAR", leftWidth + 10, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::left);
+    g.drawText("ISHTAR", leftWidth - 80, mainHeight + (patchBarHeight - 22) / 2, 100, 22, juce::Justification::left);
 
     // Colour-zone mod-wheel diff indicators (Brilliance + Density). Draw the effective (heard) value
     // as a bar from the slider thumb (the null) to the effective position, with a marker. Reads the
@@ -2055,24 +2140,40 @@ void PLANETMainGui::resized()
     int patchNameWidth = 150;
     currentPatchLabel.setBounds(patchNameX, buttonY, patchNameWidth, buttonHeight);
 
-    // Comment takes space up to ISHTAR label
+    // ISHTAR wordmark + master/unison cluster live in the right of the bar. We pull the whole cluster
+    // ~80px left of the column divider (robbing a little from the patch-comment field) so Trans / Stack
+    // / Detune / Vol / Version all fit and breathe. Order puts Stack next to Vol - a stack change
+    // usually wants a volume tweak, so they're kept adjacent.
+    int ishtarBarX = leftWidth - 80;   // MUST match paint()'s ISHTAR draw X
+
+    // Comment now ends just before the ISHTAR wordmark (was: up to the divider).
     int commentX = patchNameX + patchNameWidth + 10;
-    int commentWidth = leftWidth - commentX - 10;
+    int commentWidth = juce::jmax(60, ishtarBarX - 10 - commentX);
     patchCommentLabel.setBounds(commentX, buttonY, commentWidth, buttonHeight);
 
-    // ISHTAR name is drawn in paint() at leftWidth + 10
-    // Master controls to the right of ISHTAR
-    int masterControlsX = leftWidth + 120;  // After "ISHTAR" text
+    // Running cursor, starting just past the ISHTAR wordmark (~88px at 30px font).
+    // Reserve the version slot at the far right; Vol then fills whatever's left, so it's the long,
+    // precise control (Detune is deliberately shorter - it's far less sensitive).
+    int rightEdge = bounds.getWidth() - 10;
+    int versionW  = 48;
+    int versionX  = rightEdge - versionW;
 
-    // Transpose: label + value box
-    transposeLabel.setBounds(masterControlsX, buttonY, 40, buttonHeight);
-    transposeValue.setBounds(masterControlsX + 42, buttonY + 2, 40, buttonHeight - 4);
+    int cx = ishtarBarX + 88;
 
-    // Volume: label + slider
-    int volX = masterControlsX + 100;
-    masterVolumeLabel.setBounds(volX, buttonY, 30, buttonHeight);
-    masterVolumeSlider.setBounds(volX + 32, buttonY + 4, 100, buttonHeight - 8);
+    transposeLabel.setBounds(cx, buttonY, 32, buttonHeight);            cx += 34;
+    transposeValue.setBounds(cx, buttonY + 2, 30, buttonHeight - 4);    cx += 30 + 10;
 
+    unisonVoicesLabel.setBounds(cx, buttonY, 34, buttonHeight);         cx += 36;
+    unisonVoicesValue.setBounds(cx, buttonY + 2, 26, buttonHeight - 4); cx += 26 + 10;
+
+    unisonDetuneLabel.setBounds(cx, buttonY, 44, buttonHeight);         cx += 46;
+    unisonDetuneSlider.setBounds(cx, buttonY + 4, 64, buttonHeight - 8);cx += 64 + 12;
+
+    masterVolumeLabel.setBounds(cx, buttonY, 26, buttonHeight);         cx += 28;
+    int volSliderW = juce::jmax(80, versionX - 8 - cx);
+    masterVolumeSlider.setBounds(cx, buttonY + 4, volSliderW, buttonHeight - 8);
+
+    versionLabel.setBounds(versionX, buttonY, versionW, buttonHeight);
 }
 
 void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
@@ -2696,6 +2797,10 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
         transposeValue.setText(juce::String((int)newValue), juce::dontSendNotification);
         return;
     }
+    if (parameterID == "unisonVoices") {
+        unisonVoicesValue.setText(juce::String((int)newValue), juce::dontSendNotification);
+        return;
+    }
 
     // Envelope depth for currently selected drawbar
     if (parameterID == juce::String("k") + juce::String(selectedDrawbar + 1) + "EnvelopeAmount") {
@@ -2740,6 +2845,14 @@ void PLANETMainGui::refreshAllGUIValues()
         lifeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("lifeSeed"))
         seedValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+
+    // Patch-bar numeric fields are plain editable labels (no attachment), so they must be refreshed
+    // here after a load - otherwise they keep the previous patch's value even though the underlying
+    // parameter has been reset. Covers Stack (F6) and Transpose (same latent bug).
+    if (auto* param = apvts.getParameter("transpose"))
+        transposeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("unisonVoices"))
+        unisonVoicesValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 
     // Refresh harmonic envelope values for currently selected drawbar
     bindToSelectedDrawbar();

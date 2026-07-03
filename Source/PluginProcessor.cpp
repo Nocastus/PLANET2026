@@ -337,6 +337,15 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             // true  = constant-Rate (portamentoTime is seconds-per-octave, so wide leaps glide longer).
             std::make_unique<juce::AudioParameterBool>("portamentoMode", "Portamento Rate Mode", false),
 
+            // ======================== VOICE STACKING / UNISON (F6) ========================
+            // Voices per note: 1 (16-note poly) / 2 / 3 / 4 (4-note poly). Trades polyphony for
+            // thickness. Detune is the TOTAL spread in cents; the N voices sit symmetrically about the
+            // note pitch (sum to zero), evenly across [-detune/2, +detune/2] - so 3 puts one voice
+            // exactly at pitch. 1 voice + default detune costs nothing (offset is 0 for a single voice).
+            std::make_unique<juce::AudioParameterInt>("unisonVoices", "Unison Voices", 1, 4, 1),
+            std::make_unique<juce::AudioParameterFloat>("unisonDetune", "Unison Detune",
+                juce::NormalisableRange<float>(0.0f, 50.0f, 0.0f, 1.0f), 12.0f),
+
             // ======================== AMPLITUDE ENVELOPE PARAMETERS (4) ========================
             std::make_unique<juce::AudioParameterFloat>("ampEnvAttackTime", "Amp Env Attack Time", 0.001f, 10.0f, 0.1f),
             std::make_unique<juce::AudioParameterFloat>("ampEnvDecayTime", "Amp Env Decay Time", 0.001f, 10.0f, 0.5f),
@@ -347,7 +356,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("exponentialControl", "Exponential Control", 0.0f, 1.0f, 0.5f),
 
             // ======================== EFFECTS PARAMETERS ========================
-                std::make_unique<juce::AudioParameterFloat>("detuneAmount", "Detune Amount", 0.0f, 1.0f, 0.0f),
+                std::make_unique<juce::AudioParameterFloat>("detuneAmount", "Spread", 0.0f, 1.0f, 0.0f),   // ID kept as detuneAmount (patches/automation); display renamed to Spread (F6)
                 std::make_unique<juce::AudioParameterFloat>("detuneMix", "Detune Mix", 0.0f, 1.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("warmth", "Warmth", 0.0f, 1.0f, 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("punch", "Punch", 0.0f, 1.0f, 0.0f),
@@ -384,6 +393,10 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     // ======================== INITIALIZE PORTAMENTO PARAMETER POINTERS ========================
     portamentoTimeParameter = parameters.getRawParameterValue("portamentoTime");
     portamentoModeParameter = parameters.getRawParameterValue("portamentoMode");
+
+    // ======================== INITIALIZE UNISON PARAMETER POINTERS ========================
+    unisonVoicesParameter = parameters.getRawParameterValue("unisonVoices");
+    unisonDetuneParameter = parameters.getRawParameterValue("unisonDetune");
 
     // ======================== INITIALIZE VELOCITY SCALING PARAMETER POINTERS ========================
     velToAmplitudeParameter = parameters.getRawParameterValue("velToAmplitude");
@@ -646,6 +659,10 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float portamentoTime = portamentoTimeParameter->load();
     int   portamentoMode = (portamentoModeParameter->load() > 0.5f) ? 1 : 0;
 
+    // Unison (F6): voices-per-note and total detune spread (cents), latched at note-on.
+    int   unisonVoices = juce::jlimit(1, 4, (int)std::lround(unisonVoicesParameter->load()));
+    float unisonDetune = unisonDetuneParameter->load();
+
 
     // Apply a single MIDI message. Defined here, but invoked from the interleave loop
     // below at each event's true sample offset rather than all-at-once at block start.
@@ -665,7 +682,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
 
                 voiceManager.startNote(transposedNote, velocity, getSampleRate(), pitchWheelSemitones, vintageAmount,
                     velToAmplitude, brillianceParameter->load(), lifeAmount, lifeSeed,
-                    portamentoTime, portamentoMode);
+                    portamentoTime, portamentoMode, unisonVoices, unisonDetune);
             }
             else
             {
@@ -845,6 +862,19 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         applyMidiMessage(metadata.getMessage());
     }
     renderSamples(nextSampleToRender, numSamples);
+
+    // Output-saturation meter (F12): fold this block's peak |sample| (final, post-volume output)
+    // into the published running max; the GUI exchanges it to 0 when it reads, so no peak is missed.
+    {
+        float blockPeak = 0.0f;
+        for (int ch = 0; ch < totalNumOutputChannels; ++ch) {
+            const float* d = buffer.getReadPointer(ch);
+            for (int n = 0; n < numSamples; ++n)
+                blockPeak = juce::jmax(blockPeak, std::abs(d[n]));
+        }
+        if (blockPeak > outputPeak.load(std::memory_order_relaxed))
+            outputPeak.store(blockPeak, std::memory_order_relaxed);
+    }
 
     // Update waveform display state
     waveformActive.store(voiceManager.getActiveVoiceCount() > 0);

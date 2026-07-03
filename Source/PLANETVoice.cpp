@@ -42,7 +42,8 @@ PLANETVoice::PLANETVoice()
 void PLANETVoice::startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount,
     float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed,
     const std::array<bool, NUM_COEFFICIENTS>* drawbarFire,
-    float glideFromHz, float portamentoTime, int portamentoMode)
+    float glideFromHz, float portamentoTime, int portamentoMode,
+    float detuneCents)
 {
     // [Existing initialization code...]
     currentNoteNumber = noteNumber;
@@ -65,6 +66,12 @@ if (vintageAmount > 0.0f) {
     // Apply to base frequency
     basePitchFrequency *= std::pow(2.0f, pitchVariationCents / 1200.0f);
 }
+
+// Unison detune (F6): a permanent, static cents offset for this stacked voice (0 for a single
+// voice). Applied to the base pitch so it anchors the whole note; the glide origin below targets
+// this detuned pitch, and vibrato/wheel/pitch-env still modulate symmetrically around it.
+if (detuneCents != 0.0f)
+    basePitchFrequency *= std::pow(2.0, (double)detuneCents / 1200.0);
 
 currentFrequency = basePitchFrequency;
 angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRate;

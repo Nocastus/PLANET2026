@@ -24,7 +24,8 @@ PLANETVoiceManager::PLANETVoiceManager()
 
 void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sampleRate, float currentPitchWheelOffset, float vintageAmount,
     float velToAmplitude, float brilliance, float lifeAmount, int lifeSeed,
-    float portamentoTime, int portamentoMode)
+    float portamentoTime, int portamentoMode,
+    int unisonVoices, float unisonDetune)
 {
     // ======================== F10: resolve single-trigger firing for THIS note-on ========================
     // A note-on that finds polyphony at 0 starts a new phrase: reload the grace window. Any note-on
@@ -52,32 +53,41 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
         drawbarFire[i] = isSingle ? fireSingle : true;   // Multi (or unwired) drawbars always fire
     }
 
-    // [Existing voice finding/allocation code...]
-    auto* existingVoice = findVoiceForNote(noteNumber);
-    if (existingVoice) {
-        existingVoice->stopNote(false);
+    // Retrigger: release EVERY voice still playing this note. With unison a note owns a whole stack
+    // that all share the note number, so we must stop them all, not just the first (findVoiceForNote).
+    for (auto& v : voices) {
+        if (v.isActive() && v.getNoteNumber() == noteNumber)
+            v.stopNote(false);
     }
 
-    auto* voice = findFreeVoice();
-    if (!voice) {
-        voice = findOldestVoice();
-    }
+    // Unison (F6): allocate `unisonVoices` voices for this note, each a permanent, symmetric detune
+    // that sums to zero. detuneCents(i) = detune * (i/(S-1) - 0.5): S=1 -> {0}; S=2 -> {-d/2,+d/2};
+    // S=3 -> {-d/2, 0, +d/2} (centre voice at pitch); S=4 -> {-d/2,-d/6,+d/6,+d/2}. Stealing stays
+    // per-voice (findOldestVoice), so an over-full stack can split an old group - a standard stealing
+    // artifact; whole-group stealing is a later refinement.
+    const int S = juce::jlimit(1, MAX_VOICES, unisonVoices);
+    for (int i = 0; i < S; ++i)
+    {
+        auto* voice = findFreeVoice();
+        if (!voice) voice = findOldestVoice();
+        if (!voice) break;
 
-    if (voice) {
-        // Portamento origin (F2a): in the per-voice-history model, a voice glides from the pitch
-        // IT last played, so we read the chosen voice's live glide pitch BEFORE startNote()
-        // overwrites it. --- MODEL-2 PIVOT POINT: to switch to legato/nearest-held glide, replace
-        // this one line with the nearest currently-held note's pitch; nothing else changes. ---
-        float glideFromHz = voice->getCurrentGlidePitchHz();
+        const float detuneCents = (S > 1) ? unisonDetune * ((float)i / (float)(S - 1) - 0.5f) : 0.0f;
+
+        // Portamento origin (F2a): a voice glides from the pitch IT last played, so read the chosen
+        // voice's live glide pitch BEFORE startNote() overwrites it. --- MODEL-2 PIVOT POINT: to
+        // switch to legato/nearest-held glide, replace this line with the nearest held note's pitch. ---
+        const float glideFromHz = voice->getCurrentGlidePitchHz();
 
         voice->startNote(noteNumber, velocity, sampleRate, vintageAmount, velToAmplitude, brilliance, lifeAmount, lifeSeed, &drawbarFire,
-            glideFromHz, portamentoTime, portamentoMode);
+            glideFromHz, portamentoTime, portamentoMode, detuneCents);
 
-        // Apply current pitch wheel state to new voice
+        // Apply current pitch wheel state to the new voice
         voice->setPitchOffset(currentPitchWheelOffset);
         voice->updatePitchFromOffset(sampleRate);
 
-        // Update allocation tracking
+        // Update allocation tracking (newest counter, so this voice won't be stolen by the next
+        // iteration's findOldestVoice)
         int voiceIndex = voice - voices.data();
         voiceAllocationTimes[voiceIndex] = ++voiceAllocationCounter;
     }
@@ -94,9 +104,10 @@ void PLANETVoiceManager::stopNote(int noteNumber, bool sustainPedalDown)
         --heldKeyCount;
     }
 
-    auto* voice = findVoiceForNote(noteNumber);
-    if (voice) {
-        voice->stopNote(sustainPedalDown);
+    // Release EVERY voice playing this note (a unison stack shares the note number), not just the first.
+    for (auto& voice : voices) {
+        if (voice.isActive() && voice.getNoteNumber() == noteNumber)
+            voice.stopNote(sustainPedalDown);
     }
 }
 

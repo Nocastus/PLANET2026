@@ -116,6 +116,14 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
         { "detuneAmount", "detuneMix", "warmth", "punch", "punchFrequency" },
         patch);
 
+    markdown << generateParameterSection("Portamento",
+        { "portamentoTime", "portamentoMode" },
+        patch);
+
+    markdown << generateParameterSection("Unison",
+        { "unisonVoices", "unisonDetune" },
+        patch);
+
     markdown << "\n---\n\n";
 
     // Add parameter reference section
@@ -419,6 +427,12 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
     ranges["punch"] = ParameterRange(0.0f, 1.0f);
     ranges["punchFrequency"] = ParameterRange(500.0f, 5000.0f);
 
+    // Portamento (F2a) + Unison (F6)
+    ranges["portamentoTime"] = ParameterRange(0.0f, 5.0f);
+    ranges["portamentoMode"] = ParameterRange(0.0f, 1.0f);
+    ranges["unisonVoices"] = ParameterRange(1.0f, 4.0f);
+    ranges["unisonDetune"] = ParameterRange(0.0f, 50.0f);
+
     // Drawbar parameters (k1-k10, with all their sub-parameters)
     for (int i = 1; i <= 10; ++i) {
         juce::String prefix = "k" + juce::String(i);
@@ -448,7 +462,8 @@ juce::String PLANETPatchManager::formatParameterValue(float value, const juce::S
     if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv")
         || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID.contains("TrigSingle")
         || parameterID.contains("ModWheel")
-        || parameterID == "punchFrequency") {
+        || parameterID == "punchFrequency"
+        || parameterID == "unisonVoices" || parameterID == "portamentoMode") {
         return juce::String((int)value);
     }
 

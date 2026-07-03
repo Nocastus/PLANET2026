@@ -219,6 +219,12 @@ Scala `.scl`/`.kbm` import, or MTS / MTS-ESP). Keep the integration point isolat
 maintain.
 
 ### F6. Voice stacking / unison detune
+**✅ Shipped 3 Jul 2026 as v0.6.3 (Gerard: "All working great!").** 1/2/3/4 voices per note, symmetric
+detune summing to zero (3× anchors a centre voice at pitch); mono (no stereo spread); left hot (no gain
+comp). Per-voice-history stealing (can split an old group - a known simplification). Controls live in the
+bottom bar: **Stack** numeric 1-4 + **Detune** slider; the Effects "Detune" was renamed **Spread** to free
+the name. Detune thumb greys at Stack 1. Persisted in patches (see the save-list fix below). Original notes:
+
 **Idea (Gerard, 29 Jun 2026) — genuinely uncertain: "might be great or might not suit the sound — we'll
 just have to experiment and see."** Currently 16 voices = one voice per note = 16-note polyphony
 (`PLANETVoiceManager`). Add a **stack** option that assigns multiple detuned voices per note, trading
@@ -234,6 +240,12 @@ simultaneously with a **programmable detune that averages to zero** (symmetric s
   detuned; per-stack stereo spread yes/no; stack count as a patch parameter (likely yes).
 
 ### F12. Output-saturation warning light (Gerard, 2 Jul 2026)
+**✅ Shipped 3 Jul 2026 as v0.6.3 (alongside F6, which made it urgent — stacks run hot).** Master-volume
+thumb is now a traffic light: green < 70% FS, amber 70-98%, red ≥ 99% with a ~3 s hold and a ~200 ms
+release ballistic. Processor publishes `outputPeak` (peak since last GUI read, nothing missed); GUI timer
+maps it to the thumb colour. Vol slider also lengthened + given a low-end taper for precision near clipping.
+Original notes:
+
 We deliberately have **no dynamic or fixed output scaling** — just the manual output-level control (the
 additive engine can run hot, by design; see the F8 notes in DevHistory). To catch clipping *without*
 adding gain-riding, add a **green / amber / red saturation warning**. Simplest: the **master-volume slider

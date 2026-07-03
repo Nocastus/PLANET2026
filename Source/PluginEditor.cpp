@@ -24,7 +24,8 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
         &audioProcessor.displayBPM,
         &audioProcessor.transportPlaying,
         &audioProcessor.effectiveBrillianceDisplay,
-        &audioProcessor.effectiveCarrierMorphDisplay);
+        &audioProcessor.effectiveCarrierMorphDisplay,
+        &audioProcessor.outputPeak);
 
     addAndMakeVisible(*mainGui);
 

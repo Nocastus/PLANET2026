@@ -163,7 +163,8 @@ public:
     void startNote(int noteNumber, float velocity, double sampleRate, float vintageAmount = 0.0f,
         float velToAmplitude = 100.0f, float brilliance = 0.5f, float lifeAmount = 0.0f, int lifeSeed = 0,
         const std::array<bool, NUM_COEFFICIENTS>* drawbarFire = nullptr,
-        float glideFromHz = 0.0f, float portamentoTime = 0.0f, int portamentoMode = 0);
+        float glideFromHz = 0.0f, float portamentoTime = 0.0f, int portamentoMode = 0,
+        float detuneCents = 0.0f);
 
     // Portamento (F2a): the live pitch this voice would glide FROM if reused now - its base
     // pitch plus any still-decaying glide, EXCLUDING vibrato/wheel (those are momentary, not a
