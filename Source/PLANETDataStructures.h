@@ -62,8 +62,7 @@ struct CoefficientParams {
     float lfoShape = 1.0f;
     float lfoRate = 1.0f;
     float lfoAmount = 0.0f;
-    float inputSpectralMultiplier = 1.0f;    // NEW: User input value (integer)
-    float spectralMultiplier = 1.0f;        // NEW: Effective value (input + LFO)
+    float inputSpectralMultiplier = 1.0f;    // User input value (snapped to 0.5 steps)
     float velToHarmonic = 0.0f;                         // -100 to +100
     float lfoSync = 0.0f;                               // 0=free, 1=synced to tempo
     float lfoSyncDiv = 7.0f;                            // Sync division index (default 7 = 1/4 note)
@@ -111,11 +110,6 @@ struct CoefficientParams {
         if (toPMPtr) toPM = toPMPtr->load();
         if (toOutPtr) toOut = toOutPtr->load();
         if (trigSinglePtr) trigSingle = trigSinglePtr->load();
-    }
-
-    // NEW: Update effective spectral multiplier with LFO modulation
-    void updateSpectralMultiplier(float spectralLfoValue) {
-        spectralMultiplier = inputSpectralMultiplier + spectralLfoValue;
     }
 };
 
@@ -210,21 +204,8 @@ public:
         return grid[static_cast<size_t>(GridRow::Staged)];
     }
 
-    void setStagedCoefficient(int index, float value) {
-        if (index >= 0 && index < NUM_COEFFICIENTS) {
-            grid[static_cast<size_t>(GridRow::Staged)][index] = value;
-        }
-    }
-
     void promoteStaged() {
         grid[static_cast<size_t>(GridRow::Active)] = grid[static_cast<size_t>(GridRow::Staged)];
-    }
-
-    float getActiveCoefficient(int index) const {
-        if (index >= 0 && index < NUM_COEFFICIENTS) {
-            return grid[static_cast<size_t>(GridRow::Active)][index];
-        }
-        return 0.0f;
     }
 
 private:
@@ -239,23 +220,11 @@ enum class EnvelopeStage { Idle, Attack, Decay, Sustain, Release };
 
 struct ModulationState {
     double lfoPhase = 0.0;
-    double lfoPhaseDelta = 0.0;
     EnvelopeStage envStage = EnvelopeStage::Idle;
     double envTime = 0.0;
     float envLevel = 0.0f;
     float releaseStartLevel = 0.0f;
     float randomLfoValue = 0.0f;  // Stored value for sample-and-hold random LFO
-
-    void reset() {
-        lfoPhase = 0.0;
-        envStage = EnvelopeStage::Attack;
-        envTime = 0.0;
-        envLevel = 0.0f;
-        // Generate initial random value
-        static uint32_t seed = 12345;
-        seed = seed * 1664525u + 1013904223u;
-        randomLfoValue = ((seed & 0xFFFF) / 32767.5f) - 1.0f;
-    }
 };
 
 using ModulationStateArray = std::array<ModulationState, NUM_COEFFICIENTS>;

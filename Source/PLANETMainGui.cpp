@@ -924,7 +924,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
 
     // Version number at the far right of the bar. Bump this string per release (matches the commit
     // label; the .jucer's JucePlugin version is a separate JUCE field and not used here).
-    versionLabel.setText("v0.6.3", juce::dontSendNotification);
+    versionLabel.setText("v0.6.4", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.5f));
     addAndMakeVisible(versionLabel);

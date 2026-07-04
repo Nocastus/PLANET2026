@@ -14,19 +14,16 @@
 
 PLANETVoice::PLANETVoice()
 {
-    // Initialize LFO phases
-    for (auto& phase : lfoPhases) {
-        phase = 0.0;
-    }
-
     // Initialize modulation states
     for (auto& modState : coeffModStates) {
         modState.envStage = EnvelopeStage::Idle;
         modState.envTime = 0.0;
         modState.envLevel = 0.0f;
         modState.lfoPhase = 0.0;
-        modState.lfoPhaseDelta = 0.0;
     }
+
+    // Seed the envelope-curve cache from the default exponentialControl
+    refreshEnvCurveCache();
 
     // Routing defaults until the first cycle-boundary snapshot: all bars feed the phase
     // path (classic PM), none go additive - matches the "first cycle is a pure sine"
@@ -289,7 +286,7 @@ void PLANETVoice::stopNote(bool sustainPedalDown)
         triggerRelease();
     }
 
-    // Always clear the note number so findVoiceForNote() won't find this voice
+    // Always clear the note number so note-lookup (retrigger/stop scans) won't find this voice
     currentNoteNumber = -1;
 }
 
@@ -334,9 +331,6 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
 
     // Calculate timing
     double sampleDeltaTime = 1.0 / sampleRate;           // For amplitude envelope (per-sample)
-    double cycleDeltaTime = 1.0 / currentFrequency;      // For coefficient envelopes (per-cycle)
-
-
 
     // Process amplitude envelope (per sample)
     float ampEnvValue = processAmplitudeEnvelope(sampleDeltaTime,
@@ -360,6 +354,9 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     if (currentAngle >= twoPi) {
         currentAngle -= twoPi;
         cycleStartFlag = true;
+
+        // Timing for the coefficient envelopes / LFOs (per-cycle; only needed in this branch)
+        double cycleDeltaTime = 1.0 / currentFrequency;
 
         // ======================== VIBRATO PROCESSING (EXISTING) ========================
         double vibratoPhaseAdvance = 2.0 * juce::MathConstants<double>::pi * vibratoRate * cycleDeltaTime;
@@ -496,7 +493,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                     globalParams[i].attackTime * (1.0f - (noteVelocity * velToAttackTime / 50.0f)), globalParams[i].decayTime,
                     globalParams[i].sustainLevel, globalParams[i].releaseTime,
                     ampEnvStage != EnvelopeStage::Release && ampEnvStage != EnvelopeStage::Idle,
-                    coeffModStates[i].releaseStartLevel, exponentialControl);
+                    coeffModStates[i].releaseStartLevel);
 
                 // Only apply envelope modulation if envelope amount is non-zero
                 if (globalParams[i].envelopeAmount != 0.0f) {
@@ -708,10 +705,21 @@ float PLANETVoice::generateLFOWaveform(double phase, float shape)
 }
 
 
+// Refresh the cached envelope-curve constants. k, e^-k and (1 - e^-k) depend only on
+// exponentialControl, so they're computed here (constructor / setExponentialControl) rather
+// than per sample in processEnvelope - the amp envelope runs per sample and was paying a
+// second std::exp for the normaliser on every sample. Values are identical to before.
+void PLANETVoice::refreshEnvCurveCache()
+{
+    envCurveK = 1.0f + exponentialControl * 6.0f;
+    envCurveEk = std::exp(-envCurveK);
+    envCurveOneMinusEk = 1.0f - envCurveEk;
+}
+
 float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel,
     double deltaTime, float attackTime, float decayTime,
     float sustainLevel, float releaseTime, bool noteOn,
-    float releaseStartLevel, float curveAmount)
+    float releaseStartLevel)
 {
     switch (stage)
     {
@@ -727,14 +735,12 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
         {
             float linearProgress = (float)(envTime / attackTime);
             // Apply exponential curve for attack (convex)
-            if (curveAmount > 0.001f) {
-                float k = 1.0f + curveAmount * 6.0f;
+            if (exponentialControl > 0.001f) {
                 // Normalised rising exponential: exactly 0.0 at progress 0, exactly 1.0 at
                 // progress 1, so the attack lands on full level with no discontinuity.
                 // (The old form ended at 1 - e^(-k) and snapped up to 1.0 - an audible
                 // click at the attack/decay boundary, worst at low curve amounts.)
-                float ek = std::exp(-k);
-                envLevel = (1.0f - std::exp(-k * linearProgress)) / (1.0f - ek);
+                envLevel = (1.0f - std::exp(-envCurveK * linearProgress)) / envCurveOneMinusEk;
             }
             else {
                 envLevel = linearProgress;  // Linear fallback
@@ -755,12 +761,10 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             float linearProgress = (float)(envTime / decayTime);
             float curvedProgress;
             // Apply exponential curve for decay (concave)
-            if (curveAmount > 0.001f) {
-                float k = 1.0f + curveAmount * 6.0f;
+            if (exponentialControl > 0.001f) {
                 // Normalised decaying exponential: exactly 1.0 at progress 0, exactly 0.0 at
                 // progress 1, so the curve lands cleanly on sustain with no discontinuity.
-                float ek = std::exp(-k);
-                curvedProgress = (std::exp(-k * linearProgress) - ek) / (1.0f - ek);
+                curvedProgress = (std::exp(-envCurveK * linearProgress) - envCurveEk) / envCurveOneMinusEk;
             }
             else {
                 curvedProgress = 1.0f - linearProgress;  // Linear fallback
@@ -790,14 +794,12 @@ float PLANETVoice::processEnvelope(EnvelopeStage& stage, double& envTime, float&
             float linearProgress = (float)(envTime / releaseTime);
             float curvedProgress;
             // Apply exponential curve for release (concave)
-            if (curveAmount > 0.001f) {
-                float k = 1.0f + curveAmount * 6.0f;
+            if (exponentialControl > 0.001f) {
                 // Normalised decaying exponential: exactly 1.0 at progress 0, exactly 0.0 at
-                // progress 1. The old fastExpDecay(k*progress) ended at e^(-k) (well above 0,
-                // and the Padé approximation actually rises again for k > ~4.4), so the tail
-                // snapped to silence when the stage flipped to Idle. Normalising kills the cliff.
-                float ek = std::exp(-k);
-                curvedProgress = (std::exp(-k * linearProgress) - ek) / (1.0f - ek);
+                // progress 1. (An earlier fast-exp approximation ended at e^(-k) - well above
+                // 0 - so the tail snapped to silence when the stage flipped to Idle.
+                // Normalising kills the cliff.)
+                curvedProgress = (std::exp(-envCurveK * linearProgress) - envCurveEk) / envCurveOneMinusEk;
             }
             else {
                 curvedProgress = 1.0f - linearProgress;  // Linear fallback
@@ -825,7 +827,7 @@ float PLANETVoice::processAmplitudeEnvelope(double deltaTime, float attackTime, 
 
     return processEnvelope(ampEnvStage, ampEnvTime, ampEnvLevel,
         deltaTime, attackTime, decayTime, sustainLevel, releaseTime,
-        noteStillHeld, ampReleaseStartLevel, exponentialControl);  // Pass hardcoded value
+        noteStillHeld, ampReleaseStartLevel);
 }
 
 // Pitch modulation stuff:

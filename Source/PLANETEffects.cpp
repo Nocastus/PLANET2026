@@ -74,7 +74,14 @@ std::pair<float, float> PLANETEffects::processStereoSample(float monoInput)
 
 void PLANETEffects::DetuneProcessor::updateParameters(float amount, float mixAmount, double sampleRate)
 {
-    mix = juce::jlimit(0.0f, 1.0f, mixAmount);
+    float mix = juce::jlimit(0.0f, 1.0f, mixAmount);
+
+    // Equal-power crossfade gain TARGETS (mix is block-rate); process() glides the live
+    // gains toward these per sample, de-zippering Mix moves. ~10 ms time constant: long
+    // enough to bury block-rate steps, short enough to feel immediate under the hand.
+    targetDryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
+    targetWetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
+    gainSmoothCoeff = 1.0f - std::exp(-1.0f / (0.010f * (float)sampleRate));
 
     // Convert amount (0-1) to cents (0-20)
     float detuneCents = juce::jlimit(0.0f, 1.0f, amount) * MAX_DETUNE_CENTS;
@@ -110,9 +117,10 @@ std::pair<float, float> PLANETEffects::DetuneProcessor::process(float input)
     while (leftReadOffset < 0) leftReadOffset += BUFFER_SIZE;
     while (rightReadOffset < 0) rightReadOffset += BUFFER_SIZE;
 
-    // Equal power crossfade
-    float dryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
-    float wetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
+    // Equal power crossfade. Glide the gains toward their block-rate targets (one-pole,
+    // ~10 ms) so Mix moves are click-free; at rest this settles to exactly the old values.
+    dryGain += gainSmoothCoeff * (targetDryGain - dryGain);
+    wetGain += gainSmoothCoeff * (targetWetGain - wetGain);
 
     float leftOutput = input * dryGain + leftWet * wetGain;
     float rightOutput = input * dryGain + rightWet * wetGain;
@@ -151,6 +159,7 @@ void PLANETEffects::WarmthProcessor::prepareToPlay(double sr)
 {
     sampleRate = sr;
     lowShelfFilter.reset();
+    toneFilter.reset();
 }
 
 void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
@@ -158,50 +167,44 @@ void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
     warmthAmount = juce::jlimit(0.0f, 1.0f, amount);
     sampleRate = sr;
 
-    // Low shelf at 250Hz with boost from 0dB to +10dB
+    // Low shelf at 250Hz with boost from 0dB to +10dB (the whole-range EQ behaviour, unchanged)
     float shelfGainDB = warmthAmount * 10.0f;
     lowShelfFilter.setLowShelf(sampleRate, 250.0f, 0.7f, shelfGainDB);
+
+    // ---- Tape saturation (upper half of the knob), reworked 4 Jul 2026 ----
+    // t runs 0-1 over 50-100%. EVERYTHING below is a continuous function of t that is
+    // identity/zero at t=0, so there is no switch-on step anywhere (the old design jumped
+    // -3dB of makeup gain at 51%). satDepth eases in as t^2 (imperceptible just past half,
+    // gentle by ~70%, full at 100%); drive is capped lower (3, was 4) and a post-saturation
+    // high-shelf cut darkens the top as the drive rises - the tape character that was
+    // missing (the old full-band tanh with no post-filter read as buzzy).
+    float t = juce::jmax(0.0f, (warmthAmount - 0.5f) * 2.0f);
+    driveAmount = 1.0f + kMaxExtraDrive * t;
+    biasTerm = kBias * t;                       // asymmetric bias -> even harmonics
+    dcCorrection = std::tanh(biasTerm);         // remove the DC the bias introduces
+    invTanhDrive = 1.0f / std::tanh(driveAmount);   // peak-normalise: input 1 -> ~1
+    targetSatDepth = t * t;                     // parallel wet-mix, quadratic ease-in
+    targetMakeup = juce::Decibels::decibelsToGain(kMakeupDB * t * t);
+    toneFilter.setHighShelf(sampleRate, kToneFreqHz, 0.7f, kToneCutDB * t);
+    gainSmoothCoeff = 1.0f - std::exp(-1.0f / (0.010f * (float)sampleRate));
 }
 
 float PLANETEffects::WarmthProcessor::process(float input)
 {
-    // Always apply low shelf - this should now be audible!
+    // Pre-saturation bass boost (boosting lows INTO the shaper is part of the tape flavour)
     float output = lowShelfFilter.process(input);
 
-    // Apply tape saturation starting from 50%
-    if (warmthAmount > 0.5f)
-    {
-        float saturationAmount = (warmthAmount - 0.5f) * 2.0f;
+    // De-zipper the block-rate wet-mix / makeup moves (same 10 ms one-pole as detune Mix)
+    satDepth += gainSmoothCoeff * (targetSatDepth - satDepth);
+    makeupGain += gainSmoothCoeff * (targetMakeup - makeupGain);
 
-        // Simple tape distortion with your 1.2 coefficient
-        output = tapeDistortion(output, saturationAmount);
+    // Parallel tape saturation. Runs unconditionally (constant CPU at every setting -
+    // fixed-budget principle); at satDepth 0 the blend passes the dry signal exactly.
+    float shaped = (std::tanh(output * driveAmount + biasTerm) - dcCorrection) * invTanhDrive;
+    output = (output + satDepth * (shaped - output)) * makeupGain;
 
-        // Gain compensation
-        float compensationDB = -3.0f - (saturationAmount * 7.0f);
-        float compensationGain = juce::Decibels::decibelsToGain(compensationDB);
-        output *= compensationGain;
-    }
-
-    return output;
-}
-
-float PLANETEffects::WarmthProcessor::tapeDistortion(float input, float drive)
-{
-    // Increased drive range: 1.0 - 5.0 (was 1.0 - 3.0)
-    float driveAmount = 1.0f + drive * 3.0f;
-
-    // Asymmetric bias for even harmonics (tape character)
-    // Increased bias amount for more character
-    float biased = input * driveAmount + 0.12f * drive;
-
-    // Soft saturation using tanh
-    float saturated = std::tanh(biased);
-
-    // Remove DC offset from bias
-    saturated -= std::tanh(0.12f * drive);
-
-    // Compensate for gain
-    return saturated / std::tanh(driveAmount);
+    // Post-saturation tone: high-shelf cut scaling with drive (0dB = transparent at t=0)
+    return toneFilter.process(output);
 }
 
 //==============================================================================

@@ -30,6 +30,71 @@ public:
 
 private:
     //==========================================================================
+    // SHARED BIQUAD (RBJ shelves) - used by Warmth (low shelf + tone cut) and
+    // Punch (presence). Was duplicated per-processor; unified when Warmth grew
+    // a second (high-shelf) filter for the post-saturation tape darkening.
+    //==========================================================================
+    struct BiquadFilter {
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+        float a1 = 0.0f, a2 = 0.0f;
+        float x1 = 0.0f, x2 = 0.0f;
+        float y1 = 0.0f, y2 = 0.0f;
+
+        void setLowShelf(double sampleRate, float freq, float q, float gainDB) {
+            float A = std::pow(10.0f, gainDB / 40.0f);
+            float w0 = 2.0f * juce::MathConstants<float>::pi * freq / (float)sampleRate;
+            float cosw0 = std::cos(w0);
+            float sinw0 = std::sin(w0);
+            float alpha = sinw0 / (2.0f * q);
+
+            float sqrtA = std::sqrt(A);
+            float beta = 2.0f * sqrtA * alpha;
+
+            float a0 = (A + 1.0f) + (A - 1.0f) * cosw0 + beta;
+
+            b0 = (A * ((A + 1.0f) - (A - 1.0f) * cosw0 + beta)) / a0;
+            b1 = (2.0f * A * ((A - 1.0f) - (A + 1.0f) * cosw0)) / a0;
+            b2 = (A * ((A + 1.0f) - (A - 1.0f) * cosw0 - beta)) / a0;
+            a1 = (-2.0f * ((A - 1.0f) + (A + 1.0f) * cosw0)) / a0;
+            a2 = ((A + 1.0f) + (A - 1.0f) * cosw0 - beta) / a0;
+        }
+
+        void setHighShelf(double sampleRate, float freq, float q, float gainDB) {
+            float A = std::pow(10.0f, gainDB / 40.0f);
+            float w0 = 2.0f * juce::MathConstants<float>::pi * freq / (float)sampleRate;
+            float cosw0 = std::cos(w0);
+            float sinw0 = std::sin(w0);
+            float alpha = sinw0 / (2.0f * q);
+
+            float sqrtA = std::sqrt(A);
+            float beta = 2.0f * sqrtA * alpha;
+
+            float a0 = (A + 1.0f) - (A - 1.0f) * cosw0 + beta;
+
+            b0 = (A * ((A + 1.0f) + (A - 1.0f) * cosw0 + beta)) / a0;
+            b1 = (-2.0f * A * ((A - 1.0f) + (A + 1.0f) * cosw0)) / a0;
+            b2 = (A * ((A + 1.0f) + (A - 1.0f) * cosw0 - beta)) / a0;
+            a1 = (2.0f * ((A - 1.0f) - (A + 1.0f) * cosw0)) / a0;
+            a2 = ((A + 1.0f) - (A - 1.0f) * cosw0 - beta) / a0;
+        }
+
+        float process(float input) {
+            float output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+
+            x2 = x1;
+            x1 = input;
+            y2 = y1;
+            y1 = output;
+
+            return output;
+        }
+
+        void reset() {
+            x1 = x2 = y1 = y2 = 0.0f;
+        }
+    };
+
+    //==========================================================================
     // DUAL DETUNE EFFECT
     //==========================================================================
     struct DetuneProcessor {
@@ -46,7 +111,17 @@ private:
 
         float leftPlaybackRate = 1.0f;
         float rightPlaybackRate = 1.0f;
-        float mix = 0.0f;
+
+        // Equal-power crossfade gains. Targets are computed once per block in
+        // updateParameters() (they depend only on the mix param); the live gains glide
+        // toward them per sample (~10 ms one-pole) so a moving Mix knob doesn't zipper.
+        // NB the zipper predates the v0.6.4 hoist - the gains always stepped at block
+        // rate; the old per-sample cos/sin recomputed the same block-constant values.
+        float dryGain = 1.0f;
+        float wetGain = 0.0f;
+        float targetDryGain = 1.0f;
+        float targetWetGain = 0.0f;
+        float gainSmoothCoeff = 0.002f;   // set from sampleRate in updateParameters()
 
         // Simple smoothing for buffer wrap artifacts
         float leftPrevSample = 0.0f;
@@ -64,109 +139,50 @@ private:
     //==========================================================================
      // WARMTH EFFECT (15ips Tape Character)
      //==========================================================================
+    // 0-50%: low-shelf bass boost only (unchanged - existing patches below half
+    // are untouched). 50-100%: tape-style saturation fades in CONTINUOUSLY (the
+    // old design stepped -3dB of makeup gain at 51% - the audible "switch-on" -
+    // and its full-insert tanh at drive up to 4 with no post-filtering was the
+    // buzzy, high-harmonic character Gerard disliked; reworked 4 Jul 2026).
+    // Signal path: low shelf -> parallel tanh saturation -> high-shelf tone cut.
     struct WarmthProcessor {
-        // Simple biquad filter state
-        struct BiquadFilter {
-            float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
-            float a1 = 0.0f, a2 = 0.0f;
-            float x1 = 0.0f, x2 = 0.0f;
-            float y1 = 0.0f, y2 = 0.0f;
+        // ---- Saturation voicing constants (TUNE BY EAR) ----
+        // t = (warmthAmount - 0.5) * 2, clamped to 0..1 (the upper half of the knob).
+        static constexpr float kMaxExtraDrive = 2.0f;   // drive = 1 + this*t (was 3: drive 4 = buzz)
+        static constexpr float kBias          = 0.12f;  // asymmetric bias * t -> even harmonics (tape)
+        static constexpr float kMakeupDB      = -8.0f;  // * t^2: counters the shaper's small-signal boost
+        static constexpr float kToneCutDB     = -4.0f;  // * t: post-sat high-shelf cut (tape darkening)
+        static constexpr float kToneFreqHz    = 4500.0f;
 
-            void setLowShelf(double sampleRate, float freq, float q, float gainDB) {
-                float A = std::pow(10.0f, gainDB / 40.0f);
-                float w0 = 2.0f * juce::MathConstants<float>::pi * freq / (float)sampleRate;
-                float cosw0 = std::cos(w0);
-                float sinw0 = std::sin(w0);
-                float alpha = sinw0 / (2.0f * q);
-
-                float sqrtA = std::sqrt(A);
-                float beta = 2.0f * sqrtA * alpha;
-
-                float a0 = (A + 1.0f) + (A - 1.0f) * cosw0 + beta;
-
-                b0 = (A * ((A + 1.0f) - (A - 1.0f) * cosw0 + beta)) / a0;
-                b1 = (2.0f * A * ((A - 1.0f) - (A + 1.0f) * cosw0)) / a0;
-                b2 = (A * ((A + 1.0f) - (A - 1.0f) * cosw0 - beta)) / a0;
-                a1 = (-2.0f * ((A - 1.0f) + (A + 1.0f) * cosw0)) / a0;
-                a2 = ((A + 1.0f) + (A - 1.0f) * cosw0 - beta) / a0;
-            }
-
-            float process(float input) {
-                float output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-
-                x2 = x1;
-                x1 = input;
-                y2 = y1;
-                y1 = output;
-
-                return output;
-            }
-
-            void reset() {
-                x1 = x2 = y1 = y2 = 0.0f;
-            }
-        };
-
-        BiquadFilter lowShelfFilter;
+        BiquadFilter lowShelfFilter;   // pre-saturation bass boost (the 0-50% behaviour)
+        BiquadFilter toneFilter;       // post-saturation darkening (0dB at t=0 = transparent)
 
         float warmthAmount = 0.0f;
         double sampleRate = 44100.0;
 
+        // Block-rate transfer-curve constants (functions of warmthAmount only)
+        float driveAmount = 1.0f;        // 1 + kMaxExtraDrive*t
+        float biasTerm = 0.0f;           // kBias*t
+        float dcCorrection = 0.0f;       // tanh(biasTerm) - removes the DC the bias introduces
+        float invTanhDrive = 1.0f;       // 1/tanh(drive) - peak normalisation (input 1 -> ~1)
+        // Saturation wet-mix and makeup: block-rate targets + per-sample smoothed values
+        // (same 10 ms de-zipper as the detune Mix control).
+        float targetSatDepth = 0.0f;     // t^2: eases in from EXACTLY 0 at 50% - no switch-on step
+        float satDepth = 0.0f;
+        float targetMakeup = 1.0f;       // dB(kMakeupDB * t^2), continuous (old code stepped -3dB)
+        float makeupGain = 1.0f;
+        float gainSmoothCoeff = 0.002f;
+
         void prepareToPlay(double sr);
         void updateParameters(float amount, double sr);
         float process(float input);
-
-    private:
-        float tapeDistortion(float input, float drive);
     };
 
     //==========================================================================
     // PUNCH EFFECT (1176 FET Compressor + Presence)
     //==========================================================================
     struct PunchProcessor {
-        // Simple biquad filter for presence boost (reusing from Warmth)
-        struct BiquadFilter {
-            float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
-            float a1 = 0.0f, a2 = 0.0f;
-            float x1 = 0.0f, x2 = 0.0f;
-            float y1 = 0.0f, y2 = 0.0f;
-
-            void setHighShelf(double sampleRate, float freq, float q, float gainDB) {
-                float A = std::pow(10.0f, gainDB / 40.0f);
-                float w0 = 2.0f * juce::MathConstants<float>::pi * freq / (float)sampleRate;
-                float cosw0 = std::cos(w0);
-                float sinw0 = std::sin(w0);
-                float alpha = sinw0 / (2.0f * q);
-
-                float sqrtA = std::sqrt(A);
-                float beta = 2.0f * sqrtA * alpha;
-
-                float a0 = (A + 1.0f) - (A - 1.0f) * cosw0 + beta;
-
-                b0 = (A * ((A + 1.0f) + (A - 1.0f) * cosw0 + beta)) / a0;
-                b1 = (-2.0f * A * ((A - 1.0f) + (A + 1.0f) * cosw0)) / a0;
-                b2 = (A * ((A + 1.0f) + (A - 1.0f) * cosw0 - beta)) / a0;
-                a1 = (2.0f * ((A - 1.0f) - (A + 1.0f) * cosw0)) / a0;
-                a2 = ((A + 1.0f) - (A - 1.0f) * cosw0 - beta) / a0;
-            }
-
-            float process(float input) {
-                float output = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-
-                x2 = x1;
-                x1 = input;
-                y2 = y1;
-                y1 = output;
-
-                return output;
-            }
-
-            void reset() {
-                x1 = x2 = y1 = y2 = 0.0f;
-            }
-        };
-
-        BiquadFilter presenceFilter;
+        BiquadFilter presenceFilter;   // shared BiquadFilter (see top of private section)
 
         // Compressor state
         float envelope = 0.0f;

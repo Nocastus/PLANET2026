@@ -54,7 +54,7 @@ void PLANETVoiceManager::startNote(int noteNumber, float velocity, double sample
     }
 
     // Retrigger: release EVERY voice still playing this note. With unison a note owns a whole stack
-    // that all share the note number, so we must stop them all, not just the first (findVoiceForNote).
+    // that all share the note number, so we must stop them all, not just the first one found.
     for (auto& v : voices) {
         if (v.isActive() && v.getNoteNumber() == noteNumber)
             v.stopNote(false);
@@ -240,32 +240,11 @@ PLANETVoice* PLANETVoiceManager::findFreeVoice()
     return nullptr;  // No free voices
 }
 
-PLANETVoice* PLANETVoiceManager::getFirstActiveVoice()
-{
-    for (auto& voice : voices) {
-        if (voice.isActive()) {
-            return &voice;
-        }
-    }
-    return nullptr;  // No active voices
-}
-
 void PLANETVoiceManager::setExponentialControl(float value)
 {
     for (auto& voice : voices) {
         voice.setExponentialControl(value);
     }
-}
-
-PLANETVoice* PLANETVoiceManager::findVoiceForNote(int noteNumber)
-{
-    // Look for a voice currently playing this note number
-    for (auto& voice : voices) {
-        if (voice.isActive() && voice.getNoteNumber() == noteNumber) {
-            return &voice;
-        }
-    }
-    return nullptr;  // Note not currently playing
 }
 
 PLANETVoice* PLANETVoiceManager::findOldestVoice()

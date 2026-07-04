@@ -6,6 +6,42 @@ history; this is the durable record of *what shipped and why*.
 
 ---
 
+## v0.6.4 — Efficiency audit: housekeeping pass (4 Jul 2026)
+Engine declared feature-complete; a codebase audit for per-sample waste and orphaned code (branch
+`audit-trim`). **No audible change intended** — every edit is either dead-code removal or the same
+arithmetic done less often (bit-identical where practical). Deliberately NOT done: skipping unused
+drawbars or idle effects — processor weight must stay patch-independent (fixed budget: you can always
+use more drawbars/effects without the CPU cost moving).
+- **Effects: hoisted block-rate constants out of the per-sample path.** Detune's equal-power
+  crossfade gains (cos/sin of mix — two transcendentals per sample, always on) now computed in
+  `updateParameters`; Warmth's saturation constants (bias DC-correction tanh, normalisation tanh,
+  makeup-gain dB conversion) likewise — only the tanh on the signal itself remains per-sample.
+- **Amp envelope: cached curve constants.** k, e^-k and (1-e^-k) depend only on `exponentialControl`;
+  now cached in the voice (refreshed on change) so the per-sample envelope pays one `std::exp`, not two.
+- **LUT lookups: cheaper indexing.** `SineLUT`/`SoftSawLUT` (the hottest functions — 11–21 calls per
+  voice-sample) now use power-of-two masking and int-cast flooring instead of two `%` ops + `std::floor`.
+- **Orphaned code deleted** (all verified zero callers): the `FastMath` Padé-exp class (superseded by
+  the normalised `std::exp` envelope forms), `PLANETVoice::lfoPhases` + `storedAmpEnvValue`,
+  `ModulationState::lfoPhaseDelta` + `::reset()`, `CoefficientParams::spectralMultiplier` +
+  `updateSpectralMultiplier()`, `CoefficientGrid::setStagedCoefficient()`/`getActiveCoefficient()`,
+  `PLANETVoiceManager::findVoiceForNote()`/`getFirstActiveVoice()`.
+
+Two ear-driven fixes followed on the same branch once Gerard stress-tested the effects:
+- **Spread Mix de-zipper.** The equal-power crossfade gains always stepped at block rate (pre-existing,
+  not a regression — the old per-sample cos/sin recomputed the same block-constant mix); gains now glide
+  to their block-rate targets via a ~10 ms one-pole. At rest they settle to exactly the old values.
+- **Warmth saturation rework** (was an early "harmonic hole" attempt, superseded musically by Direct
+  routing + Density but still useful). Old design: hard −3 dB makeup step at 51% (the audible
+  "switch-on"), full-insert tanh at drive up to 4, no post-filtering — buzzy, high-harmonic-forward.
+  New design, all continuous in t = upper-half amount: **parallel** saturation with t² wet-mix ease-in
+  (exactly 0 at 50% → below-half patches bit-identical), drive capped at 3, continuous −8·t² dB makeup,
+  and a post-saturation **high-shelf cut (4.5 kHz, 0→−4 dB with t)** — the tape darkening that was
+  missing. Voicing constants (`kMaxExtraDrive`, `kBias`, `kMakeupDB`, `kToneCutDB`, `kToneFreqHz`) are
+  named in `WarmthProcessor` for ear-tuning. The duplicated per-processor `BiquadFilter` structs were
+  unified (Warmth needed the high shelf only Punch's copy had).
+
+---
+
 ## v0.6.1 — Hammond single-trigger percussion (F10) (3 Jul 2026)
 First feature on `main` after the v0.6.0 forks merged. A per-drawbar **envelope trigger mode**: **Multi**
 (default — retrigger the drawbar's envelope on every note, the old behaviour) or **Single** (fire only on
