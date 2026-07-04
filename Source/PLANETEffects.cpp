@@ -159,6 +159,7 @@ void PLANETEffects::WarmthProcessor::prepareToPlay(double sr)
 {
     sampleRate = sr;
     lowShelfFilter.reset();
+    toneFilter.reset();
 }
 
 void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
@@ -166,37 +167,44 @@ void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
     warmthAmount = juce::jlimit(0.0f, 1.0f, amount);
     sampleRate = sr;
 
-    // Low shelf at 250Hz with boost from 0dB to +10dB
+    // Low shelf at 250Hz with boost from 0dB to +10dB (the whole-range EQ behaviour, unchanged)
     float shelfGainDB = warmthAmount * 10.0f;
     lowShelfFilter.setLowShelf(sampleRate, 250.0f, 0.7f, shelfGainDB);
 
-    // Tape-saturation constants (all functions of warmthAmount only - hoisted out of the
-    // per-sample path, which was paying two extra tanh calls plus a dB conversion per sample).
-    // Saturation engages from 50%; saturationAmount runs 0-1 over the upper half (clamped at
-    // 0 below the engage point - process() doesn't use these constants there, but keep them sane).
-    float saturationAmount = juce::jmax(0.0f, (warmthAmount - 0.5f) * 2.0f);
-    driveAmount = 1.0f + saturationAmount * 3.0f;         // drive range 1.0 - 4.0
-    biasTerm = 0.12f * saturationAmount;                  // asymmetric bias for even harmonics
-    dcCorrection = std::tanh(biasTerm);                   // remove the DC the bias introduces
-    satNorm = std::tanh(driveAmount);                     // gain normalisation
-    float compensationDB = -3.0f - (saturationAmount * 7.0f);
-    compensationGain = juce::Decibels::decibelsToGain(compensationDB);
+    // ---- Tape saturation (upper half of the knob), reworked 4 Jul 2026 ----
+    // t runs 0-1 over 50-100%. EVERYTHING below is a continuous function of t that is
+    // identity/zero at t=0, so there is no switch-on step anywhere (the old design jumped
+    // -3dB of makeup gain at 51%). satDepth eases in as t^2 (imperceptible just past half,
+    // gentle by ~70%, full at 100%); drive is capped lower (3, was 4) and a post-saturation
+    // high-shelf cut darkens the top as the drive rises - the tape character that was
+    // missing (the old full-band tanh with no post-filter read as buzzy).
+    float t = juce::jmax(0.0f, (warmthAmount - 0.5f) * 2.0f);
+    driveAmount = 1.0f + kMaxExtraDrive * t;
+    biasTerm = kBias * t;                       // asymmetric bias -> even harmonics
+    dcCorrection = std::tanh(biasTerm);         // remove the DC the bias introduces
+    invTanhDrive = 1.0f / std::tanh(driveAmount);   // peak-normalise: input 1 -> ~1
+    targetSatDepth = t * t;                     // parallel wet-mix, quadratic ease-in
+    targetMakeup = juce::Decibels::decibelsToGain(kMakeupDB * t * t);
+    toneFilter.setHighShelf(sampleRate, kToneFreqHz, 0.7f, kToneCutDB * t);
+    gainSmoothCoeff = 1.0f - std::exp(-1.0f / (0.010f * (float)sampleRate));
 }
 
 float PLANETEffects::WarmthProcessor::process(float input)
 {
-    // Always apply low shelf - this should now be audible!
+    // Pre-saturation bass boost (boosting lows INTO the shaper is part of the tape flavour)
     float output = lowShelfFilter.process(input);
 
-    // Apply tape saturation starting from 50% (constants precomputed in updateParameters;
-    // only the tanh on the signal itself remains per-sample)
-    if (warmthAmount > 0.5f)
-    {
-        float saturated = std::tanh(output * driveAmount + biasTerm) - dcCorrection;
-        output = (saturated / satNorm) * compensationGain;
-    }
+    // De-zipper the block-rate wet-mix / makeup moves (same 10 ms one-pole as detune Mix)
+    satDepth += gainSmoothCoeff * (targetSatDepth - satDepth);
+    makeupGain += gainSmoothCoeff * (targetMakeup - makeupGain);
 
-    return output;
+    // Parallel tape saturation. Runs unconditionally (constant CPU at every setting -
+    // fixed-budget principle); at satDepth 0 the blend passes the dry signal exactly.
+    float shaped = (std::tanh(output * driveAmount + biasTerm) - dcCorrection) * invTanhDrive;
+    output = (output + satDepth * (shaped - output)) * makeupGain;
+
+    // Post-saturation tone: high-shelf cut scaling with drive (0dB = transparent at t=0)
+    return toneFilter.process(output);
 }
 
 //==============================================================================

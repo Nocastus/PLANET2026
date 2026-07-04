@@ -26,6 +26,20 @@ use more drawbars/effects without the CPU cost moving).
   `updateSpectralMultiplier()`, `CoefficientGrid::setStagedCoefficient()`/`getActiveCoefficient()`,
   `PLANETVoiceManager::findVoiceForNote()`/`getFirstActiveVoice()`.
 
+Two ear-driven fixes followed on the same branch once Gerard stress-tested the effects:
+- **Spread Mix de-zipper.** The equal-power crossfade gains always stepped at block rate (pre-existing,
+  not a regression — the old per-sample cos/sin recomputed the same block-constant mix); gains now glide
+  to their block-rate targets via a ~10 ms one-pole. At rest they settle to exactly the old values.
+- **Warmth saturation rework** (was an early "harmonic hole" attempt, superseded musically by Direct
+  routing + Density but still useful). Old design: hard −3 dB makeup step at 51% (the audible
+  "switch-on"), full-insert tanh at drive up to 4, no post-filtering — buzzy, high-harmonic-forward.
+  New design, all continuous in t = upper-half amount: **parallel** saturation with t² wet-mix ease-in
+  (exactly 0 at 50% → below-half patches bit-identical), drive capped at 3, continuous −8·t² dB makeup,
+  and a post-saturation **high-shelf cut (4.5 kHz, 0→−4 dB with t)** — the tape darkening that was
+  missing. Voicing constants (`kMaxExtraDrive`, `kBias`, `kMakeupDB`, `kToneCutDB`, `kToneFreqHz`) are
+  named in `WarmthProcessor` for ear-tuning. The duplicated per-processor `BiquadFilter` structs were
+  unified (Warmth needed the high shelf only Punch's copy had).
+
 ---
 
 ## v0.6.1 — Hammond single-trigger percussion (F10) (3 Jul 2026)
