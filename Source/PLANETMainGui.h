@@ -165,6 +165,53 @@ private:
 };
 
 //==============================================================================
+// A Slider whose double-click TOGGLES rather than only resets: the first
+// double-click remembers the current value and returns to the configured
+// double-click return value (the standard JUCE behaviour); a double-click on a
+// control already AT its return value restores the remembered one. Turns
+// "reset to null" into a reversible A/B gesture - hear the patch without this
+// control's contribution, double-click again to get it back. Applies wherever
+// setDoubleClickReturnValue(true, ...) is set; otherwise behaves as a plain
+// Slider. The restore survives across other edits (it is "the value this
+// control last held before a double-click reset", not a general undo).
+//==============================================================================
+class ToggleResetSlider : public juce::Slider
+{
+public:
+    using juce::Slider::Slider;
+
+    void mouseDoubleClick(const juce::MouseEvent& e) override
+    {
+        if (!isDoubleClickReturnEnabled())
+        {
+            juce::Slider::mouseDoubleClick(e);
+            return;
+        }
+
+        const double resetValue = getDoubleClickReturnValue();
+        // Tolerance absorbs float->double round-trips through the parameter
+        // attachment (e.g. an 0.8 default stored as float), scaled for
+        // large-valued controls like Punch Frequency.
+        const double tolerance = 1.0e-4 * juce::jmax(1.0, std::abs(resetValue));
+
+        if (std::abs(getValue() - resetValue) > tolerance)
+        {
+            rememberedValue = getValue();
+            hasRemembered = true;
+            setValue(resetValue, juce::sendNotificationSync);
+        }
+        else if (hasRemembered)
+        {
+            setValue(rememberedValue, juce::sendNotificationSync);
+        }
+    }
+
+private:
+    double rememberedValue = 0.0;
+    bool hasRemembered = false;
+};
+
+//==============================================================================
 // Main GUI Component
 //==============================================================================
 class PLANETMainGui : public juce::Component,
@@ -259,7 +306,7 @@ private:
     juce::AudioProcessor* audioProcessor = nullptr;
 
     // Drawbar components
-    std::array<juce::Slider, 10> drawbarSliders;
+    std::array<ToggleResetSlider, 10> drawbarSliders;
     std::array<juce::Label, 10> fValueLabels;
     std::array<juce::Rectangle<int>, 10> drawbarColumnBounds;  // per-column bounds (set in resized()), used to outline the selected drawbar
     int selectedDrawbar = 0;
@@ -341,8 +388,8 @@ private:
     // Harmonic LFO controls
     FocuslessComboBox lfoShapeCombo;
     FocuslessComboBox lfoSyncCombo;
-    juce::Slider lfoSpeedKnob;
-    juce::Slider lfoDepthKnob;
+    ToggleResetSlider lfoSpeedKnob;
+    ToggleResetSlider lfoDepthKnob;
     juce::Label lfoShapeLabel, lfoSyncLabel, lfoSpeedLabel, lfoDepthLabel;
     juce::Label selectedFDisplay;
     juce::Label lfoSpeedValue, lfoDepthValue;
@@ -351,12 +398,12 @@ private:
 
 
     // Envelope depth control
-    juce::Slider envDepthKnob;
+    ToggleResetSlider envDepthKnob;
     juce::Label envDepthLabel;
     juce::Label envDepthValue;
 
     // Velocity to Drawbar control (context-sensitive)
-    juce::Slider velToDrawbarKnob;
+    ToggleResetSlider velToDrawbarKnob;
     juce::Label velToDrawbarLabel;
     juce::Label velToDrawbarValue;
 
@@ -366,12 +413,12 @@ private:
     float ampAdsrValues[4] = { 0.1f, 0.3f, 0.7f, 0.5f };
 
     // Velocity to Amplitude control
-    juce::Slider velAmpSlider;
+    ToggleResetSlider velAmpSlider;
     juce::Label velAmpLabel;
     juce::Label velAmpValue;
 
     // Amplitude / Character zone knobs (2x2 grid: Vel->Attk, Env Curve / Vintage, Life)
-    juce::Slider velAttackKnob, envCurveKnob, vintageKnob, lifeKnob;
+    ToggleResetSlider velAttackKnob, envCurveKnob, vintageKnob, lifeKnob;
     juce::Label velAttackLabel, envCurveLabel, vintageLabel, lifeLabel;
     juce::Label velAttackValue, envCurveValue, vintageValue, lifeValue;
 
@@ -410,17 +457,17 @@ private:
     // ======================== RIGHT COLUMN CONTROLS ========================
     
     // Vibrato section
-    juce::Slider vibratoRateKnob, vibratoDepthKnob, vibratoFadeKnob;
+    ToggleResetSlider vibratoRateKnob, vibratoDepthKnob, vibratoFadeKnob;
     juce::Label vibratoRateLabel, vibratoDepthLabel, vibratoFadeLabel;
     
     // Pitch section (+ Portamento, F2a: Porta knob and a Rate/Time mode toggle)
-    juce::Slider pitchDistKnob, pitchTimeKnob, portamentoTimeKnob;
+    ToggleResetSlider pitchDistKnob, pitchTimeKnob, portamentoTimeKnob;
     juce::Label pitchDistLabel, pitchTimeLabel, portamentoLabel;
     
     // Colour section (Brilliance + Density/carrier-morph)
-    juce::Slider brillianceSlider;
+    ToggleResetSlider brillianceSlider;
     juce::Label brillianceMainLabel;
-    juce::Slider densitySlider;                        // F5 "Density": carrier sine->soft-saw morph
+    ToggleResetSlider densitySlider;                   // F5 "Density": carrier sine->soft-saw morph
     juce::Label brillianceSubLabel, densitySubLabel;   // small labels under each slider
     juce::Label densityValue;
     juce::Rectangle<int> densitySliderBounds;
@@ -467,11 +514,11 @@ private:
     WaveformDisplay waveformDisplay;
     
     // Effects section
-    juce::Slider detuneAmountSlider, detuneMixSlider;
+    ToggleResetSlider detuneAmountSlider, detuneMixSlider;
     juce::Label detuneAmountLabel, detuneMixLabel;
-    juce::Slider warmthSlider;
+    ToggleResetSlider warmthSlider;
     juce::Label warmthLabel;
-    juce::Slider punchSlider, punchFrequencySlider;
+    ToggleResetSlider punchSlider, punchFrequencySlider;
     juce::Label punchLabel, punchFrequencyLabel;
     juce::Label detuneAmountValue, detuneMixValue, warmthValue, punchValue, punchFrequencyValue;
     juce::Label brillianceValue;
@@ -486,7 +533,7 @@ private:
     juce::Label patchCommentLabel;
 
     // Master controls in patch bar
-    juce::Slider masterVolumeSlider;
+    ToggleResetSlider masterVolumeSlider;
     juce::Label masterVolumeLabel;
     juce::Label transposeLabel;
     juce::Label transposeValue;
@@ -496,7 +543,7 @@ private:
     // wants a volume tweak). Plus a static version label at the far right.
     juce::Label unisonVoicesLabel;    // "Stack"
     juce::Label unisonVoicesValue;    // editable 1-4
-    juce::Slider unisonDetuneSlider;
+    ToggleResetSlider unisonDetuneSlider;
     juce::Label unisonDetuneLabel;    // "Detune"
     juce::Label versionLabel;
 
