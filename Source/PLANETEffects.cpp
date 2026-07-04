@@ -76,9 +76,12 @@ void PLANETEffects::DetuneProcessor::updateParameters(float amount, float mixAmo
 {
     float mix = juce::jlimit(0.0f, 1.0f, mixAmount);
 
-    // Equal-power crossfade gains (hoisted out of the per-sample path - mix is block-rate)
-    dryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
-    wetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
+    // Equal-power crossfade gain TARGETS (mix is block-rate); process() glides the live
+    // gains toward these per sample, de-zippering Mix moves. ~10 ms time constant: long
+    // enough to bury block-rate steps, short enough to feel immediate under the hand.
+    targetDryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
+    targetWetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
+    gainSmoothCoeff = 1.0f - std::exp(-1.0f / (0.010f * (float)sampleRate));
 
     // Convert amount (0-1) to cents (0-20)
     float detuneCents = juce::jlimit(0.0f, 1.0f, amount) * MAX_DETUNE_CENTS;
@@ -114,7 +117,11 @@ std::pair<float, float> PLANETEffects::DetuneProcessor::process(float input)
     while (leftReadOffset < 0) leftReadOffset += BUFFER_SIZE;
     while (rightReadOffset < 0) rightReadOffset += BUFFER_SIZE;
 
-    // Equal power crossfade (gains precomputed per block in updateParameters)
+    // Equal power crossfade. Glide the gains toward their block-rate targets (one-pole,
+    // ~10 ms) so Mix moves are click-free; at rest this settles to exactly the old values.
+    dryGain += gainSmoothCoeff * (targetDryGain - dryGain);
+    wetGain += gainSmoothCoeff * (targetWetGain - wetGain);
+
     float leftOutput = input * dryGain + leftWet * wetGain;
     float rightOutput = input * dryGain + rightWet * wetGain;
 

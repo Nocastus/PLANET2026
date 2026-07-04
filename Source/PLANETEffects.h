@@ -47,10 +47,16 @@ private:
         float leftPlaybackRate = 1.0f;
         float rightPlaybackRate = 1.0f;
 
-        // Equal-power crossfade gains, computed once per block in updateParameters()
-        // (they depend only on the mix param - the per-sample cos/sin was pure waste).
+        // Equal-power crossfade gains. Targets are computed once per block in
+        // updateParameters() (they depend only on the mix param); the live gains glide
+        // toward them per sample (~10 ms one-pole) so a moving Mix knob doesn't zipper.
+        // NB the zipper predates the v0.6.4 hoist - the gains always stepped at block
+        // rate; the old per-sample cos/sin recomputed the same block-constant values.
         float dryGain = 1.0f;
         float wetGain = 0.0f;
+        float targetDryGain = 1.0f;
+        float targetWetGain = 0.0f;
+        float gainSmoothCoeff = 0.002f;   // set from sampleRate in updateParameters()
 
         // Simple smoothing for buffer wrap artifacts
         float leftPrevSample = 0.0f;
