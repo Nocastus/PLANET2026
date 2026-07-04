@@ -33,8 +33,6 @@ public:
     // can read each drawbar's Single/Multi trigger mode. Processor owns it (stable lifetime).
     void setCoefficientParams(const CoefficientArray* p) { coeffParams = p; }
 
-    PLANETVoice* getFirstActiveVoice();  // For debug info
-
     float getFirstVoiceFrequency() const;
     float getLastFirstVoiceSample() const { return lastFirstVoiceSample; }
     bool getFirstVoiceCycleStart() const;
@@ -76,7 +74,6 @@ private:
 
     // Voice allocation helpers
     PLANETVoice* findFreeVoice();
-    PLANETVoice* findVoiceForNote(int noteNumber);
     PLANETVoice* findOldestVoice();  // For voice stealing
 
     // Voice stealing counter (simple increment for "oldest")

@@ -31,13 +31,15 @@ public:
         while (phase >= 2.0 * juce::MathConstants<double>::pi)
             phase -= 2.0 * juce::MathConstants<double>::pi;
 
-        // Convert phase to table index
+        // Convert phase to table index. Phase is non-negative here, so the int cast IS the
+        // floor, and TABLE_SIZE is a power of two, so wrap is a mask - no modulo, no floor().
         double indexDouble = phase * TABLE_SIZE_OVER_2PI;
-        int index1 = static_cast<int>(indexDouble) % TABLE_SIZE;
-        int index2 = (index1 + 1) % TABLE_SIZE;
+        int floorIndex = static_cast<int>(indexDouble);
+        int index1 = floorIndex & (TABLE_SIZE - 1);
+        int index2 = (index1 + 1) & (TABLE_SIZE - 1);
 
         // Linear interpolation
-        float fraction = static_cast<float>(indexDouble - std::floor(indexDouble));
+        float fraction = static_cast<float>(indexDouble - floorIndex);
         return table[index1] * (1.0f - fraction) + table[index2] * fraction;
     }
 
@@ -84,10 +86,12 @@ public:
         while (phase < 0.0) phase += 2.0 * juce::MathConstants<double>::pi;
         while (phase >= 2.0 * juce::MathConstants<double>::pi)
             phase -= 2.0 * juce::MathConstants<double>::pi;
+        // Same mask/cast indexing as SineLUT::lookup (phase non-negative, table power-of-two).
         double indexDouble = phase * TABLE_SIZE_OVER_2PI;
-        int index1 = static_cast<int>(indexDouble) % TABLE_SIZE;
-        int index2 = (index1 + 1) % TABLE_SIZE;
-        float fraction = static_cast<float>(indexDouble - std::floor(indexDouble));
+        int floorIndex = static_cast<int>(indexDouble);
+        int index1 = floorIndex & (TABLE_SIZE - 1);
+        int index2 = (index1 + 1) & (TABLE_SIZE - 1);
+        float fraction = static_cast<float>(indexDouble - floorIndex);
         return table[index1] * (1.0f - fraction) + table[index2] * fraction;
     }
 
@@ -98,52 +102,6 @@ public:
 
 private:
     std::array<float, TABLE_SIZE> table;
-};
-
-//==============================================================================
-// FAST EXPONENTIAL APPROXIMATION (Optimization)
-//==============================================================================
-
-class FastMath {
-public:
-    // Fast exponential approximation using Padé approximant
-    // Accurate for typical envelope curves (x in range [-7, 0])
-    // ~10-20x faster than std::exp()
-    static inline float fastExp(float x) {
-        // Clamp to reasonable range for audio envelopes
-        x = juce::jlimit(-10.0f, 10.0f, x);
-
-        // For negative exponents (decay/release curves), use Padé (2,2) approximation
-        // e^x ≈ (12 + 6x + x²) / (12 - 6x + x²)
-        if (x < 0.0f) {
-            float x2 = x * x;
-            return (12.0f + 6.0f * x + x2) / (12.0f - 6.0f * x + x2);
-        }
-
-        // For positive exponents (attack curves), use series approximation
-        // e^-x for attack: 1 - e^(-x)
-        float x2 = x * x;
-        return (12.0f + 6.0f * x + x2) / (12.0f - 6.0f * x + x2);
-    }
-
-    // Specialized version for 1 - e^(-x) pattern (attack curves)
-    static inline float fastExpAttack(float x) {
-        // Input x is positive attack progress
-        // Returns 1 - e^(-x)
-        x = juce::jlimit(0.0f, 10.0f, x);
-        float x2 = x * x;
-        float expNegX = (12.0f - 6.0f * x + x2) / (12.0f + 6.0f * x + x2);
-        return 1.0f - expNegX;
-    }
-
-    // Specialized version for e^(-x) pattern (decay/release curves)
-    static inline float fastExpDecay(float x) {
-        // Input x is positive decay/release progress
-        // Returns e^(-x)
-        x = juce::jlimit(0.0f, 10.0f, x);
-        float x2 = x * x;
-        return (12.0f - 6.0f * x + x2) / (12.0f + 6.0f * x + x2);
-    }
 };
 
 //==============================================================================
@@ -206,8 +164,14 @@ public:
     bool getCycleStartFlag() const { return cycleStartFlag; }
     float getVelocity() const { return noteVelocity; }
 
-    //Setter for Envelope exponential curve control
-    void setExponentialControl(float value) { exponentialControl = value; }
+    //Setter for Envelope exponential curve control. The curve constants k and (1 - e^-k) are
+    //cached here so the per-sample amp envelope pays one std::exp, not two (values unchanged).
+    void setExponentialControl(float value) {
+        if (value != exponentialControl) {
+            exponentialControl = value;
+            refreshEnvCurveCache();
+        }
+    }
 
 private:
 
@@ -235,6 +199,13 @@ private:
     //Exponential envelope amount
     float exponentialControl = 0.5f;  // Now a member variable instead of constant
 
+    // Cached envelope-curve constants, functions of exponentialControl only. Refreshed by
+    // setExponentialControl / the constructor, so processEnvelope never recomputes e^-k.
+    float envCurveK = 4.0f;                 // k = 1 + curve*6
+    float envCurveOneMinusEk = 0.98168f;    // 1 - e^-k (real value set by refreshEnvCurveCache)
+    float envCurveEk = 0.01832f;            // e^-k     (real value set by refreshEnvCurveCache)
+    void refreshEnvCurveCache();
+
     // Voice identity & state
     int currentNoteNumber = -1;
     float noteVelocity = 0.0f;
@@ -254,9 +225,6 @@ private:
 
     // Per-voice modulation states (K1-K10 independent evolution)
     ModulationStateArray coeffModStates;
-
-    // Per-voice LFO phases
-    std::array<double, NUM_COEFFICIENTS> lfoPhases;
 
     // ======================== LIFE FEATURE STATE ========================
     // Stage 1: each modulator carries its own accumulated phase instead of deriving it
@@ -285,7 +253,6 @@ private:
     EnvelopeStage ampEnvStage = EnvelopeStage::Idle;
     double ampEnvTime = 0.0;
     float ampEnvLevel = 0.0f;
-    float storedAmpEnvValue = 0.0f;  // stores envelope value between cycles
     float ampReleaseStartLevel = 0.0f; // new mechanism for ensuring release starts at the right level
 
     bool cycleStartFlag = false;
@@ -325,10 +292,11 @@ private:
     double applyPhaseDistortion(double normalizedPhase, float morphAmount, const CoefficientArray& globalParams,
         double& additiveOut);
     float generateLFOWaveform(double phase, float shape);
+    // Curve shape comes from the cached envCurve* members (exponentialControl), not a parameter.
     float processEnvelope(EnvelopeStage& stage, double& envTime, float& envLevel,
         double deltaTime, float attackTime, float decayTime,
         float sustainLevel, float releaseTime, bool noteOn,
-        float releaseStartLevel, float curveAmount);
+        float releaseStartLevel);
 
     float processAmplitudeEnvelope(double deltaTime, float attackTime, float decayTime,
         float sustainLevel, float releaseTime);

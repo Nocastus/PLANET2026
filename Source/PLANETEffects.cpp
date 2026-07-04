@@ -74,7 +74,11 @@ std::pair<float, float> PLANETEffects::processStereoSample(float monoInput)
 
 void PLANETEffects::DetuneProcessor::updateParameters(float amount, float mixAmount, double sampleRate)
 {
-    mix = juce::jlimit(0.0f, 1.0f, mixAmount);
+    float mix = juce::jlimit(0.0f, 1.0f, mixAmount);
+
+    // Equal-power crossfade gains (hoisted out of the per-sample path - mix is block-rate)
+    dryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
+    wetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
 
     // Convert amount (0-1) to cents (0-20)
     float detuneCents = juce::jlimit(0.0f, 1.0f, amount) * MAX_DETUNE_CENTS;
@@ -110,10 +114,7 @@ std::pair<float, float> PLANETEffects::DetuneProcessor::process(float input)
     while (leftReadOffset < 0) leftReadOffset += BUFFER_SIZE;
     while (rightReadOffset < 0) rightReadOffset += BUFFER_SIZE;
 
-    // Equal power crossfade
-    float dryGain = std::cos(mix * juce::MathConstants<float>::halfPi);
-    float wetGain = std::sin(mix * juce::MathConstants<float>::halfPi);
-
+    // Equal power crossfade (gains precomputed per block in updateParameters)
     float leftOutput = input * dryGain + leftWet * wetGain;
     float rightOutput = input * dryGain + rightWet * wetGain;
 
@@ -161,6 +162,18 @@ void PLANETEffects::WarmthProcessor::updateParameters(float amount, double sr)
     // Low shelf at 250Hz with boost from 0dB to +10dB
     float shelfGainDB = warmthAmount * 10.0f;
     lowShelfFilter.setLowShelf(sampleRate, 250.0f, 0.7f, shelfGainDB);
+
+    // Tape-saturation constants (all functions of warmthAmount only - hoisted out of the
+    // per-sample path, which was paying two extra tanh calls plus a dB conversion per sample).
+    // Saturation engages from 50%; saturationAmount runs 0-1 over the upper half (clamped at
+    // 0 below the engage point - process() doesn't use these constants there, but keep them sane).
+    float saturationAmount = juce::jmax(0.0f, (warmthAmount - 0.5f) * 2.0f);
+    driveAmount = 1.0f + saturationAmount * 3.0f;         // drive range 1.0 - 4.0
+    biasTerm = 0.12f * saturationAmount;                  // asymmetric bias for even harmonics
+    dcCorrection = std::tanh(biasTerm);                   // remove the DC the bias introduces
+    satNorm = std::tanh(driveAmount);                     // gain normalisation
+    float compensationDB = -3.0f - (saturationAmount * 7.0f);
+    compensationGain = juce::Decibels::decibelsToGain(compensationDB);
 }
 
 float PLANETEffects::WarmthProcessor::process(float input)
@@ -168,40 +181,15 @@ float PLANETEffects::WarmthProcessor::process(float input)
     // Always apply low shelf - this should now be audible!
     float output = lowShelfFilter.process(input);
 
-    // Apply tape saturation starting from 50%
+    // Apply tape saturation starting from 50% (constants precomputed in updateParameters;
+    // only the tanh on the signal itself remains per-sample)
     if (warmthAmount > 0.5f)
     {
-        float saturationAmount = (warmthAmount - 0.5f) * 2.0f;
-
-        // Simple tape distortion with your 1.2 coefficient
-        output = tapeDistortion(output, saturationAmount);
-
-        // Gain compensation
-        float compensationDB = -3.0f - (saturationAmount * 7.0f);
-        float compensationGain = juce::Decibels::decibelsToGain(compensationDB);
-        output *= compensationGain;
+        float saturated = std::tanh(output * driveAmount + biasTerm) - dcCorrection;
+        output = (saturated / satNorm) * compensationGain;
     }
 
     return output;
-}
-
-float PLANETEffects::WarmthProcessor::tapeDistortion(float input, float drive)
-{
-    // Increased drive range: 1.0 - 5.0 (was 1.0 - 3.0)
-    float driveAmount = 1.0f + drive * 3.0f;
-
-    // Asymmetric bias for even harmonics (tape character)
-    // Increased bias amount for more character
-    float biased = input * driveAmount + 0.12f * drive;
-
-    // Soft saturation using tanh
-    float saturated = std::tanh(biased);
-
-    // Remove DC offset from bias
-    saturated -= std::tanh(0.12f * drive);
-
-    // Compensate for gain
-    return saturated / std::tanh(driveAmount);
 }
 
 //==============================================================================

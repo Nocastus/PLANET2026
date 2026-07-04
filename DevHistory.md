@@ -6,6 +6,28 @@ history; this is the durable record of *what shipped and why*.
 
 ---
 
+## v0.6.4 — Efficiency audit: housekeeping pass (4 Jul 2026)
+Engine declared feature-complete; a codebase audit for per-sample waste and orphaned code (branch
+`audit-trim`). **No audible change intended** — every edit is either dead-code removal or the same
+arithmetic done less often (bit-identical where practical). Deliberately NOT done: skipping unused
+drawbars or idle effects — processor weight must stay patch-independent (fixed budget: you can always
+use more drawbars/effects without the CPU cost moving).
+- **Effects: hoisted block-rate constants out of the per-sample path.** Detune's equal-power
+  crossfade gains (cos/sin of mix — two transcendentals per sample, always on) now computed in
+  `updateParameters`; Warmth's saturation constants (bias DC-correction tanh, normalisation tanh,
+  makeup-gain dB conversion) likewise — only the tanh on the signal itself remains per-sample.
+- **Amp envelope: cached curve constants.** k, e^-k and (1-e^-k) depend only on `exponentialControl`;
+  now cached in the voice (refreshed on change) so the per-sample envelope pays one `std::exp`, not two.
+- **LUT lookups: cheaper indexing.** `SineLUT`/`SoftSawLUT` (the hottest functions — 11–21 calls per
+  voice-sample) now use power-of-two masking and int-cast flooring instead of two `%` ops + `std::floor`.
+- **Orphaned code deleted** (all verified zero callers): the `FastMath` Padé-exp class (superseded by
+  the normalised `std::exp` envelope forms), `PLANETVoice::lfoPhases` + `storedAmpEnvValue`,
+  `ModulationState::lfoPhaseDelta` + `::reset()`, `CoefficientParams::spectralMultiplier` +
+  `updateSpectralMultiplier()`, `CoefficientGrid::setStagedCoefficient()`/`getActiveCoefficient()`,
+  `PLANETVoiceManager::findVoiceForNote()`/`getFirstActiveVoice()`.
+
+---
+
 ## v0.6.1 — Hammond single-trigger percussion (F10) (3 Jul 2026)
 First feature on `main` after the v0.6.0 forks merged. A per-drawbar **envelope trigger mode**: **Multi**
 (default — retrigger the drawbar's envelope on every note, the old behaviour) or **Single** (fire only on

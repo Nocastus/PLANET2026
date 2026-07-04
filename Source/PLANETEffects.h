@@ -46,7 +46,11 @@ private:
 
         float leftPlaybackRate = 1.0f;
         float rightPlaybackRate = 1.0f;
-        float mix = 0.0f;
+
+        // Equal-power crossfade gains, computed once per block in updateParameters()
+        // (they depend only on the mix param - the per-sample cos/sin was pure waste).
+        float dryGain = 1.0f;
+        float wetGain = 0.0f;
 
         // Simple smoothing for buffer wrap artifacts
         float leftPrevSample = 0.0f;
@@ -112,12 +116,17 @@ private:
         float warmthAmount = 0.0f;
         double sampleRate = 44100.0;
 
+        // Saturation constants, computed once per block in updateParameters() (all are
+        // functions of warmthAmount only). Only tanh(signal) remains per-sample.
+        float driveAmount = 1.0f;        // 1 + saturation*3
+        float biasTerm = 0.0f;           // 0.12 * saturation (asymmetric bias for even harmonics)
+        float dcCorrection = 0.0f;       // tanh(biasTerm) - removes the DC the bias introduces
+        float satNorm = 1.0f;            // tanh(driveAmount) - gain normalisation
+        float compensationGain = 1.0f;   // -3dB .. -10dB makeup trim
+
         void prepareToPlay(double sr);
         void updateParameters(float amount, double sr);
         float process(float input);
-
-    private:
-        float tapeDistortion(float input, float drive);
     };
 
     //==========================================================================
