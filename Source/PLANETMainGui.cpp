@@ -2573,11 +2573,13 @@ void PLANETMainGui::handleMWButtonClick(const juce::String& paramID, juce::Recta
 
 void PLANETMainGui::copyEnvelopeParamsBetweenDrawbars(int from, int to)
 {
-    // ADSR + envelope depth. Copies the normalised value; every k{n} param shares the same range,
-    // so the normalised value maps to the identical real value on the target. Notifies the host so
-    // it's automatable/undoable and the GUI refreshes.
+    // ADSR only - deliberately NOT envelope depth: the copy transfers the envelope's SHAPE, and a
+    // carefully set per-drawbar depth (e.g. a resynth-fitted level) must survive it. Copies the
+    // normalised value; every k{n} param shares the same range, so the normalised value maps to the
+    // identical real value on the target. Notifies the host so it's automatable/undoable and the
+    // GUI refreshes.
     static const char* const suffixes[] =
-        { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime", "EnvelopeAmount" };
+        { "AttackTime", "DecayTime", "SustainLevel", "ReleaseTime" };
     const juce::String fromPrefix = "k" + juce::String(from + 1);
     const juce::String toPrefix   = "k" + juce::String(to + 1);
     for (auto* s : suffixes)
