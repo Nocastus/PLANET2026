@@ -899,70 +899,79 @@ juce::AudioProcessorEditor* PLANETtest4AudioProcessor::createEditor()
 
 void PLANETtest4AudioProcessor::loadPatch(const juce::File& patchFile) {
     PLANETPatch patch;
-    if (patchManager.loadPatchFromFile(patchFile, patch)) {
-        // Suppress GUI updates during bulk parameter load for performance
-        if (auto* editor = dynamic_cast<PLANETtest4AudioProcessorEditor*>(getActiveEditor())) {
-            if (auto* gui = editor->getMainGui()) {
-                gui->suppressParameterUpdates = true;
-            }
-        }
+    if (patchManager.loadPatchFromFile(patchFile, patch))
+        applyLoadedPatch(patch);
+}
 
-        // Reset parameters to defaults ONLY for old patches that don't have them
-        for (int i = 1; i <= 10; ++i)
+void PLANETtest4AudioProcessor::loadFactoryPatch(const PLANETPatch& patch) {
+    // Factory patches arrive pre-parsed from the baked-in bank - same apply
+    // path as file loading, no file involved (read-only by construction).
+    applyLoadedPatch(patch);
+}
+
+void PLANETtest4AudioProcessor::applyLoadedPatch(const PLANETPatch& patch) {
+    // Suppress GUI updates during bulk parameter load for performance
+    if (auto* editor = dynamic_cast<PLANETtest4AudioProcessorEditor*>(getActiveEditor())) {
+        if (auto* gui = editor->getMainGui()) {
+            gui->suppressParameterUpdates = true;
+        }
+    }
+
+    // Reset parameters to defaults ONLY for old patches that don't have them
+    for (int i = 1; i <= 10; ++i)
+    {
+        juce::String prefix = "k" + juce::String(i);
+
+        // VelToHarmonic (default 0)
+        juce::String velParamID = prefix + "VelToHarmonic";
+        if (patch.parameters.count(velParamID) == 0)
         {
-            juce::String prefix = "k" + juce::String(i);
-
-            // VelToHarmonic (default 0)
-            juce::String velParamID = prefix + "VelToHarmonic";
-            if (patch.parameters.count(velParamID) == 0)
-            {
-                if (auto* param = parameters.getParameter(velParamID))
-                    param->setValueNotifyingHost(param->convertTo0to1(0.0f));
-            }
-
-            // LFOSync (default 0 = Free)
-            juce::String syncParamID = prefix + "LFOSync";
-            if (patch.parameters.count(syncParamID) == 0)
-            {
-                if (auto* param = parameters.getParameter(syncParamID))
-                    param->setValueNotifyingHost(param->convertTo0to1(0.0f));
-            }
-
-            // LFOSyncDiv (default 7 = 1/4 note)
-            juce::String divParamID = prefix + "LFOSyncDiv";
-            if (patch.parameters.count(divParamID) == 0)
-            {
-                if (auto* param = parameters.getParameter(divParamID))
-                    param->setValueNotifyingHost(param->convertTo0to1(7.0f));
-            }
+            if (auto* param = parameters.getParameter(velParamID))
+                param->setValueNotifyingHost(param->convertTo0to1(0.0f));
         }
 
-        patchManager.applyPatchToProcessor(patch, parameters);
+        // LFOSync (default 0 = Free)
+        juce::String syncParamID = prefix + "LFOSync";
+        if (patch.parameters.count(syncParamID) == 0)
+        {
+            if (auto* param = parameters.getParameter(syncParamID))
+                param->setValueNotifyingHost(param->convertTo0to1(0.0f));
+        }
 
-        // Reset mod wheel engagement for new patch
-        modWheelEngaged.store(false);
-        lastRawModWheelValue = 0.5f;
+        // LFOSyncDiv (default 7 = 1/4 note)
+        juce::String divParamID = prefix + "LFOSyncDiv";
+        if (patch.parameters.count(divParamID) == 0)
+        {
+            if (auto* param = parameters.getParameter(divParamID))
+                param->setValueNotifyingHost(param->convertTo0to1(7.0f));
+        }
+    }
 
-        // Reset Colour-zone latch state to the freshly-loaded slider values (no stale latch).
-        heldBrilliance = brillianceParameter->load();
-        heldCarrierMorph = carrierMorphParameter->load();
-        brillMWLatched = false;
-        densMWLatched = false;
-        prevBrillMWMode = (int)brillianceModWheelParameter->load();
-        prevDensMWMode = (int)carrierMorphModWheelParameter->load();
+    patchManager.applyPatchToProcessor(patch, parameters);
 
-        // Store patch metadata in processor
-        currentPatchName = patch.patchName;
-        currentPatchDescription = patch.description;
+    // Reset mod wheel engagement for new patch
+    modWheelEngaged.store(false);
+    lastRawModWheelValue = 0.5f;
 
-        // Re-enable GUI updates and refresh all values once
-        if (auto* editor = dynamic_cast<PLANETtest4AudioProcessorEditor*>(getActiveEditor())) {
-            if (auto* gui = editor->getMainGui()) {
-                gui->suppressParameterUpdates = false;
-                gui->refreshAllGUIValues();
-                gui->updatePatchNameDisplay(currentPatchName);
-                gui->updatePatchCommentDisplay(currentPatchDescription);
-            }
+    // Reset Colour-zone latch state to the freshly-loaded slider values (no stale latch).
+    heldBrilliance = brillianceParameter->load();
+    heldCarrierMorph = carrierMorphParameter->load();
+    brillMWLatched = false;
+    densMWLatched = false;
+    prevBrillMWMode = (int)brillianceModWheelParameter->load();
+    prevDensMWMode = (int)carrierMorphModWheelParameter->load();
+
+    // Store patch metadata in processor
+    currentPatchName = patch.patchName;
+    currentPatchDescription = patch.description;
+
+    // Re-enable GUI updates and refresh all values once
+    if (auto* editor = dynamic_cast<PLANETtest4AudioProcessorEditor*>(getActiveEditor())) {
+        if (auto* gui = editor->getMainGui()) {
+            gui->suppressParameterUpdates = false;
+            gui->refreshAllGUIValues();
+            gui->updatePatchNameDisplay(currentPatchName);
+            gui->updatePatchCommentDisplay(currentPatchDescription);
         }
     }
 }

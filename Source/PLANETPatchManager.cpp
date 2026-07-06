@@ -6,6 +6,7 @@
 */
 
 #include "PLANETPatchManager.h"
+#include "FactoryPatchData.h"
 
 //==============================================================================
 PLANETPatchManager::PLANETPatchManager() {
@@ -19,7 +20,15 @@ bool PLANETPatchManager::loadPatchFromFile(const juce::File& file, PLANETPatch& 
     if (!file.existsAsFile() || file.getFileExtension() != ".md")
         return false;
 
-    juce::String content = file.loadFileAsString();
+    // Category comes from the parent folder
+    return loadPatchFromString(file.loadFileAsString(),
+                               file.getParentDirectory().getFileName(),
+                               outPatch);
+}
+
+bool PLANETPatchManager::loadPatchFromString(const juce::String& content,
+                                             const juce::String& category,
+                                             PLANETPatch& outPatch) {
     if (content.isEmpty())
         return false;
 
@@ -29,15 +38,25 @@ bool PLANETPatchManager::loadPatchFromFile(const juce::File& file, PLANETPatch& 
     outPatch.patchName = extractTitle(content);
     outPatch.description = extractDescription(content);
     outPatch.tags = extractTags(content);
-
-    // Determine category from parent folder
-    juce::File parentDir = file.getParentDirectory();
-    outPatch.category = parentDir.getFileName();
+    outPatch.category = category;
 
     // Parse all parameters
     parseParameters(content, outPatch);
 
     return true;
+}
+
+const std::vector<PLANETPatch>& PLANETPatchManager::getFactoryPatches() {
+    if (!factoryLoaded) {
+        factoryLoaded = true;
+        for (int i = 0; i < FactoryPatchData::numEntries; ++i) {
+            const auto& e = FactoryPatchData::entries[i];
+            PLANETPatch patch;
+            if (loadPatchFromString(juce::String::fromUTF8(e.markdown), e.category, patch))
+                factoryLibrary.push_back(patch);
+        }
+    }
+    return factoryLibrary;
 }
 
 void PLANETPatchManager::scanPatchLibrary(const juce::File& rootDirectory) {

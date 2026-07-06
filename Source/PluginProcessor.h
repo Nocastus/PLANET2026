@@ -66,10 +66,12 @@ public:
 
     // Patch management methods
     void loadPatch(const juce::File& patchFile);
+    void loadFactoryPatch(const PLANETPatch& patch);   // baked-in bank, no file
     void savePatch(const juce::File& patchFile, const juce::String& name,
                    const juce::String& description, const juce::String& tags,
                    const juce::String& category);
     const std::vector<PLANETPatch>& getAllPatches() const { return patchManager.getAllPatches(); }
+    const std::vector<PLANETPatch>& getFactoryPatches() { return patchManager.getFactoryPatches(); }
     void scanPatchLibrary() { patchManager.scanPatchLibrary(PLANETPatchManager::getDefaultPatchDirectory()); }
     juce::String currentPatchName = "Init";
     juce::String currentPatchDescription = "";
@@ -109,6 +111,10 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
 private:
+
+    // Shared patch-apply path used by loadPatch (file) and loadFactoryPatch
+    // (baked-in bank): legacy-default resets, apply, latch resets, GUI refresh.
+    void applyLoadedPatch(const PLANETPatch& patch);
 
     // NEW: Organized data structures
     CoefficientArray coefficients;          // Global coefficient parameters

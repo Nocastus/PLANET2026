@@ -2997,24 +2997,71 @@ void PLANETMainGui::loadPatchButtonClicked()
     if (processor == nullptr)
         return;
 
-    auto chooser = std::make_shared<juce::FileChooser>("Load Patch",
-                                                         PLANETPatchManager::getDefaultPatchDirectory(),
-                                                         "*.md");
+    // Factory bank (baked into the binary) as category submenus, then the
+    // user-patch file browser. Factory item IDs are 1-based indices into the
+    // factory list; the browser gets a high sentinel ID.
+    const auto& factory = processor->getFactoryPatches();
+    constexpr int browseItemID = 1000000;
 
-    auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+    juce::PopupMenu menu;
 
-    chooser->launchAsync(flags, [this, processor, chooser](const juce::FileChooser& fc)
+    juce::StringArray categories;
+    for (const auto& p : factory)
+        if (!categories.contains(p.category))
+            categories.add(p.category);
+
+    for (const auto& category : categories)
     {
-        auto file = fc.getResult();
-        if (file != juce::File{})
-        {
-            processor->loadPatch(file);
+        juce::PopupMenu sub;
+        for (int i = 0; i < (int) factory.size(); ++i)
+            if (factory[(size_t) i].category == category)
+                sub.addItem(i + 1, factory[(size_t) i].patchName);
+        menu.addSubMenu(category, sub);
+    }
 
-            // Update patch name display
-            currentPatchName = file.getFileNameWithoutExtension();
-            updatePatchNameDisplay(currentPatchName);
-        }
-    });
+    if (!factory.empty())
+        menu.addSeparator();
+    menu.addItem(browseItemID, "Browse User Patches...");
+
+    menu.showMenuAsync(juce::PopupMenu::Options()
+                           .withTargetComponent(&loadPatchButton),
+        [this, processor, browseItemID](int result)
+        {
+            if (result == 0)
+                return;
+
+            if (result != browseItemID)
+            {
+                const auto& factoryList = processor->getFactoryPatches();
+                const int index = result - 1;
+                if (index >= 0 && index < (int) factoryList.size())
+                {
+                    processor->loadFactoryPatch(factoryList[(size_t) index]);
+                    currentPatchName = factoryList[(size_t) index].patchName;
+                    updatePatchNameDisplay(currentPatchName);
+                }
+                return;
+            }
+
+            auto chooser = std::make_shared<juce::FileChooser>("Load Patch",
+                                                               PLANETPatchManager::getDefaultPatchDirectory(),
+                                                               "*.md");
+
+            auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+            chooser->launchAsync(flags, [this, processor, chooser](const juce::FileChooser& fc)
+            {
+                auto file = fc.getResult();
+                if (file != juce::File{})
+                {
+                    processor->loadPatch(file);
+
+                    // Update patch name display
+                    currentPatchName = file.getFileNameWithoutExtension();
+                    updatePatchNameDisplay(currentPatchName);
+                }
+            });
+        });
 }
 
 void PLANETMainGui::savePatchButtonClicked()
