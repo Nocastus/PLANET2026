@@ -30,6 +30,7 @@ PLANETVoice::PLANETVoice()
     // start behaviour (coefficient grid is zero until the first promotion anyway).
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
+    barDensity.fill(0.0f);
 }
 
 //==============================================================================
@@ -118,6 +119,7 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     // keeps a reused voice's opening cycle clean rather than carrying stale routing.
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
+    barDensity.fill(0.0f);
 
     {
         std::mt19937 lifeGen((uint32_t)lifeSeed);
@@ -558,6 +560,10 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             routeAddAmp[i] = (globalParams[i].toOut >= 0.5f)
                 ? juce::jlimit(-2.0f, 2.0f, stagedCoeff) * 0.5f
                 : 0.0f;
+
+            // Per-drawbar Density: snapshot here for the same click-free reason as
+            // routing (both modulator waveforms are exactly 0 at the boundary).
+            barDensity[i] = juce::jlimit(0.0f, 1.0f, globalParams[i].density);
         }
 
         // Promote staged coefficients to active
@@ -629,15 +635,28 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
 
     auto distortedPhase = x;
     additiveOut = 0.0;
+    const auto& softSawLUT = SoftSawLUT::getInstance();
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
         const double f = globalParams[i].inputSpectralMultiplier;
 
-        // modWave is the drawbar's sin term for THIS sample (doublet-aware). It is computed
-        // once, then fed to either destination per the routing snapshot - so a bar can drive
-        // the carrier phase (PM), add straight to the output (additive partial at harmonic f),
-        // both, or neither (muted). The phase accumulators advance regardless of routing, so
-        // toggling a destination never jumps the partial's phase.
+        // Per-drawbar Density (experimental): the bar's modulator morphs sine -> soft-saw,
+        // so one bar contributes a whole f, 2f, 3f... family. d == 0 is the fast path and
+        // is bit-identical to the pure-sine engine. Both LUTs are 0 at phase 0, so the
+        // cycle-boundary snapshot keeps knob moves click-free.
+        const float d = barDensity[i];
+        auto modLookup = [&](double ph) -> float {
+            float v = sineLUT.lookup(ph);
+            if (d > 0.0f)
+                v = (1.0f - d) * v + d * softSawLUT.lookup(ph);
+            return v;
+        };
+
+        // modWave is the drawbar's modulator term for THIS sample (doublet-aware). It is
+        // computed once, then fed to either destination per the routing snapshot - so a bar
+        // can drive the carrier phase (PM), add straight to the output (additive partial at
+        // harmonic f), both, or neither (muted). The phase accumulators advance regardless of
+        // routing, so toggling a destination never jumps the partial's phase.
         float modWave;
         if (doubletEngaged[i])
         {
@@ -647,8 +666,8 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // s = 0.5 beats through a true null; away from 0.5 it beats shallower with
             // a slight pitch wobble. Both are wanted flavours.
             const float sB = doubletMixB[i];
-            modWave = (1.0f - sB) * sineLUT.lookup(modPhases[i])
-                    + sB          * sineLUT.lookup(modPhasesB[i]);
+            modWave = (1.0f - sB) * modLookup(modPhases[i])
+                    + sB          * modLookup(modPhasesB[i]);
             modPhases[i]  += f * doubletRatioA[i] * angleDelta;
             modPhasesB[i] += f * doubletRatioB[i] * angleDelta;
             while (modPhases[i]  >= twoPi) modPhases[i]  -= twoPi;
@@ -659,7 +678,7 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // Single-accumulator path (Stage 1): use-then-advance, so with integer f
             // this equals sin(f*x) exactly and LIFE-off patches are unchanged.
             // angleDelta already tracks vibrato / pitch-wheel / pitch-envelope.
-            modWave = sineLUT.lookup(modPhases[i]);
+            modWave = modLookup(modPhases[i]);
             modPhases[i] += f * angleDelta;
             // Multipliers go up to 30, so f*angleDelta can exceed 2pi on high notes;
             // a while-wrap stays correct where a single subtraction would not.

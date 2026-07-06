@@ -288,6 +288,15 @@ private:
     std::array<float, NUM_COEFFICIENTS> routePMGain;
     std::array<float, NUM_COEFFICIENTS> routeAddAmp;
 
+    // ======================== PER-DRAWBAR DENSITY (experimental) ========================
+    // Morphs this drawbar's MODULATOR wave sine -> soft-saw (same SoftSawLUT as the F5
+    // carrier morph), so one bar contributes a whole f, 2f, 3f... family instead of a
+    // single sin(f*x). Snapshotted at the carrier-cycle boundary like routing: both LUTs
+    // are exactly 0 at phase 0, so a step in the morph amount there is click-free.
+    // Deliberately NOT band-limited (Gerard, 6 Jul 2026): high f * high density will
+    // alias, accepted as digital character until listening says otherwise.
+    std::array<float, NUM_COEFFICIENTS> barDensity;
+
     // Helper functions
     double applyPhaseDistortion(double normalizedPhase, float morphAmount, const CoefficientArray& globalParams,
         double& additiveOut);

@@ -435,6 +435,11 @@ private:
     juce::Label velToDrawbarLabel;
     juce::Label velToDrawbarValue;
 
+    // Per-drawbar Density control (context-sensitive, experimental)
+    ToggleResetSlider drawbarDensityKnob;
+    juce::Label drawbarDensityLabel;
+    juce::Label drawbarDensityValue;
+
     // Amplitude ADSR display
     std::array<juce::Label, 4> ampAdsrLabels;
     std::array<juce::Label, 4> ampAdsrValueEditors;
@@ -621,6 +626,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoSyncAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSyncDivAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velToDrawbarAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> drawbarDensityAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };

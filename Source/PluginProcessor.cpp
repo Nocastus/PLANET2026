@@ -286,6 +286,19 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k9TrigSingle",  "K9 Trigger Single",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k10TrigSingle", "K10 Trigger Single", juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
 
+            // ======================== PER-DRAWBAR DENSITY (10, experimental) ========================
+            // Morphs the drawbar's MODULATOR sine -> soft-saw (default 0 = pure sine, patch-compatible)
+            std::make_unique<juce::AudioParameterFloat>("k1Density", "K1 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2Density", "K2 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3Density", "K3 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4Density", "K4 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5Density", "K5 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6Density", "K6 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7Density", "K7 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8Density", "K8 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9Density", "K9 Density", 0.0f, 1.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10Density", "K10 Density", 0.0f, 1.0f, 0.0f),
+
             // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("input_f1", "Input F1 Spectral Multiplier", 0.5f, 30.0f, 1.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f2", "Input F2 Spectral Multiplier", 0.5f, 30.0f, 2.0f),

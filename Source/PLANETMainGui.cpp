@@ -235,6 +235,31 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         velToDrawbarValue.setText(juce::String((int)velToDrawbarKnob.getValue()), juce::dontSendNotification);
         };
 
+    // Set up per-drawbar Density knob (experimental: modulator sine -> soft-saw morph)
+    drawbarDensityKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    drawbarDensityKnob.setRange(0.0, 1.0, 0.01);
+    drawbarDensityKnob.setValue(0.0);
+    drawbarDensityKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    drawbarDensityKnob.setDoubleClickReturnValue(true, 0.0);
+    addAndMakeVisible(drawbarDensityKnob);
+    drawbarDensityKnob.setLookAndFeel(&drawbarIshtarLookAndFeel);  // per-drawbar accent
+
+    drawbarDensityLabel.setText("Density", juce::dontSendNotification);
+    drawbarDensityLabel.setJustificationType(juce::Justification::centred);
+    drawbarDensityLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(drawbarDensityLabel);
+
+    drawbarDensityValue.setText("0.00", juce::dontSendNotification);
+    drawbarDensityValue.setJustificationType(juce::Justification::centred);
+    drawbarDensityValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    drawbarDensityValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    drawbarDensityValue.setEditable(true);
+    addAndMakeVisible(drawbarDensityValue);
+
+    drawbarDensityKnob.onValueChange = [this]() {
+        drawbarDensityValue.setText(juce::String(drawbarDensityKnob.getValue(), 2), juce::dontSendNotification);
+        };
+
     envDepthValue.setText("0.00", juce::dontSendNotification);
     envDepthValue.setJustificationType(juce::Justification::centred);
     envDepthValue.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -1055,6 +1080,7 @@ PLANETMainGui::~PLANETMainGui()
     lfoSpeedKnob.setLookAndFeel(nullptr);
     lfoDepthKnob.setLookAndFeel(nullptr);
     velToDrawbarKnob.setLookAndFeel(nullptr);
+    drawbarDensityKnob.setLookAndFeel(nullptr);
     
     velAttackKnob.setLookAndFeel(nullptr);
     envCurveKnob.setLookAndFeel(nullptr);
@@ -1899,23 +1925,27 @@ void PLANETMainGui::resized()
     // Hide the old F display - now drawn as watermark in paint()
     selectedFDisplay.setVisible(false);
 
-    // Triangle layout: Vel to Drawbar at apex, LFO Speed/Depth at base
+    // 2x2 grid: Vel to Drawbar above LFO Speed (left column), per-drawbar Density
+    // above LFO Depth (right column). Replaces the old apex-triangle layout.
     int smallKnobSize = 60;
     int smallKnobValueHeight = 18;
-    
 
-    // Apex knob (Vel to Drawbar) - centered at top
-    int apexX = lfoZoneX + (lfoZoneWidth - smallKnobSize) / 2;
-    int apexY = lfoZoneY + 5;
-    velToDrawbarLabel.setBounds(apexX - 15, apexY, smallKnobSize + 30, 16);
-    velToDrawbarKnob.setBounds(apexX, apexY + 16, smallKnobSize, smallKnobSize);
-    velToDrawbarValue.setBounds(apexX, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
-
-    // Base knobs (LFO Speed, LFO Depth) - spread below
-    int baseY = apexY + 16 + smallKnobSize + smallKnobValueHeight + 15;
     int baseSpacing = (lfoZoneWidth - smallKnobSize * 2) / 3;
     int base1X = lfoZoneX + baseSpacing;
     int base2X = base1X + smallKnobSize + baseSpacing;
+
+    // Top row (Vel to Drawbar, Density)
+    int apexY = lfoZoneY + 5;
+    velToDrawbarLabel.setBounds(base1X - 15, apexY, smallKnobSize + 30, 16);
+    velToDrawbarKnob.setBounds(base1X, apexY + 16, smallKnobSize, smallKnobSize);
+    velToDrawbarValue.setBounds(base1X, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+
+    drawbarDensityLabel.setBounds(base2X - 15, apexY, smallKnobSize + 30, 16);
+    drawbarDensityKnob.setBounds(base2X, apexY + 16, smallKnobSize, smallKnobSize);
+    drawbarDensityValue.setBounds(base2X, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+
+    // Bottom row (LFO Speed, LFO Depth)
+    int baseY = apexY + 16 + smallKnobSize + smallKnobValueHeight + 15;
 
     lfoSpeedValue.setBounds(base1X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
     lfoDepthValue.setBounds(base2X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
@@ -2593,10 +2623,10 @@ void PLANETMainGui::copyEnvelopeParamsBetweenDrawbars(int from, int to)
 
 void PLANETMainGui::copyModParamsBetweenDrawbars(int from, int to)
 {
-    // LFO (shape/rate/amount/sync/division) + the per-drawbar velocity param. Same normalised-copy
-    // approach as the envelope copy above.
+    // LFO (shape/rate/amount/sync/division) + the per-drawbar velocity and Density params.
+    // Same normalised-copy approach as the envelope copy above.
     static const char* const suffixes[] =
-        { "LFOShape", "LFORate", "LFOAmount", "LFOSync", "LFOSyncDiv", "VelToHarmonic" };
+        { "LFOShape", "LFORate", "LFOAmount", "LFOSync", "LFOSyncDiv", "VelToHarmonic", "Density" };
     const juce::String fromPrefix = "k" + juce::String(from + 1);
     const juce::String toPrefix   = "k" + juce::String(to + 1);
     for (auto* s : suffixes)
@@ -2755,6 +2785,7 @@ void PLANETMainGui::bindToSelectedDrawbar()
     lfoSyncAttachment.reset();
     envDepthAttachment.reset();
     velToDrawbarAttachment.reset();
+    drawbarDensityAttachment.reset();
 
     // Read sync state for the newly selected drawbar BEFORE creating attachments
     bool syncOn = false;
@@ -2773,6 +2804,8 @@ void PLANETMainGui::bindToSelectedDrawbar()
         apvts, prefix + "EnvelopeAmount", envDepthKnob);
     velToDrawbarAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "VelToHarmonic", velToDrawbarKnob);
+    drawbarDensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, prefix + "Density", drawbarDensityKnob);
 
     // Bind speed knob to correct parameter based on sync mode
     updateLfoSyncMode();
@@ -2795,12 +2828,16 @@ void PLANETMainGui::bindToSelectedDrawbar()
     if (auto* param = apvts.getParameter(prefix + "VelToHarmonic"))
         velToDrawbarValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 
+    if (auto* param = apvts.getParameter(prefix + "Density"))
+        drawbarDensityValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+
     // Re-tint the per-drawbar controls to the selected drawbar's colour.
     drawbarIshtarLookAndFeel.starColour = drawbarColours[selectedDrawbar];
     envDepthKnob.setColour(juce::Slider::thumbColourId, drawbarColours[selectedDrawbar]);
     lfoSpeedKnob.repaint();
     lfoDepthKnob.repaint();
     velToDrawbarKnob.repaint();
+    drawbarDensityKnob.repaint();
     envDepthKnob.repaint();
 }
 
