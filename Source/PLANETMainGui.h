@@ -214,6 +214,34 @@ private:
 //==============================================================================
 // Main GUI Component
 //==============================================================================
+//==============================================================================
+// Credits / About overlay - a full-window panel shown when the ISHTAR wordmark is
+// clicked. Draws the embedded background art (Creditsbackground_png) "cover"-scaled
+// with the star anchored top-left, then the credits text over the clean navy field.
+// Dismissed by a click anywhere or the Esc key.
+//==============================================================================
+class IshtarCreditsOverlay : public juce::Component
+{
+public:
+    IshtarCreditsOverlay();
+
+    void setFonts(const juce::Font& regular, const juce::Font& semiBold);
+    void setVersionText(const juce::String& v);
+    void showOverlay();   // make visible, bring to front, take keyboard focus (for Esc)
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    bool keyPressed(const juce::KeyPress& key) override;
+
+private:
+    juce::Image  background;
+    juce::Font   regularFont, semiBoldFont;
+    juce::String versionText;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IshtarCreditsOverlay)
+};
+
+//==============================================================================
 class PLANETMainGui : public juce::Component,
                        public juce::AudioProcessorValueTreeState::Listener,
                        public juce::Timer
@@ -546,6 +574,10 @@ private:
     ToggleResetSlider unisonDetuneSlider;
     juce::Label unisonDetuneLabel;    // "Detune"
     juce::Label versionLabel;
+
+    // Credits / About overlay + the clickable ISHTAR wordmark region that opens it.
+    juce::Rectangle<int> ishtarWordmarkBounds;
+    IshtarCreditsOverlay creditsOverlay;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterVolumeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> unisonDetuneAttachment;

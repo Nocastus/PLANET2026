@@ -929,6 +929,13 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.5f));
     addAndMakeVisible(versionLabel);
 
+    // Credits / About overlay - opened by clicking the ISHTAR wordmark. Hidden child that covers
+    // the whole window when shown; dismissed by a click or Esc. "Pre-release Beta" is appended to
+    // the version here (the main GUI patch-bar keeps just the number).
+    creditsOverlay.setFonts(amarnaRegular, amarnaSemiBold);
+    creditsOverlay.setVersionText(versionLabel.getText() + "    Pre-release Beta");
+    addChildComponent(creditsOverlay);
+
     // Attachments
     masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "masterVolume", masterVolumeSlider);
@@ -1716,6 +1723,11 @@ void PLANETMainGui::paint(juce::Graphics& g)
 
 void PLANETMainGui::paintOverChildren(juce::Graphics& g)
 {
+    // While the credits overlay is up it must sit above everything - skip the selected-drawbar
+    // outline (paintOverChildren draws on top of child components, the overlay included).
+    if (creditsOverlay.isVisible())
+        return;
+
     // Outline the selected drawbar (over the top of the sliders/labels) so it's obvious
     // which drawbar the envelope / LFO / Vel-to-Drawbar controls are addressing. Drawn in
     // that drawbar's accent colour, matching the per-drawbar colour scheme.
@@ -2146,6 +2158,10 @@ void PLANETMainGui::resized()
     // usually wants a volume tweak, so they're kept adjacent.
     int ishtarBarX = leftWidth - 80;   // MUST match paint()'s ISHTAR draw X
 
+    // Clickable region for the ISHTAR wordmark (opens the credits overlay). ~88px wide to match the
+    // drawn wordmark; spans the patch-bar button row vertically.
+    ishtarWordmarkBounds = juce::Rectangle<int>(ishtarBarX, buttonY, 88, buttonHeight);
+
     // Comment now ends just before the ISHTAR wordmark (was: up to the divider).
     int commentX = patchNameX + patchNameWidth + 10;
     int commentWidth = juce::jmax(60, ishtarBarX - 10 - commentX);
@@ -2174,6 +2190,95 @@ void PLANETMainGui::resized()
     masterVolumeSlider.setBounds(cx, buttonY + 4, volSliderW, buttonHeight - 8);
 
     versionLabel.setBounds(versionX, buttonY, versionW, buttonHeight);
+
+    // The credits overlay always covers the whole window.
+    creditsOverlay.setBounds(getLocalBounds());
+}
+
+//==============================================================================
+// IshtarCreditsOverlay
+//==============================================================================
+IshtarCreditsOverlay::IshtarCreditsOverlay()
+{
+    setWantsKeyboardFocus(true);
+    setOpaque(true);          // the background art fills every pixel (see paint)
+    setVisible(false);
+    background = juce::ImageCache::getFromMemory(BinaryData::Creditsbackground_png,
+                                                 BinaryData::Creditsbackground_pngSize);
+}
+
+void IshtarCreditsOverlay::setFonts(const juce::Font& regular, const juce::Font& semiBold)
+{
+    regularFont  = regular;
+    semiBoldFont = semiBold;
+}
+
+void IshtarCreditsOverlay::setVersionText(const juce::String& v) { versionText = v; }
+
+void IshtarCreditsOverlay::showOverlay()
+{
+    setVisible(true);
+    toFront(true);
+    grabKeyboardFocus();
+    repaint();
+}
+
+void IshtarCreditsOverlay::mouseDown(const juce::MouseEvent&) { setVisible(false); }
+
+bool IshtarCreditsOverlay::keyPressed(const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::escapeKey) { setVisible(false); return true; }
+    return false;
+}
+
+void IshtarCreditsOverlay::paint(juce::Graphics& g)
+{
+    // Deep-navy base (shown only if the image fails to load), then the embedded PNG scaled to COVER
+    // the whole panel with the star anchored top-left - so the logo is never cropped and any overflow
+    // is taken from the empty navy on the right/bottom.
+    g.fillAll(juce::Colour(0xff0b1c4d));
+    if (background.isValid())
+        g.drawImageWithin(background, 0, 0, getWidth(), getHeight(),
+                          juce::RectanglePlacement(juce::RectanglePlacement::fillDestination
+                                                   | juce::RectanglePlacement::xLeft
+                                                   | juce::RectanglePlacement::yTop),
+                          false);
+
+    // Credits text, centred horizontally in the clean navy field below/right of the star. Sizes are
+    // deliberately large for legibility; long lines wrap (drawFittedText) rather than clip.
+    const int colW = juce::jmin(1000, getWidth() - 50);
+    const int colX = (getWidth() - colW) / 2;
+    float y = getHeight() * 0.24f;
+
+    auto line = [&](const juce::String& text, const juce::Font& f, juce::Colour c,
+                    int lineH, int gapAfter, int maxLines = 1)
+    {
+        g.setColour(c);
+        g.setFont(f);
+        g.drawFittedText(text, colX, (int)y, colW, lineH, juce::Justification::centred, maxLines, 0.85f);
+        y += (float)(lineH + gapAfter);
+    };
+
+    line("ISHTAR", semiBoldFont.withHeight(70.0f), juce::Colour(0xff9ca0f0), 80, 6);
+    line("An additive harmonic phase-distortion synthesiser",
+         regularFont.withHeight(27.0f), juce::Colour(0xffcdd2f0), 36, 3);
+    line(versionText, regularFont.withHeight(23.0f), juce::Colour(0xff9aa0c8), 30, 26);
+
+    line(juce::String::fromUTF8("© 2026 Gerard Johnson"),
+         regularFont.withHeight(23.0f), juce::Colour(0xffc2c7e0), 30, 20);
+
+    line("Free software, licensed under the GNU General Public License v3.",
+         regularFont.withHeight(21.0f), juce::Colour(0xffc2c7e0), 29, 2);
+    line("Source: github.com/Nocastus/PLANET2026",
+         regularFont.withHeight(21.0f), juce::Colour(0xffc2c7e0), 29, 24);
+
+    line(juce::String::fromUTF8("Built with JUCE - © Raw Material Software Limited - under the GPL v3."),
+         regularFont.withHeight(20.0f), juce::Colour(0xff8a90b8), 27, 2);
+    line(juce::String::fromUTF8("Typeface: Amarna by Ishtar van Looy - © 2025 the Amarna Project Authors - SIL Open Font License v1.1."),
+         regularFont.withHeight(20.0f), juce::Colour(0xff8a90b8), 52, 22, 2);
+
+    line("Click anywhere or press Esc to close",
+         regularFont.withHeight(18.0f), juce::Colour(0xff70759a), 24, 0);
 }
 
 void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
@@ -2232,6 +2337,13 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
     if (portamentoModeButtonBounds.contains(event.getPosition()))
     {
         toggleRoutingParam("portamentoMode");
+        return;
+    }
+
+    // ISHTAR wordmark: opens the credits / about overlay.
+    if (ishtarWordmarkBounds.contains(event.getPosition()))
+    {
+        creditsOverlay.showOverlay();
         return;
     }
 

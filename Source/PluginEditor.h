@@ -26,8 +26,5 @@ private:
 
     std::unique_ptr<PLANETMainGui> mainGui;
 
-    // Version display
-    juce::Label versionLabel;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETtest4AudioProcessorEditor)
 };

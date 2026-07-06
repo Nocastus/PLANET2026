@@ -32,12 +32,7 @@ PLANETtest4AudioProcessorEditor::PLANETtest4AudioProcessorEditor(PLANETtest4Audi
     // Wire the LIFE voicing dev panel to the processor's tunable constants
     mainGui->setLifeVoicingParams(&audioProcessor.lifeVoicing);
 
-    // Version label
-    versionLabel.setText("v0.6.0", juce::dontSendNotification);
-    versionLabel.setColour(juce::Label::textColourId, juce::Colours::grey.withAlpha(0.6f));
-    versionLabel.setJustificationType(juce::Justification::centredRight);
-    versionLabel.setFont(juce::Font(11.0f));
-    addAndMakeVisible(versionLabel);
+    // (The version string is drawn by PLANETMainGui in the patch bar - no separate label here.)
 
     setSize(1500, 850);
     setResizable(true, true);
@@ -57,7 +52,4 @@ void PLANETtest4AudioProcessorEditor::resized()
     auto bounds = getLocalBounds();
 
     mainGui->setBounds(bounds);
-
-    // Version label in bottom-right of patch bar area
-    versionLabel.setBounds(bounds.getWidth() - 70, bounds.getHeight() - 35, 60, 20);
 }

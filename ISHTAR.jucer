@@ -6,6 +6,8 @@
               pluginManufacturerCode="Gera" pluginCode="ISTA" bundleIdentifier="com.gerardjohnson.ISHTAR">
   <MAINGROUP id="KRDVCI" name="ISHTAR">
     <GROUP id="{98A0DDF2-A42D-8D42-FE29-B09DFF176340}" name="Source">
+      <FILE id="U2mfvZ" name="Creditsbackground.png" compile="0" resource="1"
+            file="Creditsbackground.png"/>
       <FILE id="Hn73Ib" name="Amarna-Italic.ttf" compile="0" resource="1"
             file="../New folder (4)/Amarna/static/Amarna-Italic.ttf"/>
       <FILE id="JwdD7l" name="Amarna-Regular.ttf" compile="0" resource="1"
