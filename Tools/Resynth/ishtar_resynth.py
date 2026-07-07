@@ -1262,10 +1262,24 @@ def run_gui():
             if self.result is None:
                 messagebox.showinfo("ISHTAR Resynth", "Run a fit first.")
                 return
-            os.makedirs(PATCH_EXPORT_DIR, exist_ok=True)
+            # PATCH_EXPORT_DIR is a convenience default and may not exist on every machine (e.g. no
+            # H: drive). Never let a missing/unreachable folder stop the export: check the drive is
+            # actually present before creating the tree, and fall back to the home directory otherwise,
+            # so the Save dialog always appears and the user can pick any location.
+            init_dir = PATCH_EXPORT_DIR
+            try:
+                drive = os.path.splitdrive(init_dir)[0]
+                drive_ok = (not drive) or os.path.isdir(drive + os.sep)
+                if drive_ok:
+                    os.makedirs(init_dir, exist_ok=True)
+                if not (drive_ok and os.path.isdir(init_dir)):
+                    init_dir = os.path.expanduser("~")
+            except OSError:
+                init_dir = os.path.expanduser("~")
+
             default = os.path.splitext(self.wav_name)[0] or "Resynth patch"
             path = filedialog.asksaveasfilename(
-                initialdir=PATCH_EXPORT_DIR, initialfile=default + ".md",
+                initialdir=init_dir, initialfile=default + ".md",
                 defaultextension=".md", filetypes=[("ISHTAR patch", "*.md")])
             if not path:
                 return
