@@ -24,6 +24,9 @@ ipch/
 *.iobj
 *.ipdb
 
+# Packaged beta zips (output of Installer/make-beta-zip.ps1)
+/Installer/*.zip
+
 # OS files
 .DS_Store
 Thumbs.db

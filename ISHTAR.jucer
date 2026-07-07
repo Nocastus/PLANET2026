@@ -6,6 +6,8 @@
               pluginManufacturerCode="Gera" pluginCode="ISTA" bundleIdentifier="com.gerardjohnson.ISHTAR">
   <MAINGROUP id="KRDVCI" name="ISHTAR">
     <GROUP id="{98A0DDF2-A42D-8D42-FE29-B09DFF176340}" name="Source">
+      <FILE id="f4FhkU" name="ISHTAR icon 1024.png" compile="0" resource="1"
+            file="ISHTAR icon 1024.png"/>
       <FILE id="U2mfvZ" name="Creditsbackground.png" compile="0" resource="1"
             file="Creditsbackground.png"/>
       <FILE id="Hn73Ib" name="Amarna-Italic.ttf" compile="0" resource="1"
@@ -70,7 +72,7 @@
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
-    <VS2022 targetFolder="Builds/VisualStudio2022">
+    <VS2022 targetFolder="Builds/VisualStudio2022" bigIcon="f4FhkU">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="ISHTAR"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="ISHTAR" enablePluginBinaryCopyStep="0"
