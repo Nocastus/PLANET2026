@@ -2,7 +2,7 @@
 # Run after a full-solution rebuild (see build notes: rebuild the whole .sln,
 # never ISHTAR_VST3 alone). No per-build edits needed - just rerun this.
 param(
-    [string]$ZipName = "ISHTAR-Beta.zip",
+    [string]$ZipName = "ISHTAR-Beta2.zip",
     [string]$OutputDir = $PSScriptRoot
 )
 
