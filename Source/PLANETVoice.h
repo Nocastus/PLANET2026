@@ -297,6 +297,32 @@ private:
     // alias, accepted as digital character until listening says otherwise.
     std::array<float, NUM_COEFFICIENTS> barDensity;
 
+    // ======================== PER-DRAWBAR NOISE (experimental) ========================
+    // v4 "BAND-PASS NOISE" (7 Jul 2026). Gerard's target: pure white noise through a
+    // variable-Q band-pass centred on the note pitch. The in-paradigm identity that
+    // delivers it: narrowband-filtered noise IS a sine whose amplitude and frequency
+    // random-walk slowly. So a noise bar is simply the bar's ORDINARY SINE MODULATOR
+    // driven by two mean-reverting random walks, stepped once per carrier cycle at the
+    // boundary snapshot:
+    //   noiseAmp[i] - level, reverts to 1 (the breath envelope)
+    //   noiseEps[i] - fractional detune, reverts to 0 (the wandering phase)
+    // One step per cycle makes the bandwidth scale with f0, i.e. constant musical Q
+    // across the keyboard. The band is centred on the bar's own harmonic f (F is
+    // meaningful again - noise bars at different F stack like formants), and the bar's
+    // Density knob is repurposed as the WIDTH (inverse Q): 0 = near-tonal shimmer,
+    // 1 = wide breath. Amplitude steps land where sin = 0 (click-free); frequency steps
+    // are phase-continuous by construction. The signal is a pure sine at every instant,
+    // so it CANNOT crackle - the three LUT-library versions (windowed white, stochastic
+    // soft-saw, dense LPF fill) were all ruled coarse/crackly and are deleted; see the
+    // project memory before resurrecting any table-based approach.
+    // LIFE doublets and the density morph are bypassed on a noise bar; K + its ADSR/LFO,
+    // routing and velocity stay live. Phase accumulators still tick normally, so
+    // toggling noise on/off never jumps the partial's phase.
+    std::array<bool,  NUM_COEFFICIENTS> barNoise;
+    std::array<float, NUM_COEFFICIENTS> noiseAmp;
+    std::array<float, NUM_COEFFICIENTS> noiseEps;
+    uint32_t noiseRng = 0x51ED270B;
+
     // Helper functions
     double applyPhaseDistortion(double normalizedPhase, float morphAmount, const CoefficientArray& globalParams,
         double& additiveOut);

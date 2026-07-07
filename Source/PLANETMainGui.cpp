@@ -74,6 +74,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         toPMParamPtr[i]  = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToPM");
         toOutParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToOut");
         trigSingleParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "TrigSingle");  // F10 Perc switch
+        noiseParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "Noise");  // Noise hijack switch
     }
 
     // Set up F value labels (editable)
@@ -1818,6 +1819,11 @@ void PLANETMainGui::paintOverChildren(juce::Graphics& g)
         drawSwitch(pmSwitchBounds[i],  pmOn,  "Shape");
         drawSwitch(outSwitchBounds[i], outOn, "Direct");
 
+        // Noise hijack switch, above the routing pair (always visible - it redefines what
+        // the bar IS, so its state should read at a glance even on unmodulated bars).
+        const bool noiseOn = noiseParamPtr[i] && noiseParamPtr[i]->load() >= 0.5f;
+        drawSwitch(noiseSwitchBounds[i], noiseOn, "Noise");
+
         // F10 "Perc" switch, above the routing pair. Only shown when this drawbar's envelope is
         // active (the red-thumb condition) - single-trigger is meaningless without an envelope.
         // On = Single (fire only on a phrase start); off = Multi (retrigger every note, default).
@@ -1869,21 +1875,24 @@ void PLANETMainGui::resized()
         // circle bounds in paintOverChildren().
         const int circleD    = 14;
         const int groupH     = circleD + 2 + 12;   // circle + gap + legend label
-        const int gapBetween = 18;                 // space between successive labelled groups
+        const int gapBetween = 8;                  // tightened (was 18) to fit the 4th (Noise) switch in the strip
         const int step       = groupH + gapBetween;// vertical pitch from one switch to the next
         const int cx         = x + faderLeftPad + faderW + 4 + routeStripW / 2;  // centre of the routing strip
 
         // Anchor the switch stack from the BOTTOM so the Direct switch's legend lines up with the
-        // bottom of the fader. This pushes the whole group (Perc / Shape / Direct) down, leaving a
-        // clear gap at the top for the conditionally-shown Perc switch to appear without colliding
-        // with the F-number box above the fader. Direct (bottom) -> Shape -> Perc, evenly spaced.
+        // bottom of the fader. This pushes the whole group down, leaving a clear gap at the top
+        // for the conditionally-shown Perc switch to appear without colliding with the F-number
+        // box above the fader. Direct (bottom) -> Shape -> Noise -> Perc, evenly spaced; the
+        // always-visible trio stays contiguous, the conditional Perc sits on top.
         const int faderBottom = faderTop + drawbarHeight;
-        const int outY  = faderBottom - groupH;   // Direct: circle + legend end at the fader bottom
-        const int pmY   = outY - step;            // Shape
-        const int percY = pmY  - step;            // Perc (topmost, only painted when envelope active)
-        pmSwitchBounds[i]   = juce::Rectangle<int>(cx - circleD / 2, pmY,   circleD, circleD);
-        outSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, outY,  circleD, circleD);
-        percSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, percY, circleD, circleD);
+        const int outY   = faderBottom - groupH;   // Direct: circle + legend end at the fader bottom
+        const int pmY    = outY   - step;          // Shape
+        const int noiseY = pmY    - step;          // Noise (always visible)
+        const int percY  = noiseY - step;          // Perc (topmost, only painted when envelope active)
+        pmSwitchBounds[i]    = juce::Rectangle<int>(cx - circleD / 2, pmY,    circleD, circleD);
+        outSwitchBounds[i]   = juce::Rectangle<int>(cx - circleD / 2, outY,   circleD, circleD);
+        noiseSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, noiseY, circleD, circleD);
+        percSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, percY,  circleD, circleD);
     }
 
     // Position ADSR labels and value editors
@@ -2337,6 +2346,11 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         if (drawbarEnvelopeActive(i) && percSwitchBounds[i].contains(event.getPosition()))
         {
             toggleRoutingParam("k" + juce::String(i + 1) + "TrigSingle");
+            return;
+        }
+        if (noiseSwitchBounds[i].contains(event.getPosition()))
+        {
+            toggleRoutingParam("k" + juce::String(i + 1) + "Noise");
             return;
         }
         if (pmSwitchBounds[i].contains(event.getPosition()))

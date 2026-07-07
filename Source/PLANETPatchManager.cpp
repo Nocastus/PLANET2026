@@ -164,6 +164,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
     markdown << "# ToOut = 0 (off) or 1 (on) - route drawbar direct to output (additive partial)\n";
     markdown << "# TrigSingle = 0 (Multi/retrigger) or 1 (Single/phrase-start) - single-trigger envelope (Hammond perc)\n";
     markdown << "# Density = 0.0 to 1.0 - modulator morph sine -> soft-saw (experimental)\n";
+    markdown << "# Noise = 0 (off) or 1 (on) - drawbar becomes band-pass noise centred on harmonic F; Density = width (experimental)\n";
 
     // Generate all 10 drawbar sections
     for (int i = 1; i <= 10; ++i) {
@@ -187,7 +188,8 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
             "k" + drawbarNum + "ToPM",
             "k" + drawbarNum + "ToOut",
             "k" + drawbarNum + "TrigSingle",
-            "k" + drawbarNum + "Density"
+            "k" + drawbarNum + "Density",
+            "k" + drawbarNum + "Noise"
         };
 
         for (const auto& paramID : drawbarParams) {
@@ -474,6 +476,7 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "ToOut"] = ParameterRange(0.0f, 1.0f);
         ranges[prefix + "TrigSingle"] = ParameterRange(0.0f, 1.0f);
         ranges[prefix + "Density"] = ParameterRange(0.0f, 1.0f);
+        ranges[prefix + "Noise"] = ParameterRange(0.0f, 1.0f);
     }
 
     return ranges;
@@ -483,6 +486,7 @@ juce::String PLANETPatchManager::formatParameterValue(float value, const juce::S
     // Integer parameters
     if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv")
         || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID.contains("TrigSingle")
+        || parameterID.contains("Noise")
         || parameterID.contains("ModWheel")
         || parameterID == "punchFrequency"
         || parameterID == "unisonVoices" || parameterID == "portamentoMode") {

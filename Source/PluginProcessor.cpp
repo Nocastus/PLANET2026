@@ -299,6 +299,23 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("k9Density", "K9 Density", 0.0f, 1.0f, 0.0f),
             std::make_unique<juce::AudioParameterFloat>("k10Density", "K10 Density", 0.0f, 1.0f, 0.0f),
 
+            // ======================== PER-DRAWBAR NOISE SWITCH (10, experimental) ========================
+            // Hijacks the drawbar into a band-pass noise source (breath/chiff realism): the bar's
+            // sine modulator gets per-cycle amplitude/detune random walks = narrowband noise
+            // centred on the bar's harmonic F. The bar's Density knob becomes the band WIDTH.
+            // K + its ADSR/LFO, Shape/Direct routing and velocity all stay live.
+            // Default 0 = normal drawbar, so existing patches are unchanged.
+            std::make_unique<juce::AudioParameterFloat>("k1Noise",  "K1 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k2Noise",  "K2 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k3Noise",  "K3 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k4Noise",  "K4 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k5Noise",  "K5 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k6Noise",  "K6 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k7Noise",  "K7 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k8Noise",  "K8 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k9Noise",  "K9 Noise",  juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("k10Noise", "K10 Noise", juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f),
+
             // ======================== SPECTRAL MULTIPLIER INPUT PARAMETERS (10) ========================
             std::make_unique<juce::AudioParameterFloat>("input_f1", "Input F1 Spectral Multiplier", 0.5f, 30.0f, 1.0f),
             std::make_unique<juce::AudioParameterFloat>("input_f2", "Input F2 Spectral Multiplier", 0.5f, 30.0f, 2.0f),

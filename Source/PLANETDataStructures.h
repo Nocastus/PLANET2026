@@ -52,6 +52,7 @@ struct CoefficientParams {
     std::atomic<float>* toOutPtr = nullptr;              // Route direct to output / additive path (0=off, 1=on)
     std::atomic<float>* trigSinglePtr = nullptr;         // Envelope trigger mode (0=Multi/retrigger, 1=Single/phrase-start)
     std::atomic<float>* densityPtr = nullptr;            // Per-drawbar modulator morph sine->soft-saw (0..1, experimental)
+    std::atomic<float>* noisePtr = nullptr;              // Per-drawbar Noise switch: hijack the bar into a windowed-noise source (0/1, experimental)
 
     // Active values (cached at zero-crossings)
     float coefficient = 0.0f;
@@ -71,6 +72,7 @@ struct CoefficientParams {
     float toOut = 0.0f;                                 // Route direct to output / additive (default OFF)
     float trigSingle = 0.0f;                            // 0 = Multi (retrigger per note), 1 = Single (fire on phrase start only)
     float density = 0.0f;                               // Per-drawbar modulator density (default OFF = pure sine, patch-compatible)
+    float noiseMode = 0.0f;                             // Per-drawbar Noise switch (default OFF = normal drawbar, patch-compatible)
 
     // Initialize parameter pointers for this coefficient
     void initializePointers(juce::AudioProcessorValueTreeState& apvts, int coeffIndex) {
@@ -93,6 +95,7 @@ struct CoefficientParams {
         toOutPtr = apvts.getRawParameterValue(prefix + "ToOut");
         trigSinglePtr = apvts.getRawParameterValue(prefix + "TrigSingle");
         densityPtr = apvts.getRawParameterValue(prefix + "Density");
+        noisePtr = apvts.getRawParameterValue(prefix + "Noise");
     }
 
     // Update active values from parameter pointers
@@ -114,6 +117,7 @@ struct CoefficientParams {
         if (toOutPtr) toOut = toOutPtr->load();
         if (trigSinglePtr) trigSingle = trigSinglePtr->load();
         if (densityPtr) density = densityPtr->load();
+        if (noisePtr) noiseMode = noisePtr->load();
     }
 };
 

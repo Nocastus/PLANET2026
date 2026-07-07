@@ -360,6 +360,14 @@ private:
     // clicked in mouseDown(); toggled via toggleRoutingParam() like the routing switches.
     std::array<juce::Rectangle<int>, 10> percSwitchBounds;
     std::array<std::atomic<float>*, 10> trigSingleParamPtr {};
+
+    // ---- Per-drawbar Noise switch (experimental) ----
+    // Fourth switch circle, between Shape and Perc: on = the drawbar is hijacked into a
+    // band-pass noise source centred on its harmonic F (breath/chiff) - K/ADSR/LFO/routing
+    // stay live, and the bar's Density knob becomes the band width.
+    // Always visible (unlike Perc). Same bounds/paint/click plumbing as the routing switches.
+    std::array<juce::Rectangle<int>, 10> noiseSwitchBounds;
+    std::array<std::atomic<float>*, 10> noiseParamPtr {};
     bool drawbarEnvelopeActive(int drawbarIndex) const;  // |EnvelopeAmount| > 0 for drawbar i
     // Per-drawbar envelope-active state from the last updateDrawbarColors() pass. The Perc switch is
     // drawn in paintOverChildren (parent), which the timer doesn't otherwise repaint - so when this

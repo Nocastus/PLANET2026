@@ -31,7 +31,23 @@ PLANETVoice::PLANETVoice()
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
     barDensity.fill(0.0f);
+    barNoise.fill(false);
+    noiseAmp.fill(1.0f);
+    noiseEps.fill(0.0f);
 }
+
+// ======================== NOISE-BAR WALK VOICING (v4, tune by ear) ========================
+// Per-cycle random-walk steps for the band-pass-noise bars, all scaled by the bar's
+// Density knob w (repurposed as width). Bandwidth ~ lam * f0, so these are Q settings,
+// pitch-independent. Symptom map:
+//   pitch wobble too seasick  -> lower kNoiseSigF1 (or kNoiseSigF0 for the narrow end)
+//   breath pumps too much     -> lower kNoiseSigA1
+//   texture too static/tonal  -> raise kNoiseLam0 / kNoiseSigA0
+//   want wider extremes at w=1 -> raise the *1 constants
+static constexpr float kNoiseSigA0 = 0.06f, kNoiseSigA1 = 0.35f;   // amplitude step size
+static constexpr float kNoiseSigF0 = 0.0015f, kNoiseSigF1 = 0.02f; // detune step size (fraction of f)
+static constexpr float kNoiseLam0  = 0.08f, kNoiseLam1  = 0.25f;   // mean-reversion rate (per cycle)
+static constexpr float kNoiseEpsMax = 0.08f;                       // hard detune ceiling (+-8%)
 
 //==============================================================================
 // VOICE CONTROL METHODS
@@ -120,6 +136,7 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
     barDensity.fill(0.0f);
+    barNoise.fill(false);   // noiseRng deliberately NOT reset - strikes must differ, like lifeNoiseState
 
     {
         std::mt19937 lifeGen((uint32_t)lifeSeed);
@@ -564,6 +581,28 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             // Per-drawbar Density: snapshot here for the same click-free reason as
             // routing (both modulator waveforms are exactly 0 at the boundary).
             barDensity[i] = juce::jlimit(0.0f, 1.0f, globalParams[i].density);
+
+            // Per-drawbar Noise (v4 band-pass): snapshot the hijack switch and step the
+            // bar's two mean-reverting walks - amplitude (reverts to 1) and fractional
+            // detune (reverts to 0). One step per carrier cycle = bandwidth scales with
+            // f0 = constant musical Q. The bar's Density knob w sets the width. The
+            // amplitude step lands at the boundary where sin = 0, so it is click-free;
+            // the detune step only changes the phase RATE, so it is always continuous.
+            barNoise[i] = (globalParams[i].noiseMode >= 0.5f);
+            if (barNoise[i]) {
+                const float w    = barDensity[i];   // Density = band WIDTH on a noise bar
+                const float sigA = kNoiseSigA0 + kNoiseSigA1 * w;
+                const float sigF = kNoiseSigF0 + kNoiseSigF1 * w;
+                const float lam  = kNoiseLam0  + kNoiseLam1  * w;
+                noiseRng = noiseRng * 1664525u + 1013904223u;
+                const float u1 = (float)((noiseRng >> 8) & 0xFFFF) / 32767.5f - 1.0f;
+                noiseRng = noiseRng * 1664525u + 1013904223u;
+                const float u2 = (float)((noiseRng >> 8) & 0xFFFF) / 32767.5f - 1.0f;
+                noiseAmp[i] = juce::jlimit(0.0f, 2.0f,
+                    noiseAmp[i] + lam * (1.0f - noiseAmp[i]) + sigA * u1);
+                noiseEps[i] = juce::jlimit(-kNoiseEpsMax, kNoiseEpsMax,
+                    (1.0f - lam) * noiseEps[i] + sigF * u2);
+            }
         }
 
         // Promote staged coefficients to active
@@ -658,7 +697,25 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
         // harmonic f), both, or neither (muted). The phase accumulators advance regardless of
         // routing, so toggling a destination never jumps the partial's phase.
         float modWave;
-        if (doubletEngaged[i])
+        if (barNoise[i])
+        {
+            // Noise bar (v4 band-pass): the bar's ordinary sine, with its level and
+            // rate driven by the per-cycle walks - narrowband noise centred on this
+            // bar's harmonic f, width from the Density knob. A pure sine at every
+            // instant, so it cannot crackle; cost = a sine bar plus one multiply.
+            // PM route = phase jitter (analogue roughness), ADD route = additive
+            // breath shaped by the bar's K envelope. The accumulator advances at the
+            // wobbled rate; density morph and doublets don't apply on a noise bar.
+            modWave = noiseAmp[i] * sineLUT.lookup(modPhases[i]);
+            modPhases[i] += f * (1.0 + (double)noiseEps[i]) * angleDelta;
+            while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
+            if (doubletEngaged[i])
+            {
+                modPhasesB[i] += f * doubletRatioB[i] * angleDelta;
+                while (modPhasesB[i] >= twoPi) modPhasesB[i] -= twoPi;
+            }
+        }
+        else if (doubletEngaged[i])
         {
             // Stage 3 doublet: two components either side of f, energy-shared by s.
             // Their interference makes this partial beat - and because the split is a
