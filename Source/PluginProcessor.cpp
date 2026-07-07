@@ -344,6 +344,11 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
             std::make_unique<juce::AudioParameterFloat>("vibratoRate", "Vibrato Rate", 0.5f, 12.0f, 5.0f),
             std::make_unique<juce::AudioParameterFloat>("vibratoDepth", "Vibrato Depth", 0.0f, 2.0f, 0.0f),
             std::make_unique<juce::AudioParameterFloat>("vibratoFadeIn", "Vibrato Fade In", 0.0f, 10.0f, 2.0f),
+            // Velocity gate (VEL switch): off = vibrato always engages (existing behaviour); on = a
+            // note only gets vibrato (still fading in normally) if its MIDI velocity >= threshold.
+            // Default off + threshold 100 so existing patches are unaffected.
+            std::make_unique<juce::AudioParameterBool>("vibratoVelSwitch", "Vibrato Velocity Switch", false),
+            std::make_unique<juce::AudioParameterInt>("vibratoVelThreshold", "Vibrato Velocity Threshold", 1, 127, 100),
 
             // ======================== PITCH ATTACK ENVELOPE PARAMETERS ========================
             std::make_unique<juce::AudioParameterFloat>("pitchEnvDistance", "Pitch Env Distance", -12.0f, 12.0f, 0.0f),
@@ -415,6 +420,8 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
     vibratoRateParameter = parameters.getRawParameterValue("vibratoRate");
     vibratoDepthParameter = parameters.getRawParameterValue("vibratoDepth");
     vibratoFadeInParameter = parameters.getRawParameterValue("vibratoFadeIn");
+    vibratoVelSwitchParameter = parameters.getRawParameterValue("vibratoVelSwitch");
+    vibratoVelThresholdParameter = parameters.getRawParameterValue("vibratoVelThreshold");
 
     // ======================== INITIALIZE PITCH ENVELOPE PARAMETER POINTERS ========================
     pitchEnvDistanceParameter = parameters.getRawParameterValue("pitchEnvDistance");
@@ -799,6 +806,13 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     float vibratoDepth = vibratoDepthParameter->load();
     float vibratoFadeIn = vibratoFadeInParameter->load();
 
+    // VEL gate: encode switch + threshold into ONE normalised value passed down the chain.
+    // 0 = gate off (vibrato always). >0 = normalised velocity threshold; a voice whose note
+    // velocity is below this gets no vibrato. Keeps the per-voice signature change minimal.
+    float vibratoVelThresholdNorm = (vibratoVelSwitchParameter->load() > 0.5f)
+        ? (vibratoVelThresholdParameter->load() / 127.0f)
+        : 0.0f;
+
     // Update effects parameters once per block
     effects.updateDetuneParams(detuneAmount, detuneMix);
     effects.updateWarmthParams(warmth);
@@ -822,7 +836,7 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
             ampAttackTime, ampDecayTime, ampSustainLevel, ampReleaseTime,
             effectiveBrilliance, carrierMorph, getSampleRate(),
             pitchWheelSemitones,
-            vibratoRate, vibratoDepth, vibratoFadeIn,
+            vibratoRate, vibratoDepth, vibratoFadeIn, vibratoVelThresholdNorm,
             velToAmplitude, velToAttackTime, vintageAmount,
             pitchEnvDistance, pitchAttackTime,
             lifeAmount,

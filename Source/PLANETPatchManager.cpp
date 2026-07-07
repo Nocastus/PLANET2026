@@ -124,7 +124,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
         patch);
 
     markdown << generateParameterSection("Vibrato",
-        { "vibratoRate", "vibratoDepth", "vibratoFadeIn" },
+        { "vibratoRate", "vibratoDepth", "vibratoFadeIn", "vibratoVelSwitch", "vibratoVelThreshold" },
         patch);
 
     markdown << generateParameterSection("Pitch Envelope",
@@ -438,6 +438,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
     ranges["vibratoRate"] = ParameterRange(0.5f, 12.0f);
     ranges["vibratoDepth"] = ParameterRange(0.0f, 2.0f);
     ranges["vibratoFadeIn"] = ParameterRange(0.0f, 10.0f);
+    ranges["vibratoVelSwitch"] = ParameterRange(0.0f, 1.0f);
+    ranges["vibratoVelThreshold"] = ParameterRange(1.0f, 127.0f);
 
     // Pitch Envelope
     ranges["pitchEnvDistance"] = ParameterRange(-12.0f, 12.0f);
@@ -489,7 +491,8 @@ juce::String PLANETPatchManager::formatParameterValue(float value, const juce::S
         || parameterID.contains("Noise")
         || parameterID.contains("ModWheel")
         || parameterID == "punchFrequency"
-        || parameterID == "unisonVoices" || parameterID == "portamentoMode") {
+        || parameterID == "unisonVoices" || parameterID == "portamentoMode"
+        || parameterID == "vibratoVelSwitch" || parameterID == "vibratoVelThreshold") {
         return juce::String((int)value);
     }
 

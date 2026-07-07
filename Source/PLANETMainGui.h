@@ -180,6 +180,37 @@ class ToggleResetSlider : public juce::Slider
 public:
     using juce::Slider::Slider;
 
+    // Fine-adjust: hold Ctrl or Shift as the drag STARTS for ~8x finer resolution (the modifier is
+    // sampled here at mouse-down). A plain drag restores normal sensitivity. Applies to every knob and
+    // the Colour/Master sliders (all ToggleResetSliders). JUCE's default full-scale drag is 250px.
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        const bool fine = e.mods.isCtrlDown() || e.mods.isShiftDown();
+        setMouseDragSensitivity(fine ? 2000 : 250);
+        juce::Slider::mouseDown(e);
+    }
+
+    // Same fine-adjust modifier on the scroll wheel: a plain scroll keeps JUCE's normal step, Ctrl (or
+    // Shift) + scroll nudges by a small fraction of the range per notch (floored to the control's own
+    // interval so stepped controls like Life still move a whole unit). Tune the 0.0025 by feel.
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+    {
+        const bool fine = e.mods.isCtrlDown() || e.mods.isShiftDown();
+        if (!fine || !isEnabled())
+        {
+            juce::Slider::mouseWheelMove(e, wheel);   // normal wheel behaviour
+            return;
+        }
+
+        double amount = (wheel.deltaY != 0.0f) ? (double) wheel.deltaY : (double) wheel.deltaX;
+        if (wheel.isReversed) amount = -amount;
+        if (amount == 0.0) return;
+
+        double step = (getMaximum() - getMinimum()) * 0.0025;
+        if (getInterval() > 0.0) step = juce::jmax(step, getInterval());
+        setValue(getValue() + (amount > 0.0 ? step : -step), juce::sendNotificationSync);
+    }
+
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         if (!isDoubleClickReturnEnabled())
@@ -275,6 +306,7 @@ public:
     
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void bindToSelectedDrawbar();
+    void updateDrawbarDensityLabel();   // "Density" <-> "Wander" per the selected drawbar's Noise state
     void refreshAllGUIValues();  // Refresh all GUI elements from current parameter values
     void updatePatchNameDisplay(const juce::String& name);
     void updatePatchCommentDisplay(const juce::String& comment);
@@ -524,9 +556,17 @@ private:
     // = off = "Time" (the subtler default), accent fill = on = "Rate". Drawn in paint(), hit-tested
     // in mouseDown(), toggled via toggleRoutingParam() like the routing switches.
     juce::Rectangle<int> portamentoModeButtonBounds;
+    // Vibrato VEL gate button (same visual language / column as the Rate/Time + MW buttons). A single
+    // click toggles the gate on/off; the permanent velThresholdValue field below it (a plain editable
+    // label like Transpose/Stack) sets the 1-127 velocity threshold.
+    juce::Rectangle<int> velSwitchButtonBounds;
+    juce::Label velThresholdValue;                     // editable 1-127 threshold, below the VEL button
+    void updateVelThresholdLook();                     // dim the field when the gate is off
     std::atomic<float>* brillianceMWParam = nullptr;   // 0 Off / 1 Normal / 2 Inverse
     std::atomic<float>* densityMWParam = nullptr;
     std::atomic<float>* portamentoModeParam = nullptr; // 0 = Time (off) / 1 = Rate (on)
+    std::atomic<float>* vibratoVelSwitchParam = nullptr;    // 0 = off / 1 = velocity-gated
+    std::atomic<float>* vibratoVelThresholdParam = nullptr; // 1-127
     int brillLastPolarity = 1;
     int densLastPolarity = 1;
     void handleMWButtonClick(const juce::String& paramID, juce::Rectangle<int> bounds,

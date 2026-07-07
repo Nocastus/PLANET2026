@@ -59,7 +59,7 @@ public:
         float ampAttack, float ampDecay, float ampSustain, float ampRelease,
         float brilliance, float carrierMorph, double sampleRate,
         float pitchWheelOffset,
-        float vibratoRate, float vibratoDepth, float vibratoFadeIn,
+        float vibratoRate, float vibratoDepth, float vibratoFadeIn, float vibratoVelThreshold,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
         float pitchEnvDistance, float pitchAttackTime,
         float lifeAmount,

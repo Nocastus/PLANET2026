@@ -347,9 +347,11 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envCurveValue.setEditable(true);
     addAndMakeVisible(envCurveValue);
 
-    // Set up Vintage knob
+    // Set up Vintage knob. Continuous (interval 0), NOT integer-stepped: the value label shows 2
+    // decimals and patches store fractional amounts (e.g. 36.56), so an integer step would snap the
+    // knob position away from the stored/displayed value and make them disagree on load (#4).
     vintageKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    vintageKnob.setRange(0.0, 100.0, 1.0);
+    vintageKnob.setRange(0.0, 100.0, 0.0);
     vintageKnob.setValue(0.0);
     vintageKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     vintageKnob.setDoubleClickReturnValue(true, 0.0);
@@ -705,6 +707,31 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // portamentoMode is a custom-painted toggle (no attachment): paint() reads the param, mouseDown()
     // flips it via the host. Cache the pointer for paint().
     portamentoModeParam = apvts.getRawParameterValue("portamentoMode");
+
+    // VEL gate (Vibrato): custom-painted on/off toggle like portamentoMode above, plus a permanent
+    // editable threshold field below it. Cache both param pointers for paint().
+    vibratoVelSwitchParam    = apvts.getRawParameterValue("vibratoVelSwitch");
+    vibratoVelThresholdParam = apvts.getRawParameterValue("vibratoVelThreshold");
+
+    // Threshold field: a plain editable numeric label (1-127), styled like Transpose/Stack. Sits
+    // directly under the VEL button, aligned with the Vibrato-row knob value readouts.
+    velThresholdValue.setJustificationType(juce::Justification::centred);
+    velThresholdValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    velThresholdValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    velThresholdValue.setColour(juce::Label::outlineColourId, juce::Colours::grey);
+    velThresholdValue.setEditable(true);
+    if (vibratoVelThresholdParam != nullptr)
+        velThresholdValue.setText(juce::String((int)vibratoVelThresholdParam->load()), juce::dontSendNotification);
+    addAndMakeVisible(velThresholdValue);
+    velThresholdValue.onTextChange = [this]()
+    {
+        int newVal = juce::jlimit(1, 127, velThresholdValue.getText().getIntValue());
+        if (auto* param = apvts.getParameter("vibratoVelThreshold"))
+            param->setValueNotifyingHost(param->convertTo0to1((float)newVal));
+        velThresholdValue.setText(juce::String(newVal), juce::dontSendNotification);
+    };
+    updateVelThresholdLook();
+
     brillianceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "brilliance", brillianceSlider);
     carrierMorphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -886,6 +913,14 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     masterVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     masterVolumeSlider.setDoubleClickReturnValue(true, 0.8);
     addAndMakeVisible(masterVolumeSlider);
+    // Moving Vol clears the output-clip red indicator at once, so the effect of your adjustment is
+    // legible immediately instead of waiting out the hold. The timer recolours from live audio on the
+    // next tick, so if it's still clipping red simply returns.
+    masterVolumeSlider.onValueChange = [this]()
+    {
+        redHoldFramesLeft = 0;
+        meterDisplayPeak  = 0.0f;
+    };
 
     masterVolumeLabel.setText("Vol", juce::dontSendNotification);
     masterVolumeLabel.setJustificationType(juce::Justification::centredRight);
@@ -965,11 +1000,12 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // Attachments
     masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "masterVolume", masterVolumeSlider);
-    // Low-end-weighted taper for Vol: puts gain 0.3 at the slider's midpoint so most of the travel
+    // Low-end-weighted taper for Vol: puts gain 0.2 at the slider's midpoint so most of the travel
     // covers the quiet end - the region that matters for dialling in just under clipping on a 4x
-    // stack. Set AFTER the attachment (which copies the param's linear range onto the slider); this
-    // only reshapes thumb position vs value, so the stored/automated value stays linear 0-1.
-    masterVolumeSlider.setSkewFactorFromMidPoint(0.3);
+    // stack, and where Gerard spends most of the Vol travel. Set AFTER the attachment (which copies
+    // the param's linear range onto the slider); this only reshapes thumb position vs value, so the
+    // stored/automated value stays linear 0-1.
+    masterVolumeSlider.setSkewFactorFromMidPoint(0.2);
     unisonDetuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "unisonDetune", unisonDetuneSlider);
 
@@ -1056,8 +1092,54 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         if (auto* lbl = dynamic_cast<juce::Label*>(child))
             lbl->onEditorHide = [lbl] { lbl->giveAwayKeyboardFocus(); };
 
+    // ======== Numeric-field visual convention (regularised - see quickstart) ========
+    // Two, and only two, kinds of numeric field, made visually unmistakable so the user is never
+    // fooled into "editing" a value that won't stick:
+    //   ENTRY BOX  - a real typed-entry field wired to a parameter (all have onTextChange). Dark fill
+    //                + a bright outline, editable. If it has a box, you can type in it.
+    //   READOUT    - mirrors a knob/slider only. No fill, no outline, NOT editable - just a number.
+    // This single pass runs after all per-field setup and OVERRIDES it, so the convention can't drift.
+    auto asEntryBox = [](juce::Label& l) {
+        l.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+        l.setColour(juce::Label::outlineColourId,    juce::Colours::white);
+        l.setEditable(true);
+    };
+    auto asReadout = [](juce::Label& l) {
+        l.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        l.setColour(juce::Label::outlineColourId,    juce::Colours::transparentBlack);
+        l.setEditable(false);
+    };
+
+    // Entry boxes: the ONLY fields you can type into (each has an onTextChange handler).
+    for (auto& l : fValueLabels)        asEntryBox(l);   // drawbar F multipliers
+    for (auto& l : adsrValueEditors)    asEntryBox(l);   // harmonic ADSR
+    for (auto& l : ampAdsrValueEditors) asEntryBox(l);   // amplitude ADSR
+    asEntryBox(transposeValue);
+    asEntryBox(unisonVoicesValue);
+    asEntryBox(velThresholdValue);
+    asEntryBox(seedValue);            // genuinely typeable (Life seed) - now boxed to match
+
+    // Readouts: mirror their knob/slider; never editable (no misleading edit cursor).
+    for (auto* l : { &lfoSpeedValue, &lfoDepthValue, &velToDrawbarValue, &drawbarDensityValue,
+                     &envDepthValue, &velAmpValue, &velAttackValue, &envCurveValue,
+                     &vintageValue, &lifeValue,
+                     &detuneAmountValue, &detuneMixValue, &warmthValue, &punchValue, &punchFrequencyValue,
+                     &brillianceValue, &densityValue,
+                     &vibratoRateValue, &vibratoDepthValue, &vibratoFadeValue,
+                     &pitchDistValue, &pitchTimeValue, &portamentoValue })
+        asReadout(*l);
+
     setSize(1400, 800);
     updateDrawbarColors();
+
+    // Sync the ENTIRE GUI to the current parameter values now that every control and its attachment
+    // exists. Without this, the editor opens showing constructor defaults for anything that didn't
+    // receive a live parameterChanged callback: on a session/preset restore the host sets the params
+    // BEFORE the editor is created, so those callbacks never fire and e.g. Vintage/Life would open
+    // reading 0 (or the knob left at a stale position) while the sound reflects the real patch value.
+    // refreshAllGUIValues() drives both the labels and the Vintage/Life knob positions from the params.
+    refreshAllGUIValues();
+
     startTimerHz(30);
 }
 
@@ -1146,7 +1228,7 @@ void PLANETMainGui::timerCallback()
         float p = outputPeakValue->exchange(0.0f);                  // peak since last frame (nothing missed)
         meterDisplayPeak = juce::jmax(p, meterDisplayPeak * 0.85f); // fast attack, ~200 ms release
         if (redHoldFramesLeft > 0) --redHoldFramesLeft;
-        if (meterDisplayPeak >= 0.99f) redHoldFramesLeft = 90;      // ~3 s hold at 30 Hz
+        if (meterDisplayPeak >= 0.99f) redHoldFramesLeft = 30;      // ~1 s hold at 30 Hz (also cleared instantly when Vol moves)
 
         juce::Colour c = (redHoldFramesLeft > 0)     ? juce::Colour(0xffe53935)   // red   (>= 99%, held)
                        : (meterDisplayPeak >= 0.70f) ? juce::Colour(0xffffb300)   // amber (70-98%)
@@ -1661,7 +1743,21 @@ void PLANETMainGui::paint(juce::Graphics& g)
                     g.setColour(juce::Colour(0xff555555)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
         g.setColour(rate ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
         g.setFont(11.0f);
-        g.drawText(rate ? "Rate" : "Time", portamentoModeButtonBounds, juce::Justification::centred);
+        g.drawText(rate ? "RATE" : "TIME", portamentoModeButtonBounds, juce::Justification::centred);
+    }
+
+    // Vibrato VEL gate toggle - same visual language as the buttons above: accent fill = on (vibrato
+    // velocity-gated), dark/grey = off (vibrato always). Double-click opens the threshold editor.
+    if (!velSwitchButtonBounds.isEmpty())
+    {
+        auto rf = velSwitchButtonBounds.toFloat();
+        bool on = vibratoVelSwitchParam && vibratoVelSwitchParam->load() > 0.5f;
+        if (on) { g.setColour(globalAccent); g.fillRoundedRectangle(rf, 3.0f); }
+        else    { g.setColour(juce::Colour(0xff202020)); g.fillRoundedRectangle(rf, 3.0f);
+                  g.setColour(juce::Colour(0xff555555)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
+        g.setColour(on ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
+        g.setFont(11.0f);
+        g.drawText("VEL", velSwitchButtonBounds, juce::Justification::centred);
     }
 
     // ISHTAR name - pulled ~80px left of the divider so the patch-bar cluster (Trans/Stack/Detune/
@@ -1738,9 +1834,11 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawHorizontalLine(drawbarSectionHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight + harmonicHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight, (float)leftWidth, (float)bounds.getWidth());
-    // Right column dividers (Vibrato/Pitch and Pitch/Brilliance)
+    // Right column dividers (Vibrato/Pitch and Pitch/Colour). The Pitch/Colour line (i==2) is nudged
+    // 1px down so it lines up exactly with the bottom of the Drawbar Envelope zone on the left (#7).
     for (int i = 1; i < 3; ++i)
-        g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i, (float)leftWidth, (float)bounds.getWidth());
+        g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i + (i == 2 ? 1 : 0),
+                             (float)leftWidth, (float)bounds.getWidth());
 
     // Brilliance/Effects divider (adjustable)<===============================================================================BRILLIANCE DIVIDER
     int brillianceEffectsDividerY = drawbarSectionHeight + rightSectionHeight * 3 - 10;  // Adjust this offset
@@ -2088,6 +2186,18 @@ void PLANETMainGui::resized()
         vibValues[i]->setBounds(x + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     }
 
+    // VEL gate button: right column of the Vibrato row, directly above the Rate/Time toggle and the
+    // Colour-zone MW buttons (same size/column). Vertically centred on the Vibrato-row knob bodies.
+    {
+        const int velToggleH = 20;   // == the Rate/Time + MW button height
+        velSwitchButtonBounds = juce::Rectangle<int>(mwCenterX - mwBtnW_ / 2,
+                                                     vibratoY + 16 + (rightKnobSize - velToggleH) / 2,
+                                                     mwBtnW_, velToggleH);
+        // Threshold field directly below the button, on the same baseline as the knob value readouts.
+        velThresholdValue.setBounds(velSwitchButtonBounds.getX() - 4, vibratoY + 16 + rightKnobSize,
+                                    mwBtnW_ + 8, knobValueHeight);
+    }
+
     // ---- Pitch section: Distance / Time / Porta, with the Rate/Time toggle in the right column ----
     int pitchY = waveformHeight + rightSectionHeight + 5 + zoneLabelH;
     juce::Slider* pitchKnobs[3]  = { &pitchDistKnob,  &pitchTimeKnob,  &portamentoTimeKnob };
@@ -2111,7 +2221,7 @@ void PLANETMainGui::resized()
     // Colour section: Brilliance + Density, each a horizontal slider with its label ABOVE it,
     // left-aligned. The pair sits low in the zone; sliders are shortened 10% at the right end
     // (left end fixed) to leave room for a future per-slider "Mod wheel" button.
-    int colStartY = waveformHeight + rightSectionHeight * 2 + 40;   // dropped low in the zone
+    int colStartY = waveformHeight + rightSectionHeight * 2 + 32;   // dropped low in the zone; -8px (#2) opens a gap below the MW->Density button before the Effects divider
     int sliderMargin = 20;
     int colSliderX = rightX + sliderMargin;
     int colFullW = rightContentWidth - sliderMargin * 2;
@@ -2351,6 +2461,8 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         if (noiseSwitchBounds[i].contains(event.getPosition()))
         {
             toggleRoutingParam("k" + juce::String(i + 1) + "Noise");
+            if (i == selectedDrawbar)
+                updateDrawbarDensityLabel();   // flip the Density/Wander label live
             return;
         }
         if (pmSwitchBounds[i].contains(event.getPosition()))
@@ -2381,6 +2493,15 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
     if (portamentoModeButtonBounds.contains(event.getPosition()))
     {
         toggleRoutingParam("portamentoMode");
+        return;
+    }
+
+    // Vibrato VEL gate: click toggles the gate on/off. The 1-127 threshold is the editable field
+    // below the button. Refresh the field's dimmed look to match the new on/off state.
+    if (velSwitchButtonBounds.contains(event.getPosition()))
+    {
+        toggleRoutingParam("vibratoVelSwitch");
+        updateVelThresholdLook();
         return;
     }
 
@@ -2564,6 +2685,18 @@ void PLANETMainGui::toggleRoutingParam(const juce::String& paramID)
         p->setValueNotifyingHost(p->getValue() >= 0.5f ? 0.0f : 1.0f);
 
     repaint();
+}
+
+void PLANETMainGui::updateVelThresholdLook()
+{
+    // The threshold field is always editable (you can pre-set it while the gate is off), but dim it
+    // when off so it reads as inactive - the value only bites when the VEL gate is engaged.
+    bool on = vibratoVelSwitchParam && vibratoVelSwitchParam->load() > 0.5f;
+    velThresholdValue.setColour(juce::Label::textColourId,
+                                juce::Colours::white.withAlpha(on ? 1.0f : 0.4f));
+    velThresholdValue.setColour(juce::Label::outlineColourId,
+                                juce::Colours::grey.withAlpha(on ? 1.0f : 0.5f));
+    velThresholdValue.repaint();
 }
 
 // F10: is drawbar i's envelope active? Same test that turns its fader thumb red (see the thumb-colour
@@ -2845,6 +2978,8 @@ void PLANETMainGui::bindToSelectedDrawbar()
     if (auto* param = apvts.getParameter(prefix + "Density"))
         drawbarDensityValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
 
+    updateDrawbarDensityLabel();   // "Density" or "Wander" depending on this drawbar's Noise state
+
     // Re-tint the per-drawbar controls to the selected drawbar's colour.
     drawbarIshtarLookAndFeel.starColour = drawbarColours[selectedDrawbar];
     envDepthKnob.setColour(juce::Slider::thumbColourId, drawbarColours[selectedDrawbar]);
@@ -2853,6 +2988,17 @@ void PLANETMainGui::bindToSelectedDrawbar()
     velToDrawbarKnob.repaint();
     drawbarDensityKnob.repaint();
     envDepthKnob.repaint();
+}
+
+void PLANETMainGui::updateDrawbarDensityLabel()
+{
+    // When the selected drawbar is in Noise mode, the per-drawbar Density knob is driving how far the
+    // bar's sine wanders per cycle (the heart of the band-pass noise), so it's relabelled "Wander".
+    // Reverts to "Density" (modulator sine->soft-saw morph) when Noise is off.
+    bool noiseOn = false;
+    if (auto* np = apvts.getRawParameterValue("k" + juce::String(selectedDrawbar + 1) + "Noise"))
+        noiseOn = np->load() > 0.5f;
+    drawbarDensityLabel.setText(noiseOn ? "Wander" : "Density", juce::dontSendNotification);
 }
 
 void PLANETMainGui::updateLfoSyncMode()
@@ -2951,7 +3097,9 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
         return;
     }
     if (parameterID == "lifeAmount") {
-        lifeValue.setText(juce::String((int)newValue), juce::dontSendNotification);
+        // Round (not truncate) so the label matches the integer-stepped knob's snapped position
+        // when a patch stores a fractional Life value (#4).
+        lifeValue.setText(juce::String(juce::roundToInt(newValue)), juce::dontSendNotification);
         return;
     }
     if (parameterID == "lifeSeed") {
@@ -3004,10 +3152,23 @@ void PLANETMainGui::refreshAllGUIValues()
         velAmpValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("velToAttackTime"))
         velAttackValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
-    if (auto* param = apvts.getParameter("vintageAmount"))
-        vintageValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
-    if (auto* param = apvts.getParameter("lifeAmount"))
-        lifeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    // Vintage & Life: resync BOTH the numeric label AND the knob position from the param. The knob
+    // normally tracks via its SliderAttachment, but the rotary indicator was observed sticking at the
+    // previous value after a load while the label reset correctly (#4). Driving the knob here (with
+    // dontSendNotification, so it doesn't write back through the attachment) + an explicit repaint
+    // guarantees the indicator matches the loaded value regardless of any missed attachment update.
+    if (auto* param = apvts.getParameter("vintageAmount")) {
+        float v = param->convertFrom0to1(param->getValue());
+        vintageValue.setText(juce::String(v, 2), juce::dontSendNotification);
+        vintageKnob.setValue(v, juce::dontSendNotification);
+        vintageKnob.repaint();
+    }
+    if (auto* param = apvts.getParameter("lifeAmount")) {
+        float v = param->convertFrom0to1(param->getValue());
+        lifeValue.setText(juce::String(juce::roundToInt(v)), juce::dontSendNotification);
+        lifeKnob.setValue(v, juce::dontSendNotification);
+        lifeKnob.repaint();
+    }
     if (auto* param = apvts.getParameter("lifeSeed"))
         seedValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 
@@ -3018,6 +3179,9 @@ void PLANETMainGui::refreshAllGUIValues()
         transposeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("unisonVoices"))
         unisonVoicesValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("vibratoVelThreshold"))
+        velThresholdValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    updateVelThresholdLook();   // the VEL switch may have changed on load; match the field's dimmed state
 
     // Refresh harmonic envelope values for currently selected drawbar
     bindToSelectedDrawbar();

@@ -339,7 +339,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float ampAttack, float ampDecay, float ampSustain, float ampRelease,
     float brilliance, float carrierMorph, double sampleRate,
     float pitchWheelOffset,
-    float vibratoRate, float vibratoDepth, float vibratoFadeIn,
+    float vibratoRate, float vibratoDepth, float vibratoFadeIn, float vibratoVelThreshold,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime,
     float lifeAmount,
@@ -401,6 +401,10 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         const auto& sineLUT = SineLUT::getInstance();
         float vibratoLFOValue = sineLUT.lookup(vibratoState.lfoPhase);
         float effectiveVibratoDepth = vibratoDepth * vibratoState.fadeInLevel;
+        // VEL gate: when armed (threshold > 0), a note quieter than the threshold gets no vibrato.
+        // noteVelocity is normalised 0-1; threshold arrives normalised too. Fade-in still runs above.
+        if (vibratoVelThreshold > 0.0f && noteVelocity + 1.0e-6f < vibratoVelThreshold)
+            effectiveVibratoDepth = 0.0f;
         float vibratoOffset = vibratoLFOValue * effectiveVibratoDepth;
 
         // ======================== PITCH ATTACK ENVELOPE ========================
