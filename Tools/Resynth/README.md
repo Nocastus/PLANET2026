@@ -29,7 +29,17 @@ Run `py ishtar_resynth.py --selftest` for a headless engine verification.
      after free rotation/gain - the "looks the same on a scope" criterion.
      Both residuals are always reported whichever drives the fit.
    - *Allow additive routing*: lets bars route direct-to-output (F8 partials).
-   - *Allow Density*: searches the sine->soft-saw carrier morph.
+   - *Allow Carrier Density*: searches the sine->soft-saw carrier morph
+     (the F5 Density knob, `carrierMorph`).
+   - *Allow Per-drawbar Density*: searches each bar's modulator sine->soft-saw
+     morph (`kNDensity`) - a parameter that exists **only on the experimental
+     per-drawbar-density fork** of ISHTAR. OFF (the default): every bar's
+     density is pinned to 0, the search never relies on the fork, and the
+     exported patch has no `kNDensity` lines - it loads and sounds right in
+     mainline ISHTAR. ON: the patch gains `kNDensity` lines and needs the
+     fork build (mainline loads it but ignores those lines). Fit the same
+     waveform once with it off and once with it on to compare mainline vs
+     fork on equal terms.
    - *Half-integer f*: enables x.5 multipliers (sub-octave content); analyses
      a two-cycle window, auto mode only.
 4. **Export patch** writes a loadable `.md` patch (default folder
@@ -44,9 +54,12 @@ Run `py ishtar_resynth.py --selftest` for a headless engine verification.
 ## How the search works
 
 Static ISHTAR is memoryless: one wavecycle is
-`carrier(theta + B*sum k_i sin(f_i theta)) + B*sum (k_i/2) sin(f_i theta)`
-with the Density morph on the carrier. The fitter runs beam-search matching
-pursuit over (f, level, route) per bar with Density swept per state, then
+`carrier(theta + B*sum k_i mod_i(theta)) + B*sum (k_i/2) mod_i(theta)`
+where `mod_i` is the bar's modulator (a sine, morphable toward soft-saw by
+per-drawbar Density on the fork) and the carrier has its own Density morph.
+The fitter runs beam-search matching pursuit over (f, level, route) per bar -
+with per-drawbar density tried at a coarse spread when enabled, then
+fine-swept during descent - with carrier Density swept per state, then
 coordinate descent from several beam states, then basin hopping (random
 f/route jumps, re-descended). A fine-grid waveform-mode "scout" fit always
 runs alongside and seeds the main descent - the waveform objective sees
