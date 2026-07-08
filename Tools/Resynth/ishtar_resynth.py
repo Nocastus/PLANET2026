@@ -272,6 +272,77 @@ class Objective:
 
 
 # --------------------------------------------------------------------------
+# PARALLEL SCAN WORKERS
+# The per-(f,route) candidate evaluations inside a scan are independent, so
+# they fan out over a process pool (numpy releases little of the GIL here, so
+# threads don't help). The SAME evaluator runs in both the serial and the
+# worker path - determinism is asserted by the selftest.
+# --------------------------------------------------------------------------
+def _eval_candidate(route, fi, pm, add, m, grid, d_scan, mode, Ycar, ctx):
+    """Best (err, fi, s, route, d) for one (f, route) over the level grid and
+    the coarse per-bar-density spread. ctx supplies the constant arrays."""
+    ob = ctx['ob']
+    best = None
+    if route == 'ADD':
+        # Purely spectral: Y(s,d) = Ycar + B*0.5*s*Wspec(f,d)
+        FSPEC, SSFSPEC = ctx['FSPEC'], ctx['SSFSPEC']
+        for d in d_scan:
+            Wspec = FSPEC[fi] if d <= 0.0 else \
+                (1.0 - d) * FSPEC[fi] + d * SSFSPEC[fi]
+            Yb = Ycar[None, :] + (BRILLIANCE * 0.5 * grid)[:, None] \
+                * Wspec[None, :]
+            errs = ob.err(Yb, mode)
+            j = int(np.argmin(errs))
+            if best is None or errs[j] < best[0]:
+                best = (float(errs[j]), fi, float(grid[j]), 'ADD', float(d))
+    else:
+        SINF, SSF = ctx['SINF'], ctx['SSF']
+        phi_base = ctx['theta'] + pm
+        for d in d_scan:
+            w = SINF[fi] if d <= 0.0 else (1.0 - d) * SINF[fi] + d * SSF[fi]
+            phi = phi_base[None, :] + (BRILLIANCE * grid)[:, None] * w[None, :]
+            y = carrier(phi, m) + add[None, :]
+            Yb = np.fft.rfft(y, axis=-1)[:, 1:ob.K + 1]
+            errs = ob.err(Yb, mode)
+            j = int(np.argmin(errs))
+            if best is None or errs[j] < best[0]:
+                best = (float(errs[j]), fi, float(grid[j]), 'PM', float(d))
+    return best
+
+
+_WORKER_CTX = {}
+
+
+def _scan_worker_init(ctx):
+    _WORKER_CTX.update(ctx)
+
+
+def _scan_chunk(args):
+    work, pm, add, m, grid, d_scan, mode, Ycar = args
+    return [_eval_candidate(route, fi, pm, add, m, grid, d_scan, mode, Ycar,
+                            _WORKER_CTX)
+            for route, fi in work]
+
+
+def _make_pool(ctx):
+    """ProcessPoolExecutor primed with the scan constants, or None (serial).
+    RESYNTH_WORKERS overrides the worker count; 0 forces serial."""
+    try:
+        n = os.environ.get('RESYNTH_WORKERS')
+        n = int(n) if n is not None else max(1, (os.cpu_count() or 2) - 1)
+    except ValueError:
+        n = max(1, (os.cpu_count() or 2) - 1)
+    if n < 2:
+        return None
+    try:
+        import concurrent.futures
+        return concurrent.futures.ProcessPoolExecutor(
+            max_workers=n, initializer=_scan_worker_init, initargs=(ctx,))
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------
 # FITTER (beam-search matching pursuit + on-grid coordinate descent)
 # --------------------------------------------------------------------------
 class Fitter:
@@ -281,13 +352,16 @@ class Fitter:
     DESCENT_SEEDS = 3  # beam states descended independently (best kept)
     BASIN_HOPS = 10   # random f/route perturbations of the best fit, re-descended
 
-    def __init__(self, objective, cfg, progress=None):
+    def __init__(self, objective, cfg, progress=None, pool=None):
         """cfg keys: n_bars, G, mode ('spec'|'wave'), allow_add, allow_density,
         allow_bar_density, half_f.
-        progress: callable(frac, msg) -> bool (False = cancel)."""
+        progress: callable(frac, msg) -> bool (False = cancel).
+        pool: shared scan ProcessPoolExecutor (the scout sub-fit reuses its
+        parent's); None here and run() creates/owns one."""
         self.ob = objective
         self.cfg = cfg
         self.progress = progress or (lambda frac, msg: True)
+        self._pool = pool
         C = objective.C
         self.C = C
         self.CM = objective.CM
@@ -320,6 +394,12 @@ class Fitter:
         self.active_mode = cfg['mode']
         self._done = 0
         self._total = 1
+
+    def _scan_ctx(self):
+        """Constant arrays the candidate evaluator needs (sent to workers once)."""
+        return {'ob': self.ob, 'theta': self.theta, 'SINF': self.SINF,
+                'SSF': self.SSF, 'FSPEC': self.FSPEC,
+                'SSFSPEC': getattr(self, 'SSFSPEC', None)}
 
     # ---- state helpers (bars = list of (f_idx, s, route, d)) ----------------
     def _modwave(self, fi, d):
@@ -374,47 +454,33 @@ class Fitter:
         used = {(fi, r) for j, (fi, _, r, _) in enumerate(bars) if j != exclude}
         nf = len(self.f_list)
         routes = ['PM'] + (['ADD'] if self.cfg['allow_add'] else [])
-        found = []   # (err, fi, s, route, d) - one per (f,route)
-        phi_base = self.theta + pm
+        work = [(route, fi) for route in routes for fi in range(nf)
+                if (fi, route) not in used]
+        Ycar = self._spectrum(pm, add, m) if 'ADD' in routes else None
+        ctx = self._scan_ctx()
 
-        for route in routes:
-            if self.cancelled:
-                break
-            if route == 'ADD':
-                # Purely spectral: Y(s,d) = Ycar + B*0.5*s*Wspec(f,d)
-                Ycar = self._spectrum(pm, add, m)
-                for fi in range(nf):
-                    if (fi, 'ADD') in used:
-                        continue
-                    best = None
-                    for d in self.d_scan:
-                        Wspec = self.FSPEC[fi] if d <= 0.0 else \
-                            (1.0 - d) * self.FSPEC[fi] + d * self.SSFSPEC[fi]
-                        Yb = Ycar[None, :] + (BRILLIANCE * 0.5 * grid)[:, None] \
-                            * Wspec[None, :]
-                        errs = self.ob.err(Yb, mode)
-                        j = int(np.argmin(errs))
-                        if best is None or errs[j] < best[0]:
-                            best = (float(errs[j]), fi, float(grid[j]), 'ADD',
-                                    float(d))
-                    found.append(best)
-            else:
-                for fi in range(nf):
-                    if (fi, 'PM') in used:
-                        continue
-                    best = None
-                    for d in self.d_scan:
-                        w = self._modwave(fi, d)
-                        phi = phi_base[None, :] + \
-                            (BRILLIANCE * grid)[:, None] * w[None, :]
-                        y = carrier(phi, m) + add[None, :]
-                        Yb = np.fft.rfft(y, axis=-1)[:, 1:self.ob.K + 1]
-                        errs = self.ob.err(Yb, mode)
-                        j = int(np.argmin(errs))
-                        if best is None or errs[j] < best[0]:
-                            best = (float(errs[j]), fi, float(grid[j]), 'PM',
-                                    float(d))
-                    found.append(best)
+        found = []   # (err, fi, s, route, d) - one per (f,route), in work order
+        if self._pool is not None and len(work) > 1 and not self.cancelled:
+            try:
+                nchunk = self._pool._max_workers
+                chunks = [work[i::nchunk] for i in range(nchunk) if work[i::nchunk]]
+                args = [(ch, pm, add, m, grid, self.d_scan, mode, Ycar)
+                        for ch in chunks]
+                results = {}
+                for ch, res in zip(chunks, self._pool.map(_scan_chunk, args)):
+                    for key, best in zip(ch, res):
+                        results[key] = best
+                found = [results[key] for key in work]
+            except Exception:
+                # pool died (or was shut down mid-cancel) - finish serially
+                self._pool = None
+                found = []
+        if not found:
+            for route, fi in work:
+                if self.cancelled:
+                    break
+                found.append(_eval_candidate(route, fi, pm, add, m, grid,
+                                             self.d_scan, mode, Ycar, ctx))
         found.sort(key=lambda c: c[0])
         return found[:top_j]
 
@@ -458,6 +524,19 @@ class Fitter:
 
     # ---- main --------------------------------------------------------------
     def run(self):
+        """Run the fit, creating (and owning) the scan worker pool unless one
+        was handed in. Serial fallback if the pool can't start."""
+        own_pool = self._pool is None
+        if own_pool:
+            self._pool = _make_pool(self._scan_ctx())
+        try:
+            return self._run()
+        finally:
+            if own_pool and self._pool is not None:
+                self._pool.shutdown(cancel_futures=True)
+                self._pool = None
+
+    def _run(self):
         n_bars = self.cfg['n_bars']
         W = self.BEAM_W
         n_mstarts = 4 if len(self.m_grid) > 1 else 1
@@ -492,7 +571,7 @@ class Fitter:
                                    f"scout: {msg}" if msg else '')
                 return ok
 
-            sub = Fitter(self.ob, scfg, sub_progress)
+            sub = Fitter(self.ob, scfg, sub_progress, pool=self._pool)
             sres = sub.run()
             self._done += pursuit_scans
             if sub.cancelled:
