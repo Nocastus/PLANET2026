@@ -885,6 +885,16 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     savePatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
     addAndMakeVisible(savePatchButton);
 
+    prevPatchButton.setButtonText("<");
+    prevPatchButton.onClick = [this] { stepPatch(-1); };
+    prevPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    addAndMakeVisible(prevPatchButton);
+
+    nextPatchButton.setButtonText(">");
+    nextPatchButton.onClick = [this] { stepPatch(1); };
+    nextPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    addAndMakeVisible(nextPatchButton);
+
     // Get patch metadata from processor if available
     if (auto* proc = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor))
     {
@@ -2296,10 +2306,14 @@ void PLANETMainGui::resized()
     loadPatchButton.setBounds(buttonMargin, buttonY, buttonWidth, buttonHeight);
     savePatchButton.setBounds(buttonMargin + buttonWidth + 10, buttonY, buttonWidth, buttonHeight);
 
-    // Patch name (fixed width, right after Save button)
+    // Patch name (fixed width, right after Save button), flanked by the prev/next
+    // step arrows. The width they take comes out of the comment field.
+    int arrowWidth = 20;
     int patchNameX = buttonMargin + buttonWidth * 2 + 20;
     int patchNameWidth = 150;
-    currentPatchLabel.setBounds(patchNameX, buttonY, patchNameWidth, buttonHeight);
+    prevPatchButton.setBounds(patchNameX, buttonY, arrowWidth, buttonHeight);
+    currentPatchLabel.setBounds(patchNameX + arrowWidth + 4, buttonY, patchNameWidth, buttonHeight);
+    nextPatchButton.setBounds(patchNameX + arrowWidth + 4 + patchNameWidth + 4, buttonY, arrowWidth, buttonHeight);
 
     // ISHTAR wordmark + master/unison cluster live in the right of the bar. We pull the whole cluster
     // ~80px left of the column divider (robbing a little from the patch-comment field) so Trans / Stack
@@ -2312,7 +2326,7 @@ void PLANETMainGui::resized()
     ishtarWordmarkBounds = juce::Rectangle<int>(ishtarBarX, buttonY, 88, buttonHeight);
 
     // Comment now ends just before the ISHTAR wordmark (was: up to the divider).
-    int commentX = patchNameX + patchNameWidth + 10;
+    int commentX = patchNameX + arrowWidth + 4 + patchNameWidth + 4 + arrowWidth + 10;
     int commentWidth = juce::jmax(60, ishtarBarX - 10 - commentX);
     patchCommentLabel.setBounds(commentX, buttonY, commentWidth, buttonHeight);
 
@@ -3254,6 +3268,8 @@ void PLANETMainGui::loadPatchButtonClicked()
                     processor->loadFactoryPatch(factoryList[(size_t) index]);
                     currentPatchName = factoryList[(size_t) index].patchName;
                     updatePatchNameDisplay(currentPatchName);
+                    lastFactoryPatchIndex = index;
+                    lastLoadedPatchFile = juce::File();
                 }
                 return;
             }
@@ -3274,9 +3290,67 @@ void PLANETMainGui::loadPatchButtonClicked()
                     // Update patch name display
                     currentPatchName = file.getFileNameWithoutExtension();
                     updatePatchNameDisplay(currentPatchName);
+                    lastLoadedPatchFile = file;
+                    lastFactoryPatchIndex = -1;
                 }
             });
         });
+}
+
+void PLANETMainGui::stepPatch(int direction)
+{
+    auto* processor = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor);
+    if (processor == nullptr)
+        return;
+
+    // If the last load/save was a user file, walk that file's folder in name order.
+    if (lastLoadedPatchFile.existsAsFile())
+    {
+        juce::Array<juce::File> files;
+        lastLoadedPatchFile.getParentDirectory().findChildFiles(files, juce::File::findFiles, false, "*.md");
+        if (files.isEmpty())
+            return;
+
+        juce::File::NaturalFileComparator comparator(false);
+        files.sort(comparator);
+
+        int index = files.indexOf(lastLoadedPatchFile);
+        index = index < 0 ? 0 : (index + direction + files.size()) % files.size();
+
+        lastLoadedPatchFile = files[index];
+        processor->loadPatch(lastLoadedPatchFile);
+        updatePatchNameDisplay(lastLoadedPatchFile.getFileNameWithoutExtension());
+        return;
+    }
+
+    // Otherwise walk the factory bank in the same order the Load menu shows it
+    // (grouped by category); the bake order inside FactoryPatchData isn't guaranteed grouped.
+    const auto& factory = processor->getFactoryPatches();
+    if (factory.empty())
+        return;
+
+    std::vector<size_t> menuOrder;
+    juce::StringArray categories;
+    for (const auto& p : factory)
+        if (!categories.contains(p.category))
+            categories.add(p.category);
+    for (const auto& category : categories)
+        for (size_t i = 0; i < factory.size(); ++i)
+            if (factory[i].category == category)
+                menuOrder.push_back(i);
+
+    int pos = -1;
+    for (int i = 0; i < (int) menuOrder.size(); ++i)
+        if ((int) menuOrder[(size_t) i] == lastFactoryPatchIndex)
+            { pos = i; break; }
+
+    pos = pos < 0 ? (direction > 0 ? 0 : (int) menuOrder.size() - 1)
+                  : (pos + direction + (int) menuOrder.size()) % (int) menuOrder.size();
+
+    lastFactoryPatchIndex = (int) menuOrder[(size_t) pos];
+    const auto& patch = factory[(size_t) lastFactoryPatchIndex];
+    processor->loadFactoryPatch(patch);
+    updatePatchNameDisplay(patch.patchName);
 }
 
 void PLANETMainGui::savePatchButtonClicked()
@@ -3331,6 +3405,8 @@ void PLANETMainGui::savePatchButtonClicked()
                 updatePatchNameDisplay(currentPatchName);
                 processor->currentPatchDescription = description;
                 updatePatchCommentDisplay(description);
+                lastLoadedPatchFile = patchFile;
+                lastFactoryPatchIndex = -1;
             }
         }
         delete window;

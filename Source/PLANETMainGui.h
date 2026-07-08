@@ -609,9 +609,15 @@ private:
     // ======================== PATCH MANAGEMENT UI ========================
     juce::TextButton loadPatchButton;
     juce::TextButton savePatchButton;
+    juce::TextButton prevPatchButton, nextPatchButton;   // step through the last-used bank
     juce::Label currentPatchLabel;
     juce::String currentPatchName;
     juce::Label patchCommentLabel;
+
+    // Where the arrows step: the factory bank (in Load-menu order) unless the last
+    // load/save was a user file, in which case they walk that file's folder.
+    int lastFactoryPatchIndex = -1;
+    juce::File lastLoadedPatchFile;
 
     // Master controls in patch bar
     ToggleResetSlider masterVolumeSlider;
@@ -637,6 +643,7 @@ private:
 
     void loadPatchButtonClicked();
     void savePatchButtonClicked();
+    void stepPatch(int direction);
    
 
     // ======================== SLIDER ATTACHMENTS ========================
