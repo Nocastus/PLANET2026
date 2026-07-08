@@ -324,15 +324,27 @@ public:
     juce::Rectangle<int> harmonicEnvBounds;
     juce::Rectangle<int> ampEnvBounds;
     
-    // Helper methods for envelope interaction
+    // Helper methods for envelope interaction.
+    // viewMax is the vertical full-scale of the envelope graph: 1.0 normally, or the
+    // sustain level when it exceeds 1.0 (drawbar SustainLevel legally reaches 2.0 -
+    // a two-stage attack). The graph auto-scales so such curves stay inside their
+    // box instead of painting over the drawbar section above.
     juce::Point<float> getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
-                                         float attack, float decay, float sustain, float release);
+                                         float attack, float decay, float sustain, float release,
+                                         float viewMax = 1.0f);
     void updateAdsrFromDrag(const juce::MouseEvent& event);
-    
+
+    // Vertical full-scale captured when a sustain-handle drag starts, so the
+    // cursor-to-value mapping stays fixed for the whole drag while the painted
+    // view rescales live underneath (dragging above the box stretches sustain
+    // past the current ceiling, up to the parameter maximum).
+    float envDragViewMax = 1.0f;
+
     // Envelope drawing helper - consolidates duplicate code
     void drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                            float attack, float decay, float sustain, float release,
-                           float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour);
+                           float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour,
+                           float viewMax = 1.0f);
 
 private:
     // Colour scheme

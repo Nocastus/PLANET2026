@@ -1489,23 +1489,35 @@ void PLANETMainGui::updateLfoPulses()
 //==============================================================================
 void PLANETMainGui::drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                        float attack, float decay, float sustain, float release,
-                                       float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour)
+                                       float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour,
+                                       float viewMax)
 {
     float curveFactor = 1.0f + curveAmount * 6.0f;
     float totalTime = attack + decay + 0.3f + release;
     if (totalTime < 0.1f) totalTime = 0.1f;
     float timeScale = (float)bounds.getWidth() / totalTime;
-    
+
     float x0 = (float)bounds.getX();
     float y0 = (float)bounds.getBottom();
     float yTop = (float)bounds.getY() + 10;
-    float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
-    
+    float yRange = y0 - yTop - 10;
+    viewMax = juce::jmax(1.0f, viewMax, sustain);
+    float yPeak = yTop + (1.0f - 1.0f / viewMax) * yRange;
+    float ySustain = yTop + (1.0f - sustain / viewMax) * yRange;
+
     float x1 = x0 + attack * timeScale;
     float x2 = x1 + decay * timeScale;
     float x3 = x2 + 0.3f * timeScale;
     float x4 = x3 + release * timeScale;
-    
+
+    // Rescaled view (sustain above 1.0): mark the 1.0 level faintly so the
+    // two-stage attack shape reads against the normal full-scale.
+    if (viewMax > 1.001f)
+    {
+        g.setColour(strokeColour.withAlpha(0.25f));
+        g.drawHorizontalLine((int)yPeak, x0, (float)bounds.getRight());
+    }
+
     juce::Path envPath;
     envPath.startNewSubPath(x0, y0);
     const int numSegments = 20;
@@ -1533,23 +1545,23 @@ void PLANETMainGui::drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<i
         }
     };
     
-    addCurvedSegment(x0, x1, y0, yTop, true);        // Attack
-    addCurvedSegment(x1, x2, yTop, ySustain, false); // Decay
-    envPath.lineTo(x3, ySustain);                    // Sustain hold
-    addCurvedSegment(x3, x4, ySustain, y0, false);   // Release
-    
+    addCurvedSegment(x0, x1, y0, yPeak, true);        // Attack
+    addCurvedSegment(x1, x2, yPeak, ySustain, false); // Decay
+    envPath.lineTo(x3, ySustain);                     // Sustain hold
+    addCurvedSegment(x3, x4, ySustain, y0, false);    // Release
+
     g.setColour(strokeColour);
     g.strokePath(envPath, juce::PathStrokeType(2.5f));
-    
+
     // Draw handles
     float handleRadius = 6.0f;
     g.setColour(juce::Colours::white);
-    g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);
+    g.fillEllipse(x1 - handleRadius, yPeak - handleRadius, handleRadius * 2, handleRadius * 2);
     g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);
     g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);
-    
+
     g.setColour(handleOutlineColour);
-    g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+    g.drawEllipse(x1 - handleRadius, yPeak - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
     g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
     g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
 }
@@ -1594,11 +1606,18 @@ void PLANETMainGui::paint(juce::Graphics& g)
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(harmonicEnvBounds.toFloat(), 5.0f);
 
+        // View full-scale: follow the sustain when it exceeds 1.0, and hold the
+        // drag-start scale while a sustain drag is live (see envDragViewMax).
+        float harmViewMax = juce::jmax(1.0f, adsrValues[selectedDrawbar][2]);
+        if (currentDragTarget == DragTarget::HarmonicDecaySustain)
+            harmViewMax = juce::jmax(harmViewMax, envDragViewMax);
+
         drawEnvelopeCurve(g, harmonicEnvBounds,
                           adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
                           adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3],
                           (float)envCurveKnob.getValue(),
-                          drawbarColours[selectedDrawbar], drawbarColours[selectedDrawbar]);
+                          drawbarColours[selectedDrawbar], drawbarColours[selectedDrawbar],
+                          harmViewMax);
     }
     
     // Amplitude section
@@ -2535,16 +2554,18 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
          event.y >= harmonicEnvBounds.getY() - handleRadius && 
          event.y <= harmonicEnvBounds.getBottom() + handleRadius))
     {
-        auto attackPt = getEnvelopePoint(1, harmonicEnvBounds, 
+        // Hit-test against the same rescaled geometry the curve is drawn with.
+        float harmViewMax = juce::jmax(1.0f, adsrValues[selectedDrawbar][2]);
+        auto attackPt = getEnvelopePoint(1, harmonicEnvBounds,
             adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
-            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3], harmViewMax);
         auto decaySustainPt = getEnvelopePoint(2, harmonicEnvBounds,
             adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
-            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3], harmViewMax);
         auto releasePt = getEnvelopePoint(4, harmonicEnvBounds,
             adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
-            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
-        
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3], harmViewMax);
+
         if (attackPt.getDistanceFrom(event.position) < handleRadius)
         {
             currentDragTarget = DragTarget::HarmonicAttack;
@@ -2552,6 +2573,10 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
         if (decaySustainPt.getDistanceFrom(event.position) < handleRadius)
         {
+            // Freeze the cursor-to-value mapping at the current full-scale for
+            // the whole drag; the painted view may rescale live as the value
+            // stretches past it.
+            envDragViewMax = harmViewMax;
             currentDragTarget = DragTarget::HarmonicDecaySustain;
             return;
         }
@@ -2682,6 +2707,7 @@ void PLANETMainGui::mouseUp(const juce::MouseEvent& event)
     }
 
     currentDragTarget = DragTarget::None;
+    envDragViewMax = 1.0f;
 }
 
 int PLANETMainGui::drawbarColumnAt(juce::Point<int> p) const
@@ -2800,26 +2826,30 @@ void PLANETMainGui::copyModParamsBetweenDrawbars(int from, int to)
 }
 
 juce::Point<float> PLANETMainGui::getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
-                                                    float attack, float decay, float sustain, float release)
+                                                    float attack, float decay, float sustain, float release,
+                                                    float viewMax)
 {
     float totalTime = attack + decay + 0.3f + release;
     if (totalTime < 0.1f) totalTime = 0.1f;
     float timeScale = (float)bounds.getWidth() / totalTime;
-    
+
     float x0 = (float)bounds.getX();
     float y0 = (float)bounds.getBottom();
     float yTop = (float)bounds.getY() + 10;
-    float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
-    
+    float yRange = y0 - yTop - 10;
+    viewMax = juce::jmax(1.0f, viewMax, sustain);
+    float yPeak = yTop + (1.0f - 1.0f / viewMax) * yRange;
+    float ySustain = yTop + (1.0f - sustain / viewMax) * yRange;
+
     float x1 = x0 + attack * timeScale;
     float x2 = x1 + decay * timeScale;
     float x3 = x2 + 0.3f * timeScale;
     float x4 = x3 + release * timeScale;
-    
+
     switch (pointIndex)
     {
         case 0: return { x0, y0 };
-        case 1: return { x1, yTop };
+        case 1: return { x1, yPeak };
         case 2: return { x2, ySustain };
         case 3: return { x3, ySustain };
         case 4: return { x4, y0 };
@@ -2870,10 +2900,19 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
             float newX = juce::jlimit(currentX1, (float)bounds.getRight(), (float)event.x);
             float newDecay = (newX - currentX1) / timeScale;
             values[1] = juce::jlimit(0.001f, 10.0f, newDecay);
-            
-            float newY = juce::jlimit(yTop, y0 - 10, (float)event.y);
-            float newSustain = 1.0f - (newY - yTop) / yRange;
-            values[2] = juce::jlimit(0.0f, 1.0f, newSustain);
+
+            // The cursor-to-sustain mapping uses the full-scale captured at drag
+            // start (envDragViewMax), so grabbing a handle on a rescaled view
+            // doesn't jump the value. Drawbar sustain legally reaches 2.0 (two-
+            // stage attack): dragging ABOVE the box keeps stretching it past the
+            // current ceiling, and the painted view rescales to follow. The amp
+            // envelope keeps its 0-1 range and top-edge clamp.
+            float dragMax = isHarmonic ? envDragViewMax : 1.0f;
+            float sustainCap = isHarmonic ? 2.0f : 1.0f;
+            float minY = isHarmonic ? yTop - yRange : yTop;
+            float newY = juce::jlimit(minY, y0 - 10, (float)event.y);
+            float newSustain = dragMax * (1.0f - (newY - yTop) / yRange);
+            values[2] = juce::jlimit(0.0f, sustainCap, newSustain);
             break;
         }
         
