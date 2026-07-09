@@ -130,6 +130,18 @@ private:
         static constexpr int SPLICE_CORR_WINDOW   = 512;   // spans >= half a period down to ~43Hz
         static constexpr float SPLICE_CENTER_BIAS = 0.02f; // prefer ~1024-sample jumps on ties
 
+        // The jump search is SLICED across the approach (9 Jul 2026 evening): one
+        // candidate scored per sample, started SEARCH_SAMPLES + SLACK samples of
+        // drift before the tap reaches its corridor edge. Drift cancels out of that
+        // lead, so at ANY Spread the search finishes ~SLACK samples early and the
+        // chosen jump is at most a few ms stale - inaudible on periodic content.
+        // This replaces the one-shot search, whose ~80us single-sample spike bounced
+        // the DAW CPU meter at small ASIO buffers (fixed-budget principle restored:
+        // worst per-sample cost is ONE 512-tap correlation, ~0.8us).
+        static constexpr int SPLICE_SEARCH_SAMPLES = 362;  // 353 coarse + up to 9 refine steps
+        static constexpr int SPLICE_SEARCH_SLACK   = 64;   // finish margin (samples of drift lead)
+        static constexpr int SPLICE_HARD_FLOOR     = 48;   // force-finish depth if automation outruns it
+
         std::array<float, BUFFER_SIZE> buffer;
         int writeIndex = 0;
 
@@ -148,6 +160,24 @@ private:
         int   rightFadeRemaining = 0;
         float leftFadeOldOffset = 0.0f;
         float rightFadeOldOffset = 0.0f;
+
+        // Per-tap sliced jump search. The reference window is frozen at begin time
+        // (the anchor); candidate windows read the live buffer, but every position
+        // involved is old enough that nothing scored is overwritten mid-search.
+        struct SpliceSearch {
+            enum Stage { Idle, Coarse, Refine, Done };
+            Stage stage = Idle;
+            int   anchor = 0;        // int tap position the reference window was taken at
+            bool  jumpBack = true;   // fast tap jumps back, slow tap jumps forward
+            int   nextJump = 0;      // next candidate to score (coarse: step 4; refine: step 1)
+            int   refineHi = 0;
+            int   bestJump = 1024;
+            float bestScore = -1.0e9f;
+            int   doneAge = 0;       // samples since Done - re-anchor guard for stalled approaches
+            float x[SPLICE_CORR_WINDOW];
+        };
+        SpliceSearch leftSearch;
+        SpliceSearch rightSearch;
 
         // Equal-power crossfade gains. Targets are computed once per block in
         // updateParameters() (they depend only on the mix param); the live gains glide
@@ -171,8 +201,11 @@ private:
 
     private:
         float processTap(float& readOffset, float playbackRate,
-                         int& fadeRemaining, float& fadeOldOffset);
-        int findSpliceJump(int basePos, bool jumpBack) const;
+                         int& fadeRemaining, float& fadeOldOffset, SpliceSearch& search);
+        void beginSearch(SpliceSearch& s, int basePos, bool jumpBack) const;
+        void stepSearch(SpliceSearch& s) const;   // bounded: scores ONE candidate
+        void finishSearch(SpliceSearch& s) const; // automation guard, rare
+        float scoreJump(const SpliceSearch& s, int jump, int step) const;
         float interpolatedRead(float readPosition);
         float centsToRatio(float cents);
     };
