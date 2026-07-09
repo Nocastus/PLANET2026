@@ -96,26 +96,19 @@ std::pair<float, float> PLANETEffects::DetuneProcessor::process(float input)
     // Write input to buffer
     buffer[writeIndex] = input;
 
-    // Read at different playback rates for pitch shifting
-    float leftWet = interpolatedRead(leftReadOffset);
-    float rightWet = interpolatedRead(rightReadOffset);
+    // Read at different playback rates for pitch shifting (splicing near the write head)
+    float leftWet = processTap(leftReadOffset, leftPlaybackRate,
+                               leftFadeRemaining, leftFadeOldOffset);
+    float rightWet = processTap(rightReadOffset, rightPlaybackRate,
+                                rightFadeRemaining, rightFadeOldOffset);
 
-    // Simple smoothing to reduce buffer wrap artifacts
+    // One-pole smoothing on the wet taps. Wraps are handled by the splice crossfade
+    // now, but this stays: it is part of the approved wet tone (slight HF rounding).
     leftWet = leftPrevSample * (1.0f - SMOOTHING_FACTOR) + leftWet * SMOOTHING_FACTOR;
     rightWet = rightPrevSample * (1.0f - SMOOTHING_FACTOR) + rightWet * SMOOTHING_FACTOR;
 
     leftPrevSample = leftWet;
     rightPrevSample = rightWet;
-
-    // Advance read offsets at different rates
-    leftReadOffset += leftPlaybackRate;
-    rightReadOffset += rightPlaybackRate;
-
-    // Wrap read positions within buffer
-    while (leftReadOffset >= BUFFER_SIZE) leftReadOffset -= BUFFER_SIZE;
-    while (rightReadOffset >= BUFFER_SIZE) rightReadOffset -= BUFFER_SIZE;
-    while (leftReadOffset < 0) leftReadOffset += BUFFER_SIZE;
-    while (rightReadOffset < 0) rightReadOffset += BUFFER_SIZE;
 
     // Equal power crossfade. Glide the gains toward their block-rate targets (one-pole,
     // ~10 ms) so Mix moves are click-free; at rest this settles to exactly the old values.
@@ -129,6 +122,100 @@ std::pair<float, float> PLANETEffects::DetuneProcessor::process(float input)
     writeIndex = (writeIndex + 1) % BUFFER_SIZE;
 
     return { leftOutput, rightOutput };
+}
+
+float PLANETEffects::DetuneProcessor::processTap(float& readOffset, float playbackRate,
+                                                 int& fadeRemaining, float& fadeOldOffset)
+{
+    // How far this tap trails the write head (0..BUFFER_SIZE)
+    float delay = (float)writeIndex - readOffset;
+    while (delay < 0.0f) delay += (float)BUFFER_SIZE;
+
+    if (fadeRemaining == 0)
+    {
+        // Splice BEFORE the tap collides with the write head, on our terms. The fast
+        // (sharp) tap closes on the write head, so it jumps BACK; the slow (flat) tap
+        // falls behind, so it jumps FORWARD. At rate exactly 1.0 (Spread 0) there is
+        // no drift and neither branch ever triggers.
+        if (playbackRate > 1.0f && delay < (float)SPLICE_MARGIN)
+        {
+            fadeOldOffset = readOffset;
+            readOffset -= (float)findSpliceJump((int)readOffset, true);
+            while (readOffset < 0.0f) readOffset += (float)BUFFER_SIZE;
+            fadeRemaining = SPLICE_FADE_SAMPLES;
+        }
+        else if (playbackRate < 1.0f && delay > (float)(BUFFER_SIZE - SPLICE_MARGIN))
+        {
+            fadeOldOffset = readOffset;
+            readOffset += (float)findSpliceJump((int)readOffset, false);
+            while (readOffset >= (float)BUFFER_SIZE) readOffset -= (float)BUFFER_SIZE;
+            fadeRemaining = SPLICE_FADE_SAMPLES;
+        }
+    }
+
+    float wet;
+    if (fadeRemaining > 0)
+    {
+        // Linear crossfade retiring -> landed trajectory. The correlation-picked jump
+        // means the two are near-identical in phase, so a linear fade (not equal-power)
+        // sums without a level bump. Outside fades this branch never runs and the tap
+        // is exactly the pre-fix single interpolated read.
+        float fadeIn = 1.0f - (float)fadeRemaining / (float)SPLICE_FADE_SAMPLES;
+        wet = interpolatedRead(fadeOldOffset) * (1.0f - fadeIn)
+            + interpolatedRead(readOffset) * fadeIn;
+        fadeOldOffset += playbackRate;
+        --fadeRemaining;
+    }
+    else
+    {
+        wet = interpolatedRead(readOffset);
+    }
+
+    readOffset += playbackRate;
+    while (readOffset >= (float)BUFFER_SIZE) readOffset -= (float)BUFFER_SIZE;
+    while (readOffset < 0.0f) readOffset += (float)BUFFER_SIZE;
+
+    return wet;
+}
+
+int PLANETEffects::DetuneProcessor::findSpliceJump(int basePos, bool jumpBack) const
+{
+    // Pick the jump distance whose landing point best continues the waveform at the
+    // current position: normalised cross-correlation over the SPLICE_CORR_WINDOW
+    // samples BEHIND each candidate (always valid history for the ranges the margins
+    // allow). For periodic material the winner is a whole number of periods, so even
+    // a bass note splices in phase. Runs once per splice (every couple of seconds at
+    // typical Spread), not per sample.
+    float x[SPLICE_CORR_WINDOW];
+    float xEnergy = 0.0f;
+    for (int i = 0; i < SPLICE_CORR_WINDOW; ++i)
+    {
+        x[i] = buffer[(basePos - i) & (BUFFER_SIZE - 1)];
+        xEnergy += x[i] * x[i];
+    }
+
+    // Search longest-first so silence (all scores ~0) lands the far jump = fewest splices
+    int bestJump = SPLICE_SEARCH_MAX;
+    float bestScore = -1.0e9f;
+    for (int jump = SPLICE_SEARCH_MAX; jump >= SPLICE_SEARCH_MIN; --jump)
+    {
+        int candPos = jumpBack ? basePos - jump : basePos + jump;
+        float dot = 0.0f;
+        float yEnergy = 0.0f;
+        for (int i = 0; i < SPLICE_CORR_WINDOW; ++i)
+        {
+            float y = buffer[(candPos - i) & (BUFFER_SIZE - 1)];
+            dot += x[i] * y;
+            yEnergy += y * y;
+        }
+        float score = dot / std::sqrt(xEnergy * yEnergy + 1.0e-12f);
+        if (score > bestScore)
+        {
+            bestScore = score;
+            bestJump = jump;
+        }
+    }
+    return bestJump;
 }
 
 float PLANETEffects::DetuneProcessor::centsToRatio(float cents)

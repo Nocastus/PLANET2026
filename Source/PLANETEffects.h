@@ -102,6 +102,21 @@ private:
         static constexpr float MAX_DETUNE_CENTS = 50.0f;  // More obvious effect
         static constexpr float BASE_DELAY_SAMPLES = 64.0f;  // Small fixed delay (~1.5ms)
 
+        // ---- Splice-on-approach wrap declick (9 Jul 2026) ----
+        // The taps drift relative to the write head; letting one collide snapped the
+        // delay by a whole buffer = the periodic "bump" (worst on bass). Instead, when
+        // a tap gets within SPLICE_MARGIN of the write head we jump it by a correlation-
+        // picked distance (a whole number of waveform periods when one fits) and
+        // crossfade over SPLICE_FADE_SAMPLES. Between splices the signal path is
+        // exactly the pre-fix single-tap read - the approved sound is untouched.
+        // Margins/window sized so every index below stays within valid buffer history:
+        // trigger delay (<128) + max jump (832) + corr window (64) < BUFFER_SIZE.
+        static constexpr int SPLICE_MARGIN       = 128;
+        static constexpr int SPLICE_FADE_SAMPLES = 256;  // ~6ms at 44.1kHz
+        static constexpr int SPLICE_SEARCH_MIN   = 256;  // shortest allowed jump
+        static constexpr int SPLICE_SEARCH_MAX   = 832;  // longest (keeps windows in range)
+        static constexpr int SPLICE_CORR_WINDOW  = 64;   // correlation compare length
+
         std::array<float, BUFFER_SIZE> buffer;
         int writeIndex = 0;
 
@@ -111,6 +126,13 @@ private:
 
         float leftPlaybackRate = 1.0f;
         float rightPlaybackRate = 1.0f;
+
+        // Per-tap splice crossfade state. fadeRemaining == 0 means not fading;
+        // fadeOldOffset is the retiring trajectory, still advancing at the tap's rate.
+        int   leftFadeRemaining = 0;
+        int   rightFadeRemaining = 0;
+        float leftFadeOldOffset = 0.0f;
+        float rightFadeOldOffset = 0.0f;
 
         // Equal-power crossfade gains. Targets are computed once per block in
         // updateParameters() (they depend only on the mix param); the live gains glide
@@ -123,7 +145,8 @@ private:
         float targetWetGain = 0.0f;
         float gainSmoothCoeff = 0.002f;   // set from sampleRate in updateParameters()
 
-        // Simple smoothing for buffer wrap artifacts
+        // One-pole wet-tap smoothing - originally for wrap artifacts, kept for its
+        // (approved) slight HF rounding of the wet tone now splices handle the wraps
         float leftPrevSample = 0.0f;
         float rightPrevSample = 0.0f;
         static constexpr float SMOOTHING_FACTOR = 0.95f; // Gentle smoothing
@@ -132,6 +155,9 @@ private:
         std::pair<float, float> process(float input);
 
     private:
+        float processTap(float& readOffset, float playbackRate,
+                         int& fadeRemaining, float& fadeOldOffset);
+        int findSpliceJump(int basePos, bool jumpBack) const;
         float interpolatedRead(float readPosition);
         float centsToRatio(float cents);
     };
