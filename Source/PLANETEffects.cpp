@@ -141,16 +141,41 @@ float PLANETEffects::DetuneProcessor::processTap(float& readOffset, float playba
         // drift, so no searches and no splices - this whole block is skipped.
         const bool fast = playbackRate > 1.0f;
         const float drift = fast ? playbackRate - 1.0f : 1.0f - playbackRate;
-        const float toTrigger = fast ? delay - (float)SPLICE_MARGIN
-                                     : (float)SPLICE_CORRIDOR_HIGH - delay;
+
+        // v4 trigger geometry: the fast tap splices at the corridor low edge; the
+        // slow tap splices as soon as its delay exceeds landing-floor + planned jump
+        // (unknowable before its search finishes, so the pre-Done trigger is the
+        // corridor-top backstop). Both taps therefore hug the low-lag end of the
+        // corridor and the average wet lag matches the pre-splice-fix feel.
+        // An early slow splice must clear the correlation gate; otherwise the tap
+        // keeps drifting (re-searching as longer jumps become measurable) until
+        // either a long jump aligns the whole mix or the corridor-top backstop.
+        const bool earlyOK = search.stage == SpliceSearch::Done
+                          && search.bestCorr >= SPLICE_EARLY_CORR;
+        const float earliestTrigger = fast
+            ? (float)SPLICE_MARGIN
+            : (float)(SPLICE_MARGIN + SPLICE_TRIGGER_SLACK + SPLICE_SEARCH_MIN);
+        const float triggerDelay = fast
+            ? (float)SPLICE_MARGIN
+            : (earlyOK ? juce::jmin((float)SPLICE_CORRIDOR_HIGH,
+                                    (float)(SPLICE_MARGIN + SPLICE_TRIGGER_SLACK + search.bestJump))
+                       : (float)SPLICE_CORRIDOR_HIGH);
+        const float toEarliest = fast ? delay - earliestTrigger : earliestTrigger - delay;
+        const float toTrigger  = fast ? delay - triggerDelay   : triggerDelay - delay;
+
+        // Longest candidate whose comparison window is measurable from this anchor:
+        // unlimited for the fast tap (it jumps into the past), delay-limited for the
+        // slow tap (it jumps toward the write head).
+        const int maxValid = fast ? SPLICE_SEARCH_MAX
+                                  : (int)delay - SPLICE_VALID_FLOOR;
 
         // Sliced search: one candidate per sample, started (SEARCH_SAMPLES + SLACK)
-        // samples of drift ahead of the edge. Drift cancels out of the lead, so the
-        // search finishes ~SLACK samples early at any Spread setting.
+        // samples of drift ahead of the EARLIEST possible trigger. Drift cancels out
+        // of the lead, so the search finishes ~SLACK samples early at any Spread.
         if (search.stage == SpliceSearch::Idle)
         {
-            if (toTrigger < drift * (float)(SPLICE_SEARCH_SAMPLES + SPLICE_SEARCH_SLACK))
-                beginSearch(search, (int)readOffset, fast);
+            if (toEarliest < drift * (float)(SPLICE_SEARCH_SAMPLES + SPLICE_SEARCH_SLACK))
+                beginSearch(search, (int)readOffset, fast, maxValid);
         }
         else if (search.stage != SpliceSearch::Done)
         {
@@ -158,9 +183,10 @@ float PLANETEffects::DetuneProcessor::processTap(float& readOffset, float playba
         }
         else if (++search.doneAge > 4 * SPLICE_SEARCH_SAMPLES && toTrigger > 0.0f)
         {
-            // Approach stalled (Spread lowered mid-approach): the frozen result would
-            // go stale against evolving audio, so re-anchor and search again.
-            beginSearch(search, (int)readOffset, fast);
+            // Approach stalled or gated: re-anchor and search again - the tap has
+            // drifted, so longer (possibly whole-mix-aligning) jumps are now
+            // measurable and the audio itself has moved on.
+            beginSearch(search, (int)readOffset, fast, maxValid);
         }
 
         if (toTrigger <= 0.0f)
@@ -224,31 +250,46 @@ float PLANETEffects::DetuneProcessor::processTap(float& readOffset, float playba
 // arrives one stepSearch() call - ONE candidate - per sample, so nothing here ever
 // spikes a block; see the corridor comment block in the header.
 
-void PLANETEffects::DetuneProcessor::beginSearch(SpliceSearch& s, int basePos, bool jumpBack) const
+void PLANETEffects::DetuneProcessor::beginSearch(SpliceSearch& s, int basePos, bool jumpBack,
+                                                 int maxJump) const
 {
     for (int i = 0; i < SPLICE_CORR_WINDOW; ++i)
         s.x[i] = buffer[(basePos - i) & (BUFFER_SIZE - 1)];
     s.anchor = basePos;
     s.jumpBack = jumpBack;
+    s.maxJump = juce::jlimit(SPLICE_SEARCH_MIN, SPLICE_SEARCH_MAX, maxJump);
     s.nextJump = SPLICE_SEARCH_MIN;
-    s.bestJump = 1024;
+    s.bestJump = SPLICE_SEARCH_MIN;
     s.bestScore = -1.0e9f;
+    s.bestCorr = -1.0f;
     s.doneAge = 0;
     s.stage = SpliceSearch::Coarse;
 }
 
 void PLANETEffects::DetuneProcessor::stepSearch(SpliceSearch& s) const
 {
+    // Small preference for the SHORTEST jump: among a periodic note's near-equal
+    // period multiples this picks one period, keeping the taps at low lag (v4 -
+    // longer average lag read as a stronger, wobblier Spread). On noise/silence
+    // (flat scores) it stops the jump being arbitrary.
+    auto shortBias = [](int jump) -> float
+    {
+        return SPLICE_SHORT_BIAS
+             * (1.0f - (float)(jump - SPLICE_SEARCH_MIN)
+                     / (float)(SPLICE_SEARCH_MAX - SPLICE_SEARCH_MIN));
+    };
+
     if (s.stage == SpliceSearch::Coarse)
     {
-        const float sc = scoreJump(s, s.nextJump, 4);
-        if (sc > s.bestScore) { s.bestScore = sc; s.bestJump = s.nextJump; }
+        const float corr = scoreJump(s, s.nextJump, 4);
+        const float sc = corr + shortBias(s.nextJump);
+        if (sc > s.bestScore) { s.bestScore = sc; s.bestJump = s.nextJump; s.bestCorr = corr; }
         s.nextJump += 4;
-        if (s.nextJump > SPLICE_SEARCH_MAX)
+        if (s.nextJump > s.maxJump)
         {
             // Refine +-4 around the coarse winner at full resolution. The range
             // includes the winner itself, so resetting bestScore is safe.
-            s.refineHi = juce::jmin(SPLICE_SEARCH_MAX, s.bestJump + 4);
+            s.refineHi = juce::jmin(s.maxJump, s.bestJump + 4);
             s.nextJump = juce::jmax(SPLICE_SEARCH_MIN, s.bestJump - 4);
             s.bestScore = -1.0e9f;
             s.stage = SpliceSearch::Refine;
@@ -256,8 +297,9 @@ void PLANETEffects::DetuneProcessor::stepSearch(SpliceSearch& s) const
     }
     else if (s.stage == SpliceSearch::Refine)
     {
-        const float sc = scoreJump(s, s.nextJump, 1);
-        if (sc > s.bestScore) { s.bestScore = sc; s.bestJump = s.nextJump; }
+        const float corr = scoreJump(s, s.nextJump, 1);
+        const float sc = corr + shortBias(s.nextJump);
+        if (sc > s.bestScore) { s.bestScore = sc; s.bestJump = s.nextJump; s.bestCorr = corr; }
         if (++s.nextJump > s.refineHi)
         {
             s.stage = SpliceSearch::Done;
@@ -286,14 +328,9 @@ float PLANETEffects::DetuneProcessor::scoreJump(const SpliceSearch& s, int jump,
         xEnergy += xs * xs;
         yEnergy += y * y;
     }
-    const float corr = dot / std::sqrt(xEnergy * yEnergy + 1.0e-12f);
-
-    // Small preference for ~1024-sample jumps: among a periodic note's near-equal
-    // period multiples this picks the one nearest the old buffer's sweep length,
-    // and on noise/silence (flat scores) it stops the jump being arbitrary.
-    const float bias = SPLICE_CENTER_BIAS
-                     * (1.0f - std::abs((float)jump - 1024.0f) / (float)SPLICE_SEARCH_MAX);
-    return corr + bias;
+    // Raw normalised correlation; the short-jump bias is added in stepSearch so the
+    // winner's raw value survives for the early-splice gate.
+    return dot / std::sqrt(xEnergy * yEnergy + 1.0e-12f);
 }
 
 float PLANETEffects::DetuneProcessor::centsToRatio(float cents)

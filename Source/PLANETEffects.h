@@ -123,12 +123,32 @@ private:
         // it, so corridor width == SPLICE_SEARCH_MAX >= one period down to ~27Hz.
         // Validity: corridor high (1792) + corr window (512) < BUFFER_SIZE.
         static constexpr int SPLICE_MARGIN        = 128;   // corridor low edge (fast-tap trigger)
-        static constexpr int SPLICE_CORRIDOR_HIGH = 1792;  // corridor high edge (slow-tap trigger)
+        static constexpr int SPLICE_CORRIDOR_HIGH = 1792;  // corridor high edge (slow-tap BACKSTOP)
         static constexpr int SPLICE_FADE_SAMPLES  = 256;   // ~6ms at 44.1kHz
         static constexpr int SPLICE_SEARCH_MIN    = 256;   // shortest allowed jump
         static constexpr int SPLICE_SEARCH_MAX    = 1664;  // >= one period down to ~27Hz @ 44.1k
-        static constexpr int SPLICE_CORR_WINDOW   = 512;   // spans >= half a period down to ~43Hz
-        static constexpr float SPLICE_CENTER_BIAS = 0.02f; // prefer ~1024-sample jumps on ties
+        static constexpr int SPLICE_CORR_WINDOW   = 1024;  // full period down to ~43Hz: chord-safe
+                                                           // corr estimates (512 leaked spurious
+                                                           // >0.9 reads through the early gate)
+        static constexpr float SPLICE_SHORT_BIAS  = 0.02f; // prefer the SHORTEST aligned jump (v4)
+        static constexpr int SPLICE_TRIGGER_SLACK = 32;    // slow-tap landing slack above MARGIN
+        static constexpr float SPLICE_EARLY_CORR  = 0.9f;  // min raw corr for an EARLY slow splice
+        static constexpr int SPLICE_VALID_FLOOR   = 64;    // candidate window validity margin
+
+        // v4 LAG GEOMETRY (9 Jul 2026 night): jumps prefer ~one period and the slow
+        // tap splices as soon as its planned jump is known, so BOTH taps hug the
+        // low-lag end of the corridor (~3ms..1-2 periods; average wet lag ~= the
+        // pre-fix version's ~12ms). The v3 policy (mid-length jumps, slow tap
+        // triggering at the corridor top) parked the slow tap at ~25-30ms lag, which
+        // Gerard heard as a stronger Spread with extra wobble on moving pitches.
+        // CORRIDOR_HIGH stays as the physics backstop: content whose period demands
+        // a long jump (deep bass, CHORDS) still gets one - an early slow splice is
+        // only allowed when its jump's RAW correlation clears SPLICE_EARLY_CORR.
+        // (Sim-caught chord regression without the gate: at low delay the long jump
+        // a chord needs isn't measurable yet - its comparison window would reach
+        // past the write head - so the search would commit to a short jump that
+        // aligns only the strongest note. maxJump clamps scoring to measurable
+        // candidates; the corr gate makes "wait for the long jump" the default.)
 
         // The jump search is SLICED across the approach (9 Jul 2026 evening): one
         // candidate scored per sample, started SEARCH_SAMPLES + SLACK samples of
@@ -171,8 +191,10 @@ private:
             bool  jumpBack = true;   // fast tap jumps back, slow tap jumps forward
             int   nextJump = 0;      // next candidate to score (coarse: step 4; refine: step 1)
             int   refineHi = 0;
-            int   bestJump = 1024;
+            int   maxJump = SPLICE_SEARCH_MAX; // validity clamp: longest measurable candidate
+            int   bestJump = SPLICE_SEARCH_MIN;
             float bestScore = -1.0e9f;
+            float bestCorr = -1.0f;  // raw correlation of the winner (early-splice gate)
             int   doneAge = 0;       // samples since Done - re-anchor guard for stalled approaches
             float x[SPLICE_CORR_WINDOW];
         };
@@ -202,7 +224,7 @@ private:
     private:
         float processTap(float& readOffset, float playbackRate,
                          int& fadeRemaining, float& fadeOldOffset, SpliceSearch& search);
-        void beginSearch(SpliceSearch& s, int basePos, bool jumpBack) const;
+        void beginSearch(SpliceSearch& s, int basePos, bool jumpBack, int maxJump) const;
         void stepSearch(SpliceSearch& s) const;   // bounded: scores ONE candidate
         void finishSearch(SpliceSearch& s) const; // automation guard, rare
         float scoreJump(const SpliceSearch& s, int jump, int step) const;
