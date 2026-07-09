@@ -310,17 +310,26 @@ private:
     // across the keyboard. The band is centred on the bar's own harmonic f (F is
     // meaningful again - noise bars at different F stack like formants), and the bar's
     // Density knob is repurposed as the WIDTH (inverse Q): 0 = near-tonal shimmer,
-    // 1 = wide breath. Amplitude steps land where sin = 0 (click-free); frequency steps
-    // are phase-continuous by construction. The signal is a pure sine at every instant,
+    // 1 = wide breath. The signal is a pure sine at every instant,
     // so it CANNOT crackle - the three LUT-library versions (windowed white, stochastic
     // soft-saw, dense LPF fill) were all ruled coarse/crackly and are deleted; see the
     // project memory before resurrecting any table-based approach.
     // LIFE doublets and the density morph are bypassed on a noise bar; K + its ADSR/LFO,
     // routing and velocity stay live. Phase accumulators still tick normally, so
     // toggling noise on/off never jumps the partial's phase.
+    // The walks are STEPPED once per cycle but APPLIED smoothstep-interpolated across
+    // the cycle (prev -> current), because holding them constant per cycle hashes:
+    // (a) the detune walk leaves the modulator's phase offset wandering, so the boundary
+    // no longer sits at sin = 0 and each raw amp step would be an audible random click;
+    // (b) zero-order-held walks are staircases whose sinc skirts leak far above the
+    // band (~6 dB/oct). Smoothstep interpolation makes amp and rate C1-continuous:
+    // no clicks at any modulator phase, skirts fall ~18 dB/oct, per-cycle statistics
+    // (and therefore the constant-Q width behaviour) unchanged.
     std::array<bool,  NUM_COEFFICIENTS> barNoise;
-    std::array<float, NUM_COEFFICIENTS> noiseAmp;
+    std::array<float, NUM_COEFFICIENTS> noiseAmp;      // walk targets (stepped at boundary)
     std::array<float, NUM_COEFFICIENTS> noiseEps;
+    std::array<float, NUM_COEFFICIENTS> noiseAmpPrev;  // previous targets (interpolation start)
+    std::array<float, NUM_COEFFICIENTS> noiseEpsPrev;
     uint32_t noiseRng = 0x51ED270B;
 
     // Helper functions

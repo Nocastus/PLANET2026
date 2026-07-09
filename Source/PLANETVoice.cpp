@@ -34,6 +34,8 @@ PLANETVoice::PLANETVoice()
     barNoise.fill(false);
     noiseAmp.fill(1.0f);
     noiseEps.fill(0.0f);
+    noiseAmpPrev.fill(1.0f);
+    noiseEpsPrev.fill(0.0f);
 }
 
 // ======================== NOISE-BAR WALK VOICING (v4, tune by ear) ========================
@@ -602,9 +604,12 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             // Per-drawbar Noise (v4 band-pass): snapshot the hijack switch and step the
             // bar's two mean-reverting walks - amplitude (reverts to 1) and fractional
             // detune (reverts to 0). One step per carrier cycle = bandwidth scales with
-            // f0 = constant musical Q. The bar's Density knob w sets the width. The
-            // amplitude step lands at the boundary where sin = 0, so it is click-free;
-            // the detune step only changes the phase RATE, so it is always continuous.
+            // f0 = constant musical Q. The bar's Density knob w sets the width.
+            // The stepped values are TARGETS: the sample path applies them smoothstep-
+            // interpolated from the previous targets across the coming cycle (see
+            // PLANETVoice.h) - raw per-cycle steps click once the detune walk has moved
+            // the modulator's boundary phase off sin = 0, and their staircases leak
+            // sinc skirts far above the band (the "HF hash" heard on Frail Unison).
             barNoise[i] = (globalParams[i].noiseMode >= 0.5f);
             if (barNoise[i]) {
                 const float w    = barDensity[i];   // Density = band WIDTH on a noise bar
@@ -615,6 +620,8 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 const float u1 = (float)((noiseRng >> 8) & 0xFFFF) / 32767.5f - 1.0f;
                 noiseRng = noiseRng * 1664525u + 1013904223u;
                 const float u2 = (float)((noiseRng >> 8) & 0xFFFF) / 32767.5f - 1.0f;
+                noiseAmpPrev[i] = noiseAmp[i];
+                noiseEpsPrev[i] = noiseEps[i];
                 noiseAmp[i] = juce::jlimit(0.0f, 2.0f,
                     noiseAmp[i] + lam * (1.0f - noiseAmp[i]) + sigA * u1);
                 noiseEps[i] = juce::jlimit(-kNoiseEpsMax, kNoiseEpsMax,
@@ -692,6 +699,12 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
     auto distortedPhase = x;
     additiveOut = 0.0;
     const auto& softSawLUT = SoftSawLUT::getInstance();
+
+    // Smoothstep position within the carrier cycle, shared by every noise bar: the
+    // per-cycle walk targets are applied interpolated prev -> current across the cycle
+    // (C1-continuous amp/rate - no boundary clicks, no staircase skirts; see header).
+    const float ns = (float)(normalizedPhase * normalizedPhase * (3.0 - 2.0 * normalizedPhase));
+
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
         const double f = globalParams[i].inputSpectralMultiplier;
@@ -719,12 +732,14 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // Noise bar (v4 band-pass): the bar's ordinary sine, with its level and
             // rate driven by the per-cycle walks - narrowband noise centred on this
             // bar's harmonic f, width from the Density knob. A pure sine at every
-            // instant, so it cannot crackle; cost = a sine bar plus one multiply.
+            // instant, so it cannot crackle; cost = a sine bar plus two lerps.
             // PM route = phase jitter (analogue roughness), ADD route = additive
             // breath shaped by the bar's K envelope. The accumulator advances at the
             // wobbled rate; density morph and doublets don't apply on a noise bar.
-            modWave = noiseAmp[i] * sineLUT.lookup(modPhases[i]);
-            modPhases[i] += f * (1.0 + (double)noiseEps[i]) * angleDelta;
+            const float ampNow = noiseAmpPrev[i] + (noiseAmp[i] - noiseAmpPrev[i]) * ns;
+            const float epsNow = noiseEpsPrev[i] + (noiseEps[i] - noiseEpsPrev[i]) * ns;
+            modWave = ampNow * sineLUT.lookup(modPhases[i]);
+            modPhases[i] += f * (1.0 + (double)epsNow) * angleDelta;
             while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
             if (doubletEngaged[i])
             {
