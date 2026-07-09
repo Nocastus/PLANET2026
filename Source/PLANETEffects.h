@@ -98,31 +98,46 @@ private:
     // DUAL DETUNE EFFECT
     //==========================================================================
     struct DetuneProcessor {
-        static constexpr int BUFFER_SIZE = 1024;  // Much smaller buffer (~23ms at 44.1kHz)
+        static constexpr int BUFFER_SIZE = 4096;  // history depth for splice alignment; the
+                                                  // taps themselves stay inside the corridor
+                                                  // below (~3-40ms), NOT the whole buffer
         static constexpr float MAX_DETUNE_CENTS = 50.0f;  // More obvious effect
-        static constexpr float BASE_DELAY_SAMPLES = 64.0f;  // Small fixed delay (~1.5ms)
+        static constexpr float BASE_DELAY_SAMPLES = 512.0f;  // initial tap delay (mid corridor)
 
-        // ---- Splice-on-approach wrap declick (9 Jul 2026) ----
+        // ---- Splice-on-approach wrap declick (9 Jul 2026, v2) ----
         // The taps drift relative to the write head; letting one collide snapped the
         // delay by a whole buffer = the periodic "bump" (worst on bass). Instead, when
-        // a tap gets within SPLICE_MARGIN of the write head we jump it by a correlation-
-        // picked distance (a whole number of waveform periods when one fits) and
-        // crossfade over SPLICE_FADE_SAMPLES. Between splices the signal path is
-        // exactly the pre-fix single-tap read - the approved sound is untouched.
-        // Margins/window sized so every index below stays within valid buffer history:
-        // trigger delay (<128) + max jump (832) + corr window (64) < BUFFER_SIZE.
-        static constexpr int SPLICE_MARGIN       = 128;
-        static constexpr int SPLICE_FADE_SAMPLES = 256;  // ~6ms at 44.1kHz
-        static constexpr int SPLICE_SEARCH_MIN   = 256;  // shortest allowed jump
-        static constexpr int SPLICE_SEARCH_MAX   = 832;  // longest (keeps windows in range)
-        static constexpr int SPLICE_CORR_WINDOW  = 64;   // correlation compare length
+        // a tap reaches a corridor edge we jump it by a correlation-picked distance
+        // (a whole number of waveform periods) and crossfade over SPLICE_FADE_SAMPLES.
+        // Between splices the signal path is exactly the pre-fix single-tap read.
+        //
+        // v1 POSTMORTEM: window 64 was locally linear on bass, so every candidate
+        // scored ~1 and jumps landed at random phase = irregular random bumps (worse
+        // than the periodic ones). Phase-locking a bass note needs BOTH a window that
+        // spans a good fraction of its period AND a jump range of >= one full period
+        // (43Hz period = 1025 samples = the entire old 1024 buffer, which is why the
+        // old buffer could never splice bass cleanly, crossfade or not).
+        //
+        // Corridor geometry (samples; fixed, so ms halve at 96k - beta is 44.1/48k):
+        // taps live in delay [SPLICE_MARGIN, SPLICE_CORRIDOR_HIGH]; a jump traverses
+        // it, so corridor width == SPLICE_SEARCH_MAX >= one period down to ~27Hz.
+        // Validity: corridor high (1792) + corr window (512) < BUFFER_SIZE.
+        static constexpr int SPLICE_MARGIN        = 128;   // corridor low edge (fast-tap trigger)
+        static constexpr int SPLICE_CORRIDOR_HIGH = 1792;  // corridor high edge (slow-tap trigger)
+        static constexpr int SPLICE_FADE_SAMPLES  = 256;   // ~6ms at 44.1kHz
+        static constexpr int SPLICE_SEARCH_MIN    = 256;   // shortest allowed jump
+        static constexpr int SPLICE_SEARCH_MAX    = 1664;  // >= one period down to ~27Hz @ 44.1k
+        static constexpr int SPLICE_CORR_WINDOW   = 512;   // spans >= half a period down to ~43Hz
+        static constexpr float SPLICE_CENTER_BIAS = 0.02f; // prefer ~1024-sample jumps on ties
 
         std::array<float, BUFFER_SIZE> buffer;
         int writeIndex = 0;
 
-        // Read positions track write position with rate offsets
-        float leftReadOffset = BASE_DELAY_SAMPLES;
-        float rightReadOffset = BASE_DELAY_SAMPLES;
+        // Read positions track write position with rate offsets. writeIndex starts at
+        // 0, so an initial offset of BUFFER_SIZE - BASE_DELAY_SAMPLES puts both taps
+        // BASE_DELAY_SAMPLES behind the write head, mid corridor.
+        float leftReadOffset = (float)BUFFER_SIZE - BASE_DELAY_SAMPLES;
+        float rightReadOffset = (float)BUFFER_SIZE - BASE_DELAY_SAMPLES;
 
         float leftPlaybackRate = 1.0f;
         float rightPlaybackRate = 1.0f;

@@ -12,10 +12,11 @@
 
 PLANETEffects::PLANETEffects()
 {
-    // Initialize detune buffer and read positions
+    // Initialize detune buffer and read positions (mid splice corridor behind write head)
     detuneProcessor.buffer.fill(0.0f);
-    detuneProcessor.leftReadOffset = 64.0f;   // Start with small delay
-    detuneProcessor.rightReadOffset = 64.0f;
+    detuneProcessor.leftReadOffset = (float)DetuneProcessor::BUFFER_SIZE
+                                   - DetuneProcessor::BASE_DELAY_SAMPLES;
+    detuneProcessor.rightReadOffset = detuneProcessor.leftReadOffset;
 }
 
 //==============================================================================
@@ -133,10 +134,10 @@ float PLANETEffects::DetuneProcessor::processTap(float& readOffset, float playba
 
     if (fadeRemaining == 0)
     {
-        // Splice BEFORE the tap collides with the write head, on our terms. The fast
-        // (sharp) tap closes on the write head, so it jumps BACK; the slow (flat) tap
-        // falls behind, so it jumps FORWARD. At rate exactly 1.0 (Spread 0) there is
-        // no drift and neither branch ever triggers.
+        // Splice when the tap reaches a corridor edge, on our terms. The fast (sharp)
+        // tap closes on the write head, so it jumps BACK; the slow (flat) tap falls
+        // behind, so it jumps FORWARD. At rate exactly 1.0 (Spread 0) there is no
+        // drift and neither branch ever triggers.
         if (playbackRate > 1.0f && delay < (float)SPLICE_MARGIN)
         {
             fadeOldOffset = readOffset;
@@ -144,7 +145,7 @@ float PLANETEffects::DetuneProcessor::processTap(float& readOffset, float playba
             while (readOffset < 0.0f) readOffset += (float)BUFFER_SIZE;
             fadeRemaining = SPLICE_FADE_SAMPLES;
         }
-        else if (playbackRate < 1.0f && delay > (float)(BUFFER_SIZE - SPLICE_MARGIN))
+        else if (playbackRate < 1.0f && delay > (float)SPLICE_CORRIDOR_HIGH)
         {
             fadeOldOffset = readOffset;
             readOffset += (float)findSpliceJump((int)readOffset, false);
@@ -182,39 +183,59 @@ int PLANETEffects::DetuneProcessor::findSpliceJump(int basePos, bool jumpBack) c
 {
     // Pick the jump distance whose landing point best continues the waveform at the
     // current position: normalised cross-correlation over the SPLICE_CORR_WINDOW
-    // samples BEHIND each candidate (always valid history for the ranges the margins
-    // allow). For periodic material the winner is a whole number of periods, so even
-    // a bass note splices in phase. Runs once per splice (every couple of seconds at
-    // typical Spread), not per sample.
+    // samples BEHIND each candidate (always valid history for the corridor ranges).
+    // For periodic material the winner is a whole number of periods, so even a bass
+    // note splices in phase. Runs once per splice (every couple of seconds at typical
+    // Spread), not per sample. Two-stage search keeps the spike small: coarse pass at
+    // 1/4 resolution in both jump and window (phase lives in the fundamental, and the
+    // correlation lobe of any period >= 16 samples is far wider than the step), then
+    // a full-resolution refine around the coarse winner.
     float x[SPLICE_CORR_WINDOW];
-    float xEnergy = 0.0f;
     for (int i = 0; i < SPLICE_CORR_WINDOW; ++i)
-    {
         x[i] = buffer[(basePos - i) & (BUFFER_SIZE - 1)];
-        xEnergy += x[i] * x[i];
-    }
 
-    // Search longest-first so silence (all scores ~0) lands the far jump = fewest splices
-    int bestJump = SPLICE_SEARCH_MAX;
-    float bestScore = -1.0e9f;
-    for (int jump = SPLICE_SEARCH_MAX; jump >= SPLICE_SEARCH_MIN; --jump)
+    const int dir = jumpBack ? -1 : 1;
+
+    auto scoreJump = [&](int jump, int step) -> float
     {
-        int candPos = jumpBack ? basePos - jump : basePos + jump;
-        float dot = 0.0f;
-        float yEnergy = 0.0f;
-        for (int i = 0; i < SPLICE_CORR_WINDOW; ++i)
+        const int candPos = basePos + dir * jump;
+        float dot = 0.0f, xEnergy = 0.0f, yEnergy = 0.0f;
+        for (int i = 0; i < SPLICE_CORR_WINDOW; i += step)
         {
-            float y = buffer[(candPos - i) & (BUFFER_SIZE - 1)];
-            dot += x[i] * y;
+            const float xs = x[i];
+            const float y = buffer[(candPos - i) & (BUFFER_SIZE - 1)];
+            dot += xs * y;
+            xEnergy += xs * xs;
             yEnergy += y * y;
         }
-        float score = dot / std::sqrt(xEnergy * yEnergy + 1.0e-12f);
-        if (score > bestScore)
-        {
-            bestScore = score;
-            bestJump = jump;
-        }
+        const float corr = dot / std::sqrt(xEnergy * yEnergy + 1.0e-12f);
+
+        // Small preference for ~1024-sample jumps: among a periodic note's near-equal
+        // period multiples this picks the one nearest the old buffer's sweep length,
+        // and on noise/silence (flat scores) it stops the jump being arbitrary.
+        const float bias = SPLICE_CENTER_BIAS
+                         * (1.0f - std::abs((float)jump - 1024.0f) / (float)SPLICE_SEARCH_MAX);
+        return corr + bias;
+    };
+
+    int bestJump = 1024;
+    float bestScore = -1.0e9f;
+    for (int jump = SPLICE_SEARCH_MIN; jump <= SPLICE_SEARCH_MAX; jump += 4)
+    {
+        const float s = scoreJump(jump, 4);
+        if (s > bestScore) { bestScore = s; bestJump = jump; }
     }
+
+    const int coarse = bestJump;
+    bestScore = -1.0e9f;
+    const int lo = juce::jmax(SPLICE_SEARCH_MIN, coarse - 4);
+    const int hi = juce::jmin(SPLICE_SEARCH_MAX, coarse + 4);
+    for (int jump = lo; jump <= hi; ++jump)
+    {
+        const float s = scoreJump(jump, 1);
+        if (s > bestScore) { bestScore = s; bestJump = jump; }
+    }
+
     return bestJump;
 }
 
