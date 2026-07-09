@@ -206,6 +206,9 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
         coeffModStates[i].envStage = fire ? EnvelopeStage::Attack : EnvelopeStage::Idle;
         coeffModStates[i].envTime = 0.0;
         coeffModStates[i].envLevel = 0.0f;
+        // Firing bars restart the LFO fade-in; a non-firing Single-trig bar sits in Idle
+        // and must keep the legacy full-depth LFO there, so its held level is 1.
+        coeffModStates[i].lfoFadeLevel = fire ? 0.0f : 1.0f;
     }
 
     cachedVelocityAmplitude = std::pow(velocity, velToAmplitude / 100.0f);
@@ -536,11 +539,14 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 }
 
                 // Scale LFO amount based on envelope stage for fade-in effect
-                // Attack = delay (LFO silent), Decay = fade-in, Sustain+ = full LFO
+                // Attack = delay (LFO silent), Decay = fade-in, Sustain = full LFO.
+                // Release/Idle HOLD the level the fade had reached at note-off: a note
+                // released mid-fade must not jump its LFO to full depth for the release.
                 float lfoScale = 1.0f;
                 if (coeffModStates[i].envStage == EnvelopeStage::Attack) {
                     // During attack: LFO is silent (delay period)
                     lfoScale = 0.0f;
+                    coeffModStates[i].lfoFadeLevel = lfoScale;
                 }
                 else if (coeffModStates[i].envStage == EnvelopeStage::Decay) {
                     // During decay: fade in LFO from 0 to 1 with concave exponential curve (slower at start)
@@ -549,8 +555,15 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                     linearProgress = juce::jlimit(0.0f, 1.0f, linearProgress);
                     // Apply concave exponential curve: y = x^2 (slower start, faster end)
                     lfoScale = linearProgress * linearProgress;
+                    coeffModStates[i].lfoFadeLevel = lfoScale;
                 }
-                // During Sustain, Release, and Idle: full LFO (lfoScale remains 1.0f)
+                else if (coeffModStates[i].envStage == EnvelopeStage::Sustain) {
+                    coeffModStates[i].lfoFadeLevel = lfoScale;
+                }
+                else {
+                    // Release or Idle: the fade no longer advances; use the held level
+                    lfoScale = coeffModStates[i].lfoFadeLevel;
+                }
 
                 finalCoeff += lfoValue * globalParams[i].lfoAmount * lfoScale;
             }

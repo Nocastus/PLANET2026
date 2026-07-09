@@ -233,6 +233,8 @@ struct ModulationState {
     float envLevel = 0.0f;
     float releaseStartLevel = 0.0f;
     float randomLfoValue = 0.0f;  // Stored value for sample-and-hold random LFO
+    float lfoFadeLevel = 1.0f;    // LFO fade-in scale reached so far; held through Release/Idle
+                                  // so an early note-off can't jump a fading-in LFO to full depth
 };
 
 using ModulationStateArray = std::array<ModulationState, NUM_COEFFICIENTS>;
