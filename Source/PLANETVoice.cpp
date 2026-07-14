@@ -133,12 +133,20 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     doubletRatioB.fill(1.0);
     doubletEngaged.fill(false);
 
-    // Reset routing to defaults for the first cycle (recomputed at the first cycle boundary);
-    // keeps a reused voice's opening cycle clean rather than carrying stale routing.
+    // Request a boundary snapshot at the note's first sample: it promotes THIS patch's
+    // attack coefficients, routing and density/noise flags before anything sounds, so a
+    // reused voice can't replay its previous note's (previous patch's!) coefficients for
+    // the opening cycle - the "click on the first notes after loading a patch" bug. The
+    // defaults below only cover the gap until that snapshot runs.
+    forceBoundarySnapshot = true;
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
     barDensity.fill(0.0f);
     barNoise.fill(false);   // noiseRng deliberately NOT reset - strikes must differ, like lifeNoiseState
+    noiseAmp.fill(1.0f);    // walks restart neutral; the note-start snapshot steps them once
+    noiseEps.fill(0.0f);
+    noiseAmpPrev.fill(1.0f);
+    noiseEpsPrev.fill(0.0f);
 
     {
         std::mt19937 lifeGen((uint32_t)lifeSeed);
@@ -374,13 +382,20 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     // Advance phase
     currentAngle += angleDelta;
 
-    // Detect cycle wrap (zero-crossing)
-    if (currentAngle >= twoPi) {
-        currentAngle -= twoPi;
+    // Detect cycle wrap (zero-crossing). A fresh note-on forces the same snapshot at its
+    // first sample: phase 0 is a genuine boundary (carrier and all modulators exactly 0,
+    // so it is click-free), and it replaces the previous note's stale coefficients that
+    // otherwise sound for the whole opening cycle. The forced pass uses dt = 0 - it
+    // EVALUATES envelopes / LFOs / pitch at t = 0 rather than advancing them a cycle early.
+    const bool atNoteStart = forceBoundarySnapshot;
+    forceBoundarySnapshot = false;
+    if (currentAngle >= twoPi || atNoteStart) {
+        if (currentAngle >= twoPi)
+            currentAngle -= twoPi;
         cycleStartFlag = true;
 
         // Timing for the coefficient envelopes / LFOs (per-cycle; only needed in this branch)
-        double cycleDeltaTime = 1.0 / currentFrequency;
+        double cycleDeltaTime = atNoteStart ? 0.0 : 1.0 / currentFrequency;
 
         // ======================== VIBRATO PROCESSING (EXISTING) ========================
         double vibratoPhaseAdvance = 2.0 * juce::MathConstants<double>::pi * vibratoRate * cycleDeltaTime;
@@ -467,8 +482,9 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
 
         updatePitchFromOffset(sampleRate); // Apply total pitch offset
 
-        // Recalculate cycleDeltaTime with new modulated frequency
-        cycleDeltaTime = 1.0 / currentFrequency;
+        // Recalculate cycleDeltaTime with new modulated frequency (still 0 on the forced
+        // note-start pass - nothing advances there)
+        cycleDeltaTime = atNoteStart ? 0.0 : 1.0 / currentFrequency;
 
         // Advance K coefficient LFO phases
         for (int i = 0; i < NUM_COEFFICIENTS; ++i) {

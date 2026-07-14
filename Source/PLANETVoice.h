@@ -257,6 +257,15 @@ private:
 
     bool cycleStartFlag = false;
 
+    // Note-on requests a boundary snapshot at the FIRST sample of the note (phase 0 is a
+    // true cycle boundary - carrier and every modulator are exactly 0 - so it is click-free).
+    // Without it the whole opening cycle sounds the previous note's promoted coefficients,
+    // audibly wrong right after a patch change (stale OLD-patch timbre until every voice in
+    // the pool has been reused once). The forced pass runs with dt = 0: it EVALUATES the
+    // envelopes / LFOs / pitch offsets at t = 0 and promotes the correct attack coefficients,
+    // routing and density/noise flags, without advancing anything a cycle early.
+    bool forceBoundarySnapshot = false;
+
     // Per-voice pitch attack envelope
     EnvelopeStage pitchEnvStage = EnvelopeStage::Idle;
     double pitchEnvTime = 0.0;
