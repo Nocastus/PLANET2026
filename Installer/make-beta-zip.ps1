@@ -13,10 +13,14 @@ $bundle = Join-Path $repo "Builds\VisualStudio2022\x64\Release\VST3\ISHTAR.vst3"
 $icon   = Join-Path $repo "Builds\VisualStudio2022\icon.ico"
 $dll    = Join-Path $bundle "Contents\x86_64-win\ISHTAR.vst3"
 $poem   = Join-Path $PSScriptRoot "Partials.pdf"
+$quick  = Join-Path $repo "Ishtar Quickstart.pdf"
+$guide  = Join-Path $repo "README Ishtar Beta Installation Instructions.pdf"
 
-if (-not (Test-Path $dll))  { throw "No built VST3 at $dll - rebuild the solution first." }
-if (-not (Test-Path $icon)) { throw "No icon.ico at $icon - re-save the project from Projucer." }
-if (-not (Test-Path $poem)) { throw "No Partials.pdf at $poem - the poem ships with every beta." }
+if (-not (Test-Path $dll))   { throw "No built VST3 at $dll - rebuild the solution first." }
+if (-not (Test-Path $icon))  { throw "No icon.ico at $icon - re-save the project from Projucer." }
+if (-not (Test-Path $poem))  { throw "No Partials.pdf at $poem - the poem ships with every beta." }
+if (-not (Test-Path $quick)) { throw "No Quickstart PDF at $quick - it ships in every beta." }
+if (-not (Test-Path $guide)) { throw "No install guide PDF at $guide - export it from the .txt (it also goes with the download email)." }
 
 # Freshness reminder: stale binaries have bitten us repeatedly on this drive.
 $binary = Get-Item $dll
@@ -35,6 +39,8 @@ $ini = Join-Path $staging "ISHTAR.vst3\desktop.ini"
 if (Test-Path $ini) { attrib -s -h -r "$ini"; Remove-Item $ini -Force }
 Copy-Item (Join-Path $PSScriptRoot "Install ISHTAR.bat") $staging
 Copy-Item $poem $staging
+Copy-Item $quick $staging
+Copy-Item $guide $staging
 
 $zip = Join-Path $OutputDir $ZipName
 if (Test-Path $zip) { Remove-Item $zip -Force }
