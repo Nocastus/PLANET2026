@@ -403,7 +403,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
                 // file (unlike Master Volume, which stays the user's) - it's how the factory bank
                 // is level-matched. Lives in the hidden voicing panel, not the public GUI.
                 std::make_unique<juce::AudioParameterFloat>("patchTrim", "Patch Trim",
-                    juce::NormalisableRange<float>(-12.0f, 12.0f, 0.0f), 0.0f),
+                    juce::NormalisableRange<float>(-24.0f, 12.0f, 0.0f), 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("transpose", "Transpose", -24.0f, 24.0f, 0.0f),
 
         })

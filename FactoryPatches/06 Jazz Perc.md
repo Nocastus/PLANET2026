@@ -50,7 +50,7 @@ unisonVoices = 1  (1.000 to 4.0)
 unisonDetune = 12.00  (0.000 to 50.0)
 
 ## Output
-patchTrim = -3.00  (-12.000 to 12.0)
+patchTrim = -6.00  (-12.000 to 12.0)
 
 
 ---

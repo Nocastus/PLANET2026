@@ -279,24 +279,11 @@ juce::StringArray PLANETPatchManager::getCategories() const {
 }
 
 juce::File PLANETPatchManager::getDefaultPatchDirectory() {
+    // Flat user bank (ruling 19 Jul 2026): saves land directly here, no category
+    // subfolders - the prev/next arrows then step through the whole user bank.
+    // The factory bank is baked into the binary and never lives on disk.
     juce::File documentsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-    return documentsDir.getChildFile("PLANET2026").getChildFile("Patches");
-}
-
-void PLANETPatchManager::createDefaultDirectoryStructure(const juce::File& rootDirectory) {
-    if (!rootDirectory.exists()) {
-        rootDirectory.createDirectory();
-    }
-
-    // Create default category folders
-    juce::StringArray defaultCategories = { "Pads", "Plucks", "Leads", "Bass", "Keys", "FX", "User" };
-
-    for (const auto& category : defaultCategories) {
-        juce::File categoryDir = rootDirectory.getChildFile(category);
-        if (!categoryDir.exists()) {
-            categoryDir.createDirectory();
-        }
-    }
+    return documentsDir.getChildFile("ISHTAR").getChildFile("User Patches");
 }
 
 //==============================================================================
@@ -326,19 +313,17 @@ juce::String PLANETPatchManager::extractDescription(const juce::String& markdown
     if (titleEnd < 0)
         return "";
 
+    // Both searches are relative to titleEnd, so convert to an absolute index
+    // exactly once. (A Tags: line is optional; without one the "---" rule ends
+    // the description.)
     int descEnd = markdownContent.substring(titleEnd).indexOf("Tags:");
-    if (descEnd >= 0)
-        descEnd += titleEnd;
-    else
+    if (descEnd < 0)
         descEnd = markdownContent.substring(titleEnd).indexOf("---");
-
-    if (descEnd >= 0)
-        descEnd += titleEnd;
 
     if (descEnd < 0)
         return "";
 
-    return markdownContent.substring(titleEnd, descEnd).trim();
+    return markdownContent.substring(titleEnd, descEnd + titleEnd).trim();
 }
 
 juce::String PLANETPatchManager::extractTags(const juce::String& markdownContent) {

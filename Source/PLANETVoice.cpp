@@ -523,6 +523,22 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             }
         }
 
+        // Square K-LFO edge softener: one-pole coefficient for this cycle's update. A hard
+        // square flips the whole LFO swing between two per-cycle coefficient updates, and
+        // that single full-size step lands as a click; running the square through a one-pole
+        // spreads the edge over a few milliseconds of cycle steps instead. The 0.4 ceiling
+        // guarantees at least a few steps per edge even on bass notes, where one waveform
+        // cycle already exceeds the time constant. Sine/triangle move slowly per cycle and
+        // are not routed through this; Random (shape 4) is deliberately left hard - its big
+        // jumps are usually masked, and softening would change its character.
+        // Note-start pass (cycleDeltaTime == 0): alpha 1 snaps the state to the current
+        // square value, so a fresh note starts with no edge ramp.
+        constexpr float kSquareLfoEdgeTauSec = 0.003f;
+        constexpr float kSquareLfoMaxAlpha = 0.4f;
+        const float squareLfoAlpha = (cycleDeltaTime > 0.0)
+            ? juce::jmin(kSquareLfoMaxAlpha, 1.0f - std::exp(-(float)cycleDeltaTime / kSquareLfoEdgeTauSec))
+            : 1.0f;
+
         // Calculate final modulated coefficients (envelope processing merged into single loop)
         auto& stagedCoeffs = voiceCoeffGrid.getStagedCoefficients();
         for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
@@ -554,6 +570,11 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 }
                 else {
                     lfoValue = generateLFOWaveform(coeffModStates[i].lfoPhase, globalParams[i].lfoShape);
+                    if ((int)globalParams[i].lfoShape == 3) {
+                        // Square: soften the mark/space edges (see squareLfoAlpha above)
+                        coeffModStates[i].squareLfoSmoothed += squareLfoAlpha * (lfoValue - coeffModStates[i].squareLfoSmoothed);
+                        lfoValue = coeffModStates[i].squareLfoSmoothed;
+                    }
                 }
 
                 // Scale LFO amount based on envelope stage for fade-in effect

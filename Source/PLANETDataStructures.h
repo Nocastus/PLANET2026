@@ -235,6 +235,7 @@ struct ModulationState {
     float randomLfoValue = 0.0f;  // Stored value for sample-and-hold random LFO
     float lfoFadeLevel = 1.0f;    // LFO fade-in scale reached so far; held through Release/Idle
                                   // so an early note-off can't jump a fading-in LFO to full depth
+    float squareLfoSmoothed = 0.0f; // Square-LFO edge softener state (one-pole; see PLANETVoice)
 };
 
 using ModulationStateArray = std::array<ModulationState, NUM_COEFFICIENTS>;

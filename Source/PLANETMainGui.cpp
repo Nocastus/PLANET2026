@@ -905,11 +905,13 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     prevPatchButton.setButtonText("<");
     prevPatchButton.onClick = [this] { stepPatch(-1); };
     prevPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    prevPatchButton.setLookAndFeel(&patchArrowLookAndFeel);  // drawn triangle arrow (text renders too small at 20px)
     addAndMakeVisible(prevPatchButton);
 
     nextPatchButton.setButtonText(">");
     nextPatchButton.onClick = [this] { stepPatch(1); };
     nextPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    nextPatchButton.setLookAndFeel(&patchArrowLookAndFeel);
     addAndMakeVisible(nextPatchButton);
 
     // Get patch metadata from processor if available
@@ -1012,7 +1014,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
 
     // Version number at the far right of the bar. Bump this string per release (matches the commit
     // label; the .jucer's JucePlugin version is a separate JUCE field and not used here).
-    versionLabel.setText("v0.6.4", juce::dontSendNotification);
+    versionLabel.setText("v0.9.0", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.5f));
     addAndMakeVisible(versionLabel);
@@ -1180,6 +1182,10 @@ PLANETMainGui::~PLANETMainGui()
         drawbarSliders[i].setLookAndFeel(nullptr);
     }
 
+    // Reset LookAndFeel for the patch-step arrow buttons
+    prevPatchButton.setLookAndFeel(nullptr);
+    nextPatchButton.setLookAndFeel(nullptr);
+
     // Reset LookAndFeel for rotary knobs
     vibratoRateKnob.setLookAndFeel(nullptr);
     vibratoDepthKnob.setLookAndFeel(nullptr);
@@ -1327,7 +1333,7 @@ void PLANETMainGui::toggleVoicingPanel()
 void PLANETMainGui::saveVoicingSnapshot()
 {
     auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                   .getChildFile("PLANET2026").getChildFile("VoicingSnapshots");
+                   .getChildFile("ISHTAR").getChildFile("VoicingSnapshots");
     dir.createDirectory();
     auto now = juce::Time::getCurrentTime();
     auto file = dir.getChildFile("voicing_" + now.formatted("%Y%m%d_%H%M%S") + ".txt");
@@ -3409,33 +3415,30 @@ void PLANETMainGui::savePatchButtonClicked()
     window->addTextEditor("description", "", "Description:");
     window->addTextEditor("tags", "", "Tags (comma-separated):");
 
-    juce::StringArray categories = { "Pads", "Plucks", "Leads", "Bass", "Keys", "FX", "User" };
-    window->addComboBox("category", categories, "Category:");
-
     window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    window->enterModalState(true, juce::ModalCallbackFunction::create([this, processor, window, categories](int result)
+    window->enterModalState(true, juce::ModalCallbackFunction::create([this, processor, window](int result)
     {
         if (result == 1)
         {
             juce::String patchName = window->getTextEditorContents("patchName");
             juce::String description = window->getTextEditorContents("description");
             juce::String tags = window->getTextEditorContents("tags");
-            int categoryIndex = window->getComboBoxComponent("category")->getSelectedItemIndex();
-            juce::String category = categories[categoryIndex >= 0 ? categoryIndex : 6]; // Default to "User"
 
             if (patchName.isNotEmpty())
             {
-                // Create directory if needed
-                auto patchDir = PLANETPatchManager::getDefaultPatchDirectory().getChildFile(category);
+                // Flat user bank: saves land directly in Documents\ISHTAR\User Patches
+                // (no category subfolders - see getDefaultPatchDirectory), so there is
+                // no Category choice in this dialog. createDirectory() makes parents too.
+                auto patchDir = PLANETPatchManager::getDefaultPatchDirectory();
                 if (!patchDir.exists())
                     patchDir.createDirectory();
 
                 juce::File patchFile = patchDir.getChildFile(patchName + ".md");
 
-                // Save the patch
-                processor->savePatch(patchFile, patchName, description, tags, category);
+                // Save the patch ("User" is the whole bank's category)
+                processor->savePatch(patchFile, patchName, description, tags, "User");
 
                 // Update patch name display
                 currentPatchName = patchName;

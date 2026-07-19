@@ -124,6 +124,37 @@ private:
 };
 
 //==============================================================================
+// LookAndFeel for the prev/next patch-step buttons: draws a filled triangle
+// arrow instead of button text. The stock renderer squeezed the "<" / ">"
+// glyphs into a 20px button behind its text indents and they read as
+// unlabelled; a drawn path is crisp at any size and independent of fonts.
+// Direction comes from the button text ("<" = left), so the buttons keep
+// their labels for accessibility and the two share one LookAndFeel instance.
+//==============================================================================
+class PatchArrowLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override
+    {
+        const auto b = button.getLocalBounds().toFloat();
+        const bool pointsLeft = button.getButtonText() == "<";
+        const float halfW = 3.5f, halfH = 5.5f;
+        const float tipX = b.getCentreX() + (pointsLeft ? -halfW : halfW);
+        const float baseX = b.getCentreX() + (pointsLeft ? halfW : -halfW);
+
+        juce::Path arrow;
+        arrow.addTriangle(tipX, b.getCentreY(),
+                          baseX, b.getCentreY() - halfH,
+                          baseX, b.getCentreY() + halfH);
+
+        g.setColour(button.findColour(button.getToggleState() ? juce::TextButton::textColourOnId
+                                                              : juce::TextButton::textColourOffId)
+                          .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        g.fillPath(arrow);
+    }
+};
+
+//==============================================================================
 // ComboBox that never holds keyboard focus, so DAW transport keys (e.g. keypad
 // Enter in Cubase) reach the host instead of being swallowed by the combo.
 //
@@ -418,6 +449,7 @@ private:
     // flips we repaint the column strip to make the switch appear/disappear live.
     std::array<bool, 10> prevEnvelopeActive {};
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
+    PatchArrowLookAndFeel patchArrowLookAndFeel;  // Drawn triangle arrows for prev/next patch buttons
 
     // ---- LFO-rate "ping" pulse indicators (item #5) ----
     // Per-drawbar GUI-side phase [0,1); advanced in the timer at each drawbar's effective LFO
