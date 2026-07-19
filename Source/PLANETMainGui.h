@@ -535,6 +535,11 @@ private:
     juce::TextButton voicingSnapshotButton { "Snapshot" };
     juce::TextButton voicingCloseButton { "x" };   // dismiss the dev panel (top-right corner)
     juce::Label voicingSavedLabel;
+    // Patch Trim row: unlike the dev sliders above it, this is a REAL parameter
+    // (level-matching gain, dB) that saves with the patch - hence the attachment.
+    juce::Slider patchTrimSlider;
+    juce::Label patchTrimLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> patchTrimAttachment;
     LifeVoicingParams* lifeVoicingParams = nullptr;
     void toggleVoicingPanel();
     void saveVoicingSnapshot();

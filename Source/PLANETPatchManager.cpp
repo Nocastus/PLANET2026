@@ -143,6 +143,12 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
         { "unisonVoices", "unisonDetune" },
         patch);
 
+    // Per-patch level-match gain (dB, post-effects pre-master). Master Volume itself
+    // is deliberately NOT saved - it belongs to the user, the trim belongs to the patch.
+    markdown << generateParameterSection("Output",
+        { "patchTrim" },
+        patch);
+
     markdown << "\n---\n\n";
 
     // Add parameter reference section
@@ -457,6 +463,9 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
     ranges["portamentoMode"] = ParameterRange(0.0f, 1.0f);
     ranges["unisonVoices"] = ParameterRange(1.0f, 4.0f);
     ranges["unisonDetune"] = ParameterRange(0.0f, 50.0f);
+
+    // Output (per-patch level-match trim, dB)
+    ranges["patchTrim"] = ParameterRange(-12.0f, 12.0f);
 
     // Drawbar parameters (k1-k10, with all their sub-parameters)
     for (int i = 1; i <= 10; ++i) {

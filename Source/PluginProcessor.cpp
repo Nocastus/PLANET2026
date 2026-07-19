@@ -399,6 +399,11 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
               
             // ======================== MASTER CONTROLS ========================
                 std::make_unique<juce::AudioParameterFloat>("masterVolume", "Master Volume", 0.0f, 1.0f, 0.64f),
+                // Per-patch output trim in dB, applied post-effects pre-master. Saved in the patch
+                // file (unlike Master Volume, which stays the user's) - it's how the factory bank
+                // is level-matched. Lives in the hidden voicing panel, not the public GUI.
+                std::make_unique<juce::AudioParameterFloat>("patchTrim", "Patch Trim",
+                    juce::NormalisableRange<float>(-12.0f, 12.0f, 0.0f), 0.0f),
                 std::make_unique<juce::AudioParameterFloat>("transpose", "Transpose", -24.0f, 24.0f, 0.0f),
 
         })
@@ -457,6 +462,7 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
 
     // ======================== INITIALIZE MASTER CONTROL POINTERS ========================
     masterVolumeParameter = parameters.getRawParameterValue("masterVolume");
+    patchTrimParameter = parameters.getRawParameterValue("patchTrim");
     transposeParameter = parameters.getRawParameterValue("transpose");
 
 
@@ -473,9 +479,12 @@ PLANETtest4AudioProcessor::PLANETtest4AudioProcessor()
  // Initialize exponential control parameter pointer
     exponentialControlParameter = parameters.getRawParameterValue("exponentialControl");
 
-
-
-
+    // A fresh instance opens on the first factory patch (01 Fable) rather than raw
+    // parameter defaults. Hosts restoring a saved project overwrite this straight
+    // after via setStateInformation, so project recall is unaffected.
+    const auto& factory = patchManager.getFactoryPatches();
+    if (!factory.empty())
+        loadFactoryPatch(factory.front());
 }
 
 PLANETtest4AudioProcessor::~PLANETtest4AudioProcessor()
@@ -582,6 +591,24 @@ bool PLANETtest4AudioProcessor::isBusesLayoutSupported(const BusesLayout& layout
 
 
 //==============================================Process Block ===============================
+
+// Final output safety soft-clip: linear (bit-identical) below the knee, then a tanh
+// curve that asymptotes at 1.0. Hot velocity peaks on clean patches round off the way
+// Warmth-saturated patches already do upstream, instead of hard-clipping at the DAC.
+// Two consequences to remember:
+//  - the plugin no longer outputs above 1.0, so "leave it hot and pull the DAW fader
+//    down later" now saturates where float headroom used to be clean;
+//  - the red Vol light (>= 0.99) now fires only when the net is really working
+//    (a true peak of ~1.05+ pre-clip); amber behaviour is unchanged.
+static inline float softClipOutput(float x) noexcept
+{
+    constexpr float knee = 0.9f, span = 1.0f - knee;
+    const float a = std::abs(x);
+    if (a <= knee)
+        return x;
+    const float y = knee + span * std::tanh((a - knee) / span);
+    return x < 0.0f ? -y : y;
+}
 
 void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
@@ -824,6 +851,10 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     // loop below calls this between MIDI events so each event lands at its true offset.
     auto renderSamples = [&](int startSample, int endSample)
     {
+    // Patch trim (dB -> linear) hoisted per segment: it only moves on patch load or a
+    // hidden-panel drag, so per-sample pow would be waste (same block-rate stepping as
+    // Master Volume itself - acceptable for an occasionally-moved gain).
+    const float patchTrimGain = juce::Decibels::decibelsToGain(patchTrimParameter->load());
     for (int sample = startSample; sample < endSample; ++sample)
     {
         // Pitch wheel reflects the events applied so far this block (sub-block accurate)
@@ -872,18 +903,18 @@ void PLANETtest4AudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
         // Process through effects chain
         auto stereoOutput = effects.processStereoSample(mixedSample);
 
-        // Get master volume
-        float masterVol = masterVolumeParameter->load();
+        // Get master volume (x patch trim - the per-patch level-matching gain)
+        float masterVol = masterVolumeParameter->load() * patchTrimGain;
 
-        // Apply to output channels
+        // Apply to output channels, through the final safety soft-clip.
         // Note: Voice manager already applies 0.25 scaling for polyphony headroom
         if (totalNumOutputChannels >= 1) {
             auto* leftData = buffer.getWritePointer(0);
-            leftData[sample] = stereoOutput.first * masterVol;
+            leftData[sample] = softClipOutput(stereoOutput.first * masterVol);
         }
         if (totalNumOutputChannels >= 2) {
             auto* rightData = buffer.getWritePointer(1);
-            rightData[sample] = stereoOutput.second * masterVol;
+            rightData[sample] = softClipOutput(stereoOutput.second * masterVol);
         }
     }
     };

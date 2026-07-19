@@ -208,6 +208,7 @@ private:
 
     // ======================== MASTER CONTROLS ========================
     std::atomic<float>* masterVolumeParameter = nullptr;
+    std::atomic<float>* patchTrimParameter = nullptr;   // per-patch level-match gain (dB)
     std::atomic<float>* transposeParameter = nullptr;
 
 

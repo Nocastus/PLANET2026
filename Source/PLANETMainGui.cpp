@@ -487,9 +487,26 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
             s.setBounds(112, 28 + i * 34, 208, 22);
         }
 
+        // Patch Trim row (below the dev sliders): a real, patch-saved parameter - the
+        // per-patch level-match gain. Blue label to mark it out from the orange dev rows.
+        patchTrimLabel.setText("Patch Trim", juce::dontSendNotification);
+        patchTrimLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8ecff));
+        patchTrimLabel.setFont(juce::Font(13.0f));
+        voicingPanel.addAndMakeVisible(patchTrimLabel);
+        patchTrimLabel.setBounds(10, 28 + NUM_VOICING_SLIDERS * 34, 100, 20);
+
+        patchTrimSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+        patchTrimSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 55, 18);
+        patchTrimSlider.setTextValueSuffix(" dB");
+        patchTrimSlider.setDoubleClickReturnValue(true, 0.0);
+        voicingPanel.addAndMakeVisible(patchTrimSlider);
+        patchTrimSlider.setBounds(112, 28 + NUM_VOICING_SLIDERS * 34, 208, 22);
+        patchTrimAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            apvts, "patchTrim", patchTrimSlider);
+
         voicingSnapshotButton.onClick = [this] { saveVoicingSnapshot(); };
         voicingPanel.addAndMakeVisible(voicingSnapshotButton);
-        voicingSnapshotButton.setBounds(10, 28 + NUM_VOICING_SLIDERS * 34, 90, 24);
+        voicingSnapshotButton.setBounds(10, 28 + (NUM_VOICING_SLIDERS + 1) * 34, 90, 24);
 
         // Close (x) in the top-right corner - panel is 330px wide (see resized()).
         voicingCloseButton.setColour(juce::TextButton::textColourOffId, juce::Colours::orange);
@@ -500,7 +517,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         voicingSavedLabel.setColour(juce::Label::textColourId, juce::Colours::orange.withAlpha(0.8f));
         voicingSavedLabel.setFont(juce::Font(12.0f));
         voicingPanel.addAndMakeVisible(voicingSavedLabel);
-        voicingSavedLabel.setBounds(106, 28 + NUM_VOICING_SLIDERS * 34, 214, 24);
+        voicingSavedLabel.setBounds(106, 28 + (NUM_VOICING_SLIDERS + 1) * 34, 214, 24);
 
         addChildComponent(voicingPanel);   // added invisible; shift-click the star to show
     }
@@ -2172,7 +2189,7 @@ void PLANETMainGui::resized()
     seedModuleBounds = juce::Rectangle<int>(seedModX, seedModY, seedModW, seedModH);
 
     // Dev voicing panel: floats over the harmonic-envelope zone when toggled
-    voicingPanel.setBounds(20, drawbarSectionHeight + 20, 330, 240);
+    voicingPanel.setBounds(20, drawbarSectionHeight + 20, 330, 274);   // +34 for the Patch Trim row
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
@@ -3265,27 +3282,17 @@ void PLANETMainGui::loadPatchButtonClicked()
     if (processor == nullptr)
         return;
 
-    // Factory bank (baked into the binary) as category submenus, then the
-    // user-patch file browser. Factory item IDs are 1-based indices into the
-    // factory list; the browser gets a high sentinel ID.
+    // Factory bank (baked into the binary) as one flat numbered list in bake
+    // order (the filename prefixes in FactoryPatches/), then the user-patch
+    // file browser. Factory item IDs are 1-based indices into the factory
+    // list; the browser gets a high sentinel ID.
     const auto& factory = processor->getFactoryPatches();
     constexpr int browseItemID = 1000000;
 
     juce::PopupMenu menu;
 
-    juce::StringArray categories;
-    for (const auto& p : factory)
-        if (!categories.contains(p.category))
-            categories.add(p.category);
-
-    for (const auto& category : categories)
-    {
-        juce::PopupMenu sub;
-        for (int i = 0; i < (int) factory.size(); ++i)
-            if (factory[(size_t) i].category == category)
-                sub.addItem(i + 1, factory[(size_t) i].patchName);
-        menu.addSubMenu(category, sub);
-    }
+    for (int i = 0; i < (int) factory.size(); ++i)
+        menu.addItem(i + 1, juce::String::formatted("%02d  ", i + 1) + factory[(size_t) i].patchName);
 
     if (!factory.empty())
         menu.addSeparator();
@@ -3362,32 +3369,26 @@ void PLANETMainGui::stepPatch(int direction)
         return;
     }
 
-    // Otherwise walk the factory bank in the same order the Load menu shows it
-    // (grouped by category); the bake order inside FactoryPatchData isn't guaranteed grouped.
+    // Otherwise walk the factory bank; bake order IS the menu order (numbered flat list).
     const auto& factory = processor->getFactoryPatches();
     if (factory.empty())
         return;
 
-    std::vector<size_t> menuOrder;
-    juce::StringArray categories;
-    for (const auto& p : factory)
-        if (!categories.contains(p.category))
-            categories.add(p.category);
-    for (const auto& category : categories)
-        for (size_t i = 0; i < factory.size(); ++i)
-            if (factory[i].category == category)
-                menuOrder.push_back(i);
+    const int n = (int) factory.size();
 
-    int pos = -1;
-    for (int i = 0; i < (int) menuOrder.size(); ++i)
-        if ((int) menuOrder[(size_t) i] == lastFactoryPatchIndex)
-            { pos = i; break; }
+    // No factory load yet this session? The processor may still be sitting on one
+    // (fresh instances open on 01) - match by name so stepping starts from there.
+    int last = lastFactoryPatchIndex;
+    if (last < 0)
+        for (int i = 0; i < n; ++i)
+            if (factory[(size_t) i].patchName == currentPatchName)
+                { last = i; break; }
 
-    pos = pos < 0 ? (direction > 0 ? 0 : (int) menuOrder.size() - 1)
-                  : (pos + direction + (int) menuOrder.size()) % (int) menuOrder.size();
+    int pos = last < 0 ? (direction > 0 ? 0 : n - 1)
+                       : (last + direction + n) % n;
 
-    lastFactoryPatchIndex = (int) menuOrder[(size_t) pos];
-    const auto& patch = factory[(size_t) lastFactoryPatchIndex];
+    lastFactoryPatchIndex = pos;
+    const auto& patch = factory[(size_t) pos];
     processor->loadFactoryPatch(patch);
     updatePatchNameDisplay(patch.patchName);
 }
