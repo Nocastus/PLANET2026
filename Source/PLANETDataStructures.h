@@ -51,6 +51,8 @@ struct CoefficientParams {
     std::atomic<float>* toPMPtr = nullptr;               // Route to phase-distortion path (0=off, 1=on)
     std::atomic<float>* toOutPtr = nullptr;              // Route direct to output / additive path (0=off, 1=on)
     std::atomic<float>* trigSinglePtr = nullptr;         // Envelope trigger mode (0=Multi/retrigger, 1=Single/phrase-start)
+    std::atomic<float>* densityPtr = nullptr;            // Per-drawbar modulator morph sine->soft-saw (0..1, experimental)
+    std::atomic<float>* noisePtr = nullptr;              // Per-drawbar Noise switch: hijack the bar into a windowed-noise source (0/1, experimental)
 
     // Active values (cached at zero-crossings)
     float coefficient = 0.0f;
@@ -69,6 +71,8 @@ struct CoefficientParams {
     float toPM = 1.0f;                                  // Route to phase distortion (default ON = classic PM operator)
     float toOut = 0.0f;                                 // Route direct to output / additive (default OFF)
     float trigSingle = 0.0f;                            // 0 = Multi (retrigger per note), 1 = Single (fire on phrase start only)
+    float density = 0.0f;                               // Per-drawbar modulator density (default OFF = pure sine, patch-compatible)
+    float noiseMode = 0.0f;                             // Per-drawbar Noise switch (default OFF = normal drawbar, patch-compatible)
 
     // Initialize parameter pointers for this coefficient
     void initializePointers(juce::AudioProcessorValueTreeState& apvts, int coeffIndex) {
@@ -90,6 +94,8 @@ struct CoefficientParams {
         toPMPtr = apvts.getRawParameterValue(prefix + "ToPM");
         toOutPtr = apvts.getRawParameterValue(prefix + "ToOut");
         trigSinglePtr = apvts.getRawParameterValue(prefix + "TrigSingle");
+        densityPtr = apvts.getRawParameterValue(prefix + "Density");
+        noisePtr = apvts.getRawParameterValue(prefix + "Noise");
     }
 
     // Update active values from parameter pointers
@@ -110,6 +116,8 @@ struct CoefficientParams {
         if (toPMPtr) toPM = toPMPtr->load();
         if (toOutPtr) toOut = toOutPtr->load();
         if (trigSinglePtr) trigSingle = trigSinglePtr->load();
+        if (densityPtr) density = densityPtr->load();
+        if (noisePtr) noiseMode = noisePtr->load();
     }
 };
 
@@ -225,6 +233,9 @@ struct ModulationState {
     float envLevel = 0.0f;
     float releaseStartLevel = 0.0f;
     float randomLfoValue = 0.0f;  // Stored value for sample-and-hold random LFO
+    float lfoFadeLevel = 1.0f;    // LFO fade-in scale reached so far; held through Release/Idle
+                                  // so an early note-off can't jump a fading-in LFO to full depth
+    float squareLfoSmoothed = 0.0f; // Square-LFO edge softener state (one-pole; see PLANETVoice)
 };
 
 using ModulationStateArray = std::array<ModulationState, NUM_COEFFICIENTS>;

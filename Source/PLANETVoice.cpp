@@ -30,7 +30,26 @@ PLANETVoice::PLANETVoice()
     // start behaviour (coefficient grid is zero until the first promotion anyway).
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
+    barDensity.fill(0.0f);
+    barNoise.fill(false);
+    noiseAmp.fill(1.0f);
+    noiseEps.fill(0.0f);
+    noiseAmpPrev.fill(1.0f);
+    noiseEpsPrev.fill(0.0f);
 }
+
+// ======================== NOISE-BAR WALK VOICING (v4, tune by ear) ========================
+// Per-cycle random-walk steps for the band-pass-noise bars, all scaled by the bar's
+// Density knob w (repurposed as width). Bandwidth ~ lam * f0, so these are Q settings,
+// pitch-independent. Symptom map:
+//   pitch wobble too seasick  -> lower kNoiseSigF1 (or kNoiseSigF0 for the narrow end)
+//   breath pumps too much     -> lower kNoiseSigA1
+//   texture too static/tonal  -> raise kNoiseLam0 / kNoiseSigA0
+//   want wider extremes at w=1 -> raise the *1 constants
+static constexpr float kNoiseSigA0 = 0.06f, kNoiseSigA1 = 0.35f;   // amplitude step size
+static constexpr float kNoiseSigF0 = 0.0015f, kNoiseSigF1 = 0.02f; // detune step size (fraction of f)
+static constexpr float kNoiseLam0  = 0.08f, kNoiseLam1  = 0.25f;   // mean-reversion rate (per cycle)
+static constexpr float kNoiseEpsMax = 0.08f;                       // hard detune ceiling (+-8%)
 
 //==============================================================================
 // VOICE CONTROL METHODS
@@ -114,10 +133,20 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
     doubletRatioB.fill(1.0);
     doubletEngaged.fill(false);
 
-    // Reset routing to defaults for the first cycle (recomputed at the first cycle boundary);
-    // keeps a reused voice's opening cycle clean rather than carrying stale routing.
+    // Request a boundary snapshot at the note's first sample: it promotes THIS patch's
+    // attack coefficients, routing and density/noise flags before anything sounds, so a
+    // reused voice can't replay its previous note's (previous patch's!) coefficients for
+    // the opening cycle - the "click on the first notes after loading a patch" bug. The
+    // defaults below only cover the gap until that snapshot runs.
+    forceBoundarySnapshot = true;
     routePMGain.fill(1.0f);
     routeAddAmp.fill(0.0f);
+    barDensity.fill(0.0f);
+    barNoise.fill(false);   // noiseRng deliberately NOT reset - strikes must differ, like lifeNoiseState
+    noiseAmp.fill(1.0f);    // walks restart neutral; the note-start snapshot steps them once
+    noiseEps.fill(0.0f);
+    noiseAmpPrev.fill(1.0f);
+    noiseEpsPrev.fill(0.0f);
 
     {
         std::mt19937 lifeGen((uint32_t)lifeSeed);
@@ -187,6 +216,9 @@ angleDelta = currentFrequency * 2.0 * juce::MathConstants<double>::pi / sampleRa
         coeffModStates[i].envStage = fire ? EnvelopeStage::Attack : EnvelopeStage::Idle;
         coeffModStates[i].envTime = 0.0;
         coeffModStates[i].envLevel = 0.0f;
+        // Firing bars restart the LFO fade-in; a non-firing Single-trig bar sits in Idle
+        // and must keep the legacy full-depth LFO there, so its held level is 1.
+        coeffModStates[i].lfoFadeLevel = fire ? 0.0f : 1.0f;
     }
 
     cachedVelocityAmplitude = std::pow(velocity, velToAmplitude / 100.0f);
@@ -320,7 +352,7 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     float ampAttack, float ampDecay, float ampSustain, float ampRelease,
     float brilliance, float carrierMorph, double sampleRate,
     float pitchWheelOffset,
-    float vibratoRate, float vibratoDepth, float vibratoFadeIn,
+    float vibratoRate, float vibratoDepth, float vibratoFadeIn, float vibratoVelThreshold,
     float velToAmplitude, float velToAttackTime, float vintageAmount,
     float pitchEnvDistance, float pitchAttackTime,
     float lifeAmount,
@@ -350,13 +382,20 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
     // Advance phase
     currentAngle += angleDelta;
 
-    // Detect cycle wrap (zero-crossing)
-    if (currentAngle >= twoPi) {
-        currentAngle -= twoPi;
+    // Detect cycle wrap (zero-crossing). A fresh note-on forces the same snapshot at its
+    // first sample: phase 0 is a genuine boundary (carrier and all modulators exactly 0,
+    // so it is click-free), and it replaces the previous note's stale coefficients that
+    // otherwise sound for the whole opening cycle. The forced pass uses dt = 0 - it
+    // EVALUATES envelopes / LFOs / pitch at t = 0 rather than advancing them a cycle early.
+    const bool atNoteStart = forceBoundarySnapshot;
+    forceBoundarySnapshot = false;
+    if (currentAngle >= twoPi || atNoteStart) {
+        if (currentAngle >= twoPi)
+            currentAngle -= twoPi;
         cycleStartFlag = true;
 
         // Timing for the coefficient envelopes / LFOs (per-cycle; only needed in this branch)
-        double cycleDeltaTime = 1.0 / currentFrequency;
+        double cycleDeltaTime = atNoteStart ? 0.0 : 1.0 / currentFrequency;
 
         // ======================== VIBRATO PROCESSING (EXISTING) ========================
         double vibratoPhaseAdvance = 2.0 * juce::MathConstants<double>::pi * vibratoRate * cycleDeltaTime;
@@ -382,6 +421,10 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
         const auto& sineLUT = SineLUT::getInstance();
         float vibratoLFOValue = sineLUT.lookup(vibratoState.lfoPhase);
         float effectiveVibratoDepth = vibratoDepth * vibratoState.fadeInLevel;
+        // VEL gate: when armed (threshold > 0), a note quieter than the threshold gets no vibrato.
+        // noteVelocity is normalised 0-1; threshold arrives normalised too. Fade-in still runs above.
+        if (vibratoVelThreshold > 0.0f && noteVelocity + 1.0e-6f < vibratoVelThreshold)
+            effectiveVibratoDepth = 0.0f;
         float vibratoOffset = vibratoLFOValue * effectiveVibratoDepth;
 
         // ======================== PITCH ATTACK ENVELOPE ========================
@@ -439,8 +482,9 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
 
         updatePitchFromOffset(sampleRate); // Apply total pitch offset
 
-        // Recalculate cycleDeltaTime with new modulated frequency
-        cycleDeltaTime = 1.0 / currentFrequency;
+        // Recalculate cycleDeltaTime with new modulated frequency (still 0 on the forced
+        // note-start pass - nothing advances there)
+        cycleDeltaTime = atNoteStart ? 0.0 : 1.0 / currentFrequency;
 
         // Advance K coefficient LFO phases
         for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
@@ -479,6 +523,22 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             }
         }
 
+        // Square K-LFO edge softener: one-pole coefficient for this cycle's update. A hard
+        // square flips the whole LFO swing between two per-cycle coefficient updates, and
+        // that single full-size step lands as a click; running the square through a one-pole
+        // spreads the edge over a few milliseconds of cycle steps instead. The 0.4 ceiling
+        // guarantees at least a few steps per edge even on bass notes, where one waveform
+        // cycle already exceeds the time constant. Sine/triangle move slowly per cycle and
+        // are not routed through this; Random (shape 4) is deliberately left hard - its big
+        // jumps are usually masked, and softening would change its character.
+        // Note-start pass (cycleDeltaTime == 0): alpha 1 snaps the state to the current
+        // square value, so a fresh note starts with no edge ramp.
+        constexpr float kSquareLfoEdgeTauSec = 0.003f;
+        constexpr float kSquareLfoMaxAlpha = 0.4f;
+        const float squareLfoAlpha = (cycleDeltaTime > 0.0)
+            ? juce::jmin(kSquareLfoMaxAlpha, 1.0f - std::exp(-(float)cycleDeltaTime / kSquareLfoEdgeTauSec))
+            : 1.0f;
+
         // Calculate final modulated coefficients (envelope processing merged into single loop)
         auto& stagedCoeffs = voiceCoeffGrid.getStagedCoefficients();
         for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
@@ -510,14 +570,22 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                 }
                 else {
                     lfoValue = generateLFOWaveform(coeffModStates[i].lfoPhase, globalParams[i].lfoShape);
+                    if ((int)globalParams[i].lfoShape == 3) {
+                        // Square: soften the mark/space edges (see squareLfoAlpha above)
+                        coeffModStates[i].squareLfoSmoothed += squareLfoAlpha * (lfoValue - coeffModStates[i].squareLfoSmoothed);
+                        lfoValue = coeffModStates[i].squareLfoSmoothed;
+                    }
                 }
 
                 // Scale LFO amount based on envelope stage for fade-in effect
-                // Attack = delay (LFO silent), Decay = fade-in, Sustain+ = full LFO
+                // Attack = delay (LFO silent), Decay = fade-in, Sustain = full LFO.
+                // Release/Idle HOLD the level the fade had reached at note-off: a note
+                // released mid-fade must not jump its LFO to full depth for the release.
                 float lfoScale = 1.0f;
                 if (coeffModStates[i].envStage == EnvelopeStage::Attack) {
                     // During attack: LFO is silent (delay period)
                     lfoScale = 0.0f;
+                    coeffModStates[i].lfoFadeLevel = lfoScale;
                 }
                 else if (coeffModStates[i].envStage == EnvelopeStage::Decay) {
                     // During decay: fade in LFO from 0 to 1 with concave exponential curve (slower at start)
@@ -526,8 +594,15 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
                     linearProgress = juce::jlimit(0.0f, 1.0f, linearProgress);
                     // Apply concave exponential curve: y = x^2 (slower start, faster end)
                     lfoScale = linearProgress * linearProgress;
+                    coeffModStates[i].lfoFadeLevel = lfoScale;
                 }
-                // During Sustain, Release, and Idle: full LFO (lfoScale remains 1.0f)
+                else if (coeffModStates[i].envStage == EnvelopeStage::Sustain) {
+                    coeffModStates[i].lfoFadeLevel = lfoScale;
+                }
+                else {
+                    // Release or Idle: the fade no longer advances; use the held level
+                    lfoScale = coeffModStates[i].lfoFadeLevel;
+                }
 
                 finalCoeff += lfoValue * globalParams[i].lfoAmount * lfoScale;
             }
@@ -558,6 +633,37 @@ float PLANETVoice::processNextSample(const CoefficientArray& globalParams,
             routeAddAmp[i] = (globalParams[i].toOut >= 0.5f)
                 ? juce::jlimit(-2.0f, 2.0f, stagedCoeff) * 0.5f
                 : 0.0f;
+
+            // Per-drawbar Density: snapshot here for the same click-free reason as
+            // routing (both modulator waveforms are exactly 0 at the boundary).
+            barDensity[i] = juce::jlimit(0.0f, 1.0f, globalParams[i].density);
+
+            // Per-drawbar Noise (v4 band-pass): snapshot the hijack switch and step the
+            // bar's two mean-reverting walks - amplitude (reverts to 1) and fractional
+            // detune (reverts to 0). One step per carrier cycle = bandwidth scales with
+            // f0 = constant musical Q. The bar's Density knob w sets the width.
+            // The stepped values are TARGETS: the sample path applies them smoothstep-
+            // interpolated from the previous targets across the coming cycle (see
+            // PLANETVoice.h) - raw per-cycle steps click once the detune walk has moved
+            // the modulator's boundary phase off sin = 0, and their staircases leak
+            // sinc skirts far above the band (the "HF hash" heard on Frail Unison).
+            barNoise[i] = (globalParams[i].noiseMode >= 0.5f);
+            if (barNoise[i]) {
+                const float w    = barDensity[i];   // Density = band WIDTH on a noise bar
+                const float sigA = kNoiseSigA0 + kNoiseSigA1 * w;
+                const float sigF = kNoiseSigF0 + kNoiseSigF1 * w;
+                const float lam  = kNoiseLam0  + kNoiseLam1  * w;
+                noiseRng = noiseRng * 1664525u + 1013904223u;
+                const float u1 = (float)((noiseRng >> 8) & 0xFFFF) / 32767.5f - 1.0f;
+                noiseRng = noiseRng * 1664525u + 1013904223u;
+                const float u2 = (float)((noiseRng >> 8) & 0xFFFF) / 32767.5f - 1.0f;
+                noiseAmpPrev[i] = noiseAmp[i];
+                noiseEpsPrev[i] = noiseEps[i];
+                noiseAmp[i] = juce::jlimit(0.0f, 2.0f,
+                    noiseAmp[i] + lam * (1.0f - noiseAmp[i]) + sigA * u1);
+                noiseEps[i] = juce::jlimit(-kNoiseEpsMax, kNoiseEpsMax,
+                    (1.0f - lam) * noiseEps[i] + sigF * u2);
+            }
         }
 
         // Promote staged coefficients to active
@@ -629,17 +735,56 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
 
     auto distortedPhase = x;
     additiveOut = 0.0;
+    const auto& softSawLUT = SoftSawLUT::getInstance();
+
+    // Smoothstep position within the carrier cycle, shared by every noise bar: the
+    // per-cycle walk targets are applied interpolated prev -> current across the cycle
+    // (C1-continuous amp/rate - no boundary clicks, no staircase skirts; see header).
+    const float ns = (float)(normalizedPhase * normalizedPhase * (3.0 - 2.0 * normalizedPhase));
+
     for (int i = 0; i < NUM_COEFFICIENTS; ++i) {
         auto k = activeCoeffs[i] * morphAmount;
         const double f = globalParams[i].inputSpectralMultiplier;
 
-        // modWave is the drawbar's sin term for THIS sample (doublet-aware). It is computed
-        // once, then fed to either destination per the routing snapshot - so a bar can drive
-        // the carrier phase (PM), add straight to the output (additive partial at harmonic f),
-        // both, or neither (muted). The phase accumulators advance regardless of routing, so
-        // toggling a destination never jumps the partial's phase.
+        // Per-drawbar Density (experimental): the bar's modulator morphs sine -> soft-saw,
+        // so one bar contributes a whole f, 2f, 3f... family. d == 0 is the fast path and
+        // is bit-identical to the pure-sine engine. Both LUTs are 0 at phase 0, so the
+        // cycle-boundary snapshot keeps knob moves click-free.
+        const float d = barDensity[i];
+        auto modLookup = [&](double ph) -> float {
+            float v = sineLUT.lookup(ph);
+            if (d > 0.0f)
+                v = (1.0f - d) * v + d * softSawLUT.lookup(ph);
+            return v;
+        };
+
+        // modWave is the drawbar's modulator term for THIS sample (doublet-aware). It is
+        // computed once, then fed to either destination per the routing snapshot - so a bar
+        // can drive the carrier phase (PM), add straight to the output (additive partial at
+        // harmonic f), both, or neither (muted). The phase accumulators advance regardless of
+        // routing, so toggling a destination never jumps the partial's phase.
         float modWave;
-        if (doubletEngaged[i])
+        if (barNoise[i])
+        {
+            // Noise bar (v4 band-pass): the bar's ordinary sine, with its level and
+            // rate driven by the per-cycle walks - narrowband noise centred on this
+            // bar's harmonic f, width from the Density knob. A pure sine at every
+            // instant, so it cannot crackle; cost = a sine bar plus two lerps.
+            // PM route = phase jitter (analogue roughness), ADD route = additive
+            // breath shaped by the bar's K envelope. The accumulator advances at the
+            // wobbled rate; density morph and doublets don't apply on a noise bar.
+            const float ampNow = noiseAmpPrev[i] + (noiseAmp[i] - noiseAmpPrev[i]) * ns;
+            const float epsNow = noiseEpsPrev[i] + (noiseEps[i] - noiseEpsPrev[i]) * ns;
+            modWave = ampNow * sineLUT.lookup(modPhases[i]);
+            modPhases[i] += f * (1.0 + (double)epsNow) * angleDelta;
+            while (modPhases[i] >= twoPi) modPhases[i] -= twoPi;
+            if (doubletEngaged[i])
+            {
+                modPhasesB[i] += f * doubletRatioB[i] * angleDelta;
+                while (modPhasesB[i] >= twoPi) modPhasesB[i] -= twoPi;
+            }
+        }
+        else if (doubletEngaged[i])
         {
             // Stage 3 doublet: two components either side of f, energy-shared by s.
             // Their interference makes this partial beat - and because the split is a
@@ -647,8 +792,8 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // s = 0.5 beats through a true null; away from 0.5 it beats shallower with
             // a slight pitch wobble. Both are wanted flavours.
             const float sB = doubletMixB[i];
-            modWave = (1.0f - sB) * sineLUT.lookup(modPhases[i])
-                    + sB          * sineLUT.lookup(modPhasesB[i]);
+            modWave = (1.0f - sB) * modLookup(modPhases[i])
+                    + sB          * modLookup(modPhasesB[i]);
             modPhases[i]  += f * doubletRatioA[i] * angleDelta;
             modPhasesB[i] += f * doubletRatioB[i] * angleDelta;
             while (modPhases[i]  >= twoPi) modPhases[i]  -= twoPi;
@@ -659,7 +804,7 @@ double PLANETVoice::applyPhaseDistortion(double normalizedPhase, float morphAmou
             // Single-accumulator path (Stage 1): use-then-advance, so with integer f
             // this equals sin(f*x) exactly and LIFE-off patches are unchanged.
             // angleDelta already tracks vibrato / pitch-wheel / pitch-envelope.
-            modWave = sineLUT.lookup(modPhases[i]);
+            modWave = modLookup(modPhases[i]);
             modPhases[i] += f * angleDelta;
             // Multipliers go up to 30, so f*angleDelta can exceed 2pi on high notes;
             // a while-wrap stays correct where a single subtraction would not.

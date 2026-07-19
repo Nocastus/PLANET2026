@@ -74,6 +74,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         toPMParamPtr[i]  = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToPM");
         toOutParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "ToOut");
         trigSingleParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "TrigSingle");  // F10 Perc switch
+        noiseParamPtr[i] = apvts.getRawParameterValue("k" + juce::String(i + 1) + "Noise");  // Noise hijack switch
     }
 
     // Set up F value labels (editable)
@@ -235,6 +236,31 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         velToDrawbarValue.setText(juce::String((int)velToDrawbarKnob.getValue()), juce::dontSendNotification);
         };
 
+    // Set up per-drawbar Density knob (experimental: modulator sine -> soft-saw morph)
+    drawbarDensityKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    drawbarDensityKnob.setRange(0.0, 1.0, 0.01);
+    drawbarDensityKnob.setValue(0.0);
+    drawbarDensityKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    drawbarDensityKnob.setDoubleClickReturnValue(true, 0.0);
+    addAndMakeVisible(drawbarDensityKnob);
+    drawbarDensityKnob.setLookAndFeel(&drawbarIshtarLookAndFeel);  // per-drawbar accent
+
+    drawbarDensityLabel.setText("Density", juce::dontSendNotification);
+    drawbarDensityLabel.setJustificationType(juce::Justification::centred);
+    drawbarDensityLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    addAndMakeVisible(drawbarDensityLabel);
+
+    drawbarDensityValue.setText("0.00", juce::dontSendNotification);
+    drawbarDensityValue.setJustificationType(juce::Justification::centred);
+    drawbarDensityValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    drawbarDensityValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    drawbarDensityValue.setEditable(true);
+    addAndMakeVisible(drawbarDensityValue);
+
+    drawbarDensityKnob.onValueChange = [this]() {
+        drawbarDensityValue.setText(juce::String(drawbarDensityKnob.getValue(), 2), juce::dontSendNotification);
+        };
+
     envDepthValue.setText("0.00", juce::dontSendNotification);
     envDepthValue.setJustificationType(juce::Justification::centred);
     envDepthValue.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -321,9 +347,11 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     envCurveValue.setEditable(true);
     addAndMakeVisible(envCurveValue);
 
-    // Set up Vintage knob
+    // Set up Vintage knob. Continuous (interval 0), NOT integer-stepped: the value label shows 2
+    // decimals and patches store fractional amounts (e.g. 36.56), so an integer step would snap the
+    // knob position away from the stored/displayed value and make them disagree on load (#4).
     vintageKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    vintageKnob.setRange(0.0, 100.0, 1.0);
+    vintageKnob.setRange(0.0, 100.0, 0.0);
     vintageKnob.setValue(0.0);
     vintageKnob.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     vintageKnob.setDoubleClickReturnValue(true, 0.0);
@@ -459,9 +487,26 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
             s.setBounds(112, 28 + i * 34, 208, 22);
         }
 
+        // Patch Trim row (below the dev sliders): a real, patch-saved parameter - the
+        // per-patch level-match gain. Blue label to mark it out from the orange dev rows.
+        patchTrimLabel.setText("Patch Trim", juce::dontSendNotification);
+        patchTrimLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe8ecff));
+        patchTrimLabel.setFont(juce::Font(13.0f));
+        voicingPanel.addAndMakeVisible(patchTrimLabel);
+        patchTrimLabel.setBounds(10, 28 + NUM_VOICING_SLIDERS * 34, 100, 20);
+
+        patchTrimSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+        patchTrimSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 55, 18);
+        patchTrimSlider.setTextValueSuffix(" dB");
+        patchTrimSlider.setDoubleClickReturnValue(true, 0.0);
+        voicingPanel.addAndMakeVisible(patchTrimSlider);
+        patchTrimSlider.setBounds(112, 28 + NUM_VOICING_SLIDERS * 34, 208, 22);
+        patchTrimAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            apvts, "patchTrim", patchTrimSlider);
+
         voicingSnapshotButton.onClick = [this] { saveVoicingSnapshot(); };
         voicingPanel.addAndMakeVisible(voicingSnapshotButton);
-        voicingSnapshotButton.setBounds(10, 28 + NUM_VOICING_SLIDERS * 34, 90, 24);
+        voicingSnapshotButton.setBounds(10, 28 + (NUM_VOICING_SLIDERS + 1) * 34, 90, 24);
 
         // Close (x) in the top-right corner - panel is 330px wide (see resized()).
         voicingCloseButton.setColour(juce::TextButton::textColourOffId, juce::Colours::orange);
@@ -472,7 +517,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         voicingSavedLabel.setColour(juce::Label::textColourId, juce::Colours::orange.withAlpha(0.8f));
         voicingSavedLabel.setFont(juce::Font(12.0f));
         voicingPanel.addAndMakeVisible(voicingSavedLabel);
-        voicingSavedLabel.setBounds(106, 28 + NUM_VOICING_SLIDERS * 34, 214, 24);
+        voicingSavedLabel.setBounds(106, 28 + (NUM_VOICING_SLIDERS + 1) * 34, 214, 24);
 
         addChildComponent(voicingPanel);   // added invisible; shift-click the star to show
     }
@@ -679,6 +724,31 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // portamentoMode is a custom-painted toggle (no attachment): paint() reads the param, mouseDown()
     // flips it via the host. Cache the pointer for paint().
     portamentoModeParam = apvts.getRawParameterValue("portamentoMode");
+
+    // VEL gate (Vibrato): custom-painted on/off toggle like portamentoMode above, plus a permanent
+    // editable threshold field below it. Cache both param pointers for paint().
+    vibratoVelSwitchParam    = apvts.getRawParameterValue("vibratoVelSwitch");
+    vibratoVelThresholdParam = apvts.getRawParameterValue("vibratoVelThreshold");
+
+    // Threshold field: a plain editable numeric label (1-127), styled like Transpose/Stack. Sits
+    // directly under the VEL button, aligned with the Vibrato-row knob value readouts.
+    velThresholdValue.setJustificationType(juce::Justification::centred);
+    velThresholdValue.setColour(juce::Label::textColourId, juce::Colours::white);
+    velThresholdValue.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+    velThresholdValue.setColour(juce::Label::outlineColourId, juce::Colours::grey);
+    velThresholdValue.setEditable(true);
+    if (vibratoVelThresholdParam != nullptr)
+        velThresholdValue.setText(juce::String((int)vibratoVelThresholdParam->load()), juce::dontSendNotification);
+    addAndMakeVisible(velThresholdValue);
+    velThresholdValue.onTextChange = [this]()
+    {
+        int newVal = juce::jlimit(1, 127, velThresholdValue.getText().getIntValue());
+        if (auto* param = apvts.getParameter("vibratoVelThreshold"))
+            param->setValueNotifyingHost(param->convertTo0to1((float)newVal));
+        velThresholdValue.setText(juce::String(newVal), juce::dontSendNotification);
+    };
+    updateVelThresholdLook();
+
     brillianceAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "brilliance", brillianceSlider);
     carrierMorphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -832,6 +902,18 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     savePatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
     addAndMakeVisible(savePatchButton);
 
+    prevPatchButton.setButtonText("<");
+    prevPatchButton.onClick = [this] { stepPatch(-1); };
+    prevPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    prevPatchButton.setLookAndFeel(&patchArrowLookAndFeel);  // drawn triangle arrow (text renders too small at 20px)
+    addAndMakeVisible(prevPatchButton);
+
+    nextPatchButton.setButtonText(">");
+    nextPatchButton.onClick = [this] { stepPatch(1); };
+    nextPatchButton.setWantsKeyboardFocus(false);  // don't hold keyboard focus from the host (DAW transport keys)
+    nextPatchButton.setLookAndFeel(&patchArrowLookAndFeel);
+    addAndMakeVisible(nextPatchButton);
+
     // Get patch metadata from processor if available
     if (auto* proc = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor))
     {
@@ -860,6 +942,14 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     masterVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     masterVolumeSlider.setDoubleClickReturnValue(true, 0.8);
     addAndMakeVisible(masterVolumeSlider);
+    // Moving Vol clears the output-clip red indicator at once, so the effect of your adjustment is
+    // legible immediately instead of waiting out the hold. The timer recolours from live audio on the
+    // next tick, so if it's still clipping red simply returns.
+    masterVolumeSlider.onValueChange = [this]()
+    {
+        redHoldFramesLeft = 0;
+        meterDisplayPeak  = 0.0f;
+    };
 
     masterVolumeLabel.setText("Vol", juce::dontSendNotification);
     masterVolumeLabel.setJustificationType(juce::Justification::centredRight);
@@ -924,7 +1014,7 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
 
     // Version number at the far right of the bar. Bump this string per release (matches the commit
     // label; the .jucer's JucePlugin version is a separate JUCE field and not used here).
-    versionLabel.setText("v0.6.4", juce::dontSendNotification);
+    versionLabel.setText("v0.9.0", juce::dontSendNotification);
     versionLabel.setJustificationType(juce::Justification::centredRight);
     versionLabel.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.5f));
     addAndMakeVisible(versionLabel);
@@ -939,11 +1029,12 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
     // Attachments
     masterVolumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "masterVolume", masterVolumeSlider);
-    // Low-end-weighted taper for Vol: puts gain 0.3 at the slider's midpoint so most of the travel
+    // Low-end-weighted taper for Vol: puts gain 0.2 at the slider's midpoint so most of the travel
     // covers the quiet end - the region that matters for dialling in just under clipping on a 4x
-    // stack. Set AFTER the attachment (which copies the param's linear range onto the slider); this
-    // only reshapes thumb position vs value, so the stored/automated value stays linear 0-1.
-    masterVolumeSlider.setSkewFactorFromMidPoint(0.3);
+    // stack, and where Gerard spends most of the Vol travel. Set AFTER the attachment (which copies
+    // the param's linear range onto the slider); this only reshapes thumb position vs value, so the
+    // stored/automated value stays linear 0-1.
+    masterVolumeSlider.setSkewFactorFromMidPoint(0.2);
     unisonDetuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "unisonDetune", unisonDetuneSlider);
 
@@ -1030,8 +1121,54 @@ PLANETMainGui::PLANETMainGui(juce::AudioProcessorValueTreeState& apvtsRef,
         if (auto* lbl = dynamic_cast<juce::Label*>(child))
             lbl->onEditorHide = [lbl] { lbl->giveAwayKeyboardFocus(); };
 
+    // ======== Numeric-field visual convention (regularised - see quickstart) ========
+    // Two, and only two, kinds of numeric field, made visually unmistakable so the user is never
+    // fooled into "editing" a value that won't stick:
+    //   ENTRY BOX  - a real typed-entry field wired to a parameter (all have onTextChange). Dark fill
+    //                + a bright outline, editable. If it has a box, you can type in it.
+    //   READOUT    - mirrors a knob/slider only. No fill, no outline, NOT editable - just a number.
+    // This single pass runs after all per-field setup and OVERRIDES it, so the convention can't drift.
+    auto asEntryBox = [](juce::Label& l) {
+        l.setColour(juce::Label::backgroundColourId, juce::Colours::black);
+        l.setColour(juce::Label::outlineColourId,    juce::Colours::white);
+        l.setEditable(true);
+    };
+    auto asReadout = [](juce::Label& l) {
+        l.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+        l.setColour(juce::Label::outlineColourId,    juce::Colours::transparentBlack);
+        l.setEditable(false);
+    };
+
+    // Entry boxes: the ONLY fields you can type into (each has an onTextChange handler).
+    for (auto& l : fValueLabels)        asEntryBox(l);   // drawbar F multipliers
+    for (auto& l : adsrValueEditors)    asEntryBox(l);   // harmonic ADSR
+    for (auto& l : ampAdsrValueEditors) asEntryBox(l);   // amplitude ADSR
+    asEntryBox(transposeValue);
+    asEntryBox(unisonVoicesValue);
+    asEntryBox(velThresholdValue);
+    asEntryBox(seedValue);            // genuinely typeable (Life seed) - now boxed to match
+
+    // Readouts: mirror their knob/slider; never editable (no misleading edit cursor).
+    for (auto* l : { &lfoSpeedValue, &lfoDepthValue, &velToDrawbarValue, &drawbarDensityValue,
+                     &envDepthValue, &velAmpValue, &velAttackValue, &envCurveValue,
+                     &vintageValue, &lifeValue,
+                     &detuneAmountValue, &detuneMixValue, &warmthValue, &punchValue, &punchFrequencyValue,
+                     &brillianceValue, &densityValue,
+                     &vibratoRateValue, &vibratoDepthValue, &vibratoFadeValue,
+                     &pitchDistValue, &pitchTimeValue, &portamentoValue })
+        asReadout(*l);
+
     setSize(1400, 800);
     updateDrawbarColors();
+
+    // Sync the ENTIRE GUI to the current parameter values now that every control and its attachment
+    // exists. Without this, the editor opens showing constructor defaults for anything that didn't
+    // receive a live parameterChanged callback: on a session/preset restore the host sets the params
+    // BEFORE the editor is created, so those callbacks never fire and e.g. Vintage/Life would open
+    // reading 0 (or the knob left at a stale position) while the sound reflects the real patch value.
+    // refreshAllGUIValues() drives both the labels and the Vintage/Life knob positions from the params.
+    refreshAllGUIValues();
+
     startTimerHz(30);
 }
 
@@ -1045,6 +1182,10 @@ PLANETMainGui::~PLANETMainGui()
         drawbarSliders[i].setLookAndFeel(nullptr);
     }
 
+    // Reset LookAndFeel for the patch-step arrow buttons
+    prevPatchButton.setLookAndFeel(nullptr);
+    nextPatchButton.setLookAndFeel(nullptr);
+
     // Reset LookAndFeel for rotary knobs
     vibratoRateKnob.setLookAndFeel(nullptr);
     vibratoDepthKnob.setLookAndFeel(nullptr);
@@ -1055,6 +1196,7 @@ PLANETMainGui::~PLANETMainGui()
     lfoSpeedKnob.setLookAndFeel(nullptr);
     lfoDepthKnob.setLookAndFeel(nullptr);
     velToDrawbarKnob.setLookAndFeel(nullptr);
+    drawbarDensityKnob.setLookAndFeel(nullptr);
     
     velAttackKnob.setLookAndFeel(nullptr);
     envCurveKnob.setLookAndFeel(nullptr);
@@ -1119,7 +1261,7 @@ void PLANETMainGui::timerCallback()
         float p = outputPeakValue->exchange(0.0f);                  // peak since last frame (nothing missed)
         meterDisplayPeak = juce::jmax(p, meterDisplayPeak * 0.85f); // fast attack, ~200 ms release
         if (redHoldFramesLeft > 0) --redHoldFramesLeft;
-        if (meterDisplayPeak >= 0.99f) redHoldFramesLeft = 90;      // ~3 s hold at 30 Hz
+        if (meterDisplayPeak >= 0.99f) redHoldFramesLeft = 30;      // ~1 s hold at 30 Hz (also cleared instantly when Vol moves)
 
         juce::Colour c = (redHoldFramesLeft > 0)     ? juce::Colour(0xffe53935)   // red   (>= 99%, held)
                        : (meterDisplayPeak >= 0.70f) ? juce::Colour(0xffffb300)   // amber (70-98%)
@@ -1191,7 +1333,7 @@ void PLANETMainGui::toggleVoicingPanel()
 void PLANETMainGui::saveVoicingSnapshot()
 {
     auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                   .getChildFile("PLANET2026").getChildFile("VoicingSnapshots");
+                   .getChildFile("ISHTAR").getChildFile("VoicingSnapshots");
     dir.createDirectory();
     auto now = juce::Time::getCurrentTime();
     auto file = dir.getChildFile("voicing_" + now.formatted("%Y%m%d_%H%M%S") + ".txt");
@@ -1370,23 +1512,35 @@ void PLANETMainGui::updateLfoPulses()
 //==============================================================================
 void PLANETMainGui::drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                        float attack, float decay, float sustain, float release,
-                                       float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour)
+                                       float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour,
+                                       float viewMax)
 {
     float curveFactor = 1.0f + curveAmount * 6.0f;
     float totalTime = attack + decay + 0.3f + release;
     if (totalTime < 0.1f) totalTime = 0.1f;
     float timeScale = (float)bounds.getWidth() / totalTime;
-    
+
     float x0 = (float)bounds.getX();
     float y0 = (float)bounds.getBottom();
     float yTop = (float)bounds.getY() + 10;
-    float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
-    
+    float yRange = y0 - yTop - 10;
+    viewMax = juce::jmax(1.0f, viewMax, sustain);
+    float yPeak = yTop + (1.0f - 1.0f / viewMax) * yRange;
+    float ySustain = yTop + (1.0f - sustain / viewMax) * yRange;
+
     float x1 = x0 + attack * timeScale;
     float x2 = x1 + decay * timeScale;
     float x3 = x2 + 0.3f * timeScale;
     float x4 = x3 + release * timeScale;
-    
+
+    // Rescaled view (sustain above 1.0): mark the 1.0 level faintly so the
+    // two-stage attack shape reads against the normal full-scale.
+    if (viewMax > 1.001f)
+    {
+        g.setColour(strokeColour.withAlpha(0.25f));
+        g.drawHorizontalLine((int)yPeak, x0, (float)bounds.getRight());
+    }
+
     juce::Path envPath;
     envPath.startNewSubPath(x0, y0);
     const int numSegments = 20;
@@ -1414,23 +1568,23 @@ void PLANETMainGui::drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<i
         }
     };
     
-    addCurvedSegment(x0, x1, y0, yTop, true);        // Attack
-    addCurvedSegment(x1, x2, yTop, ySustain, false); // Decay
-    envPath.lineTo(x3, ySustain);                    // Sustain hold
-    addCurvedSegment(x3, x4, ySustain, y0, false);   // Release
-    
+    addCurvedSegment(x0, x1, y0, yPeak, true);        // Attack
+    addCurvedSegment(x1, x2, yPeak, ySustain, false); // Decay
+    envPath.lineTo(x3, ySustain);                     // Sustain hold
+    addCurvedSegment(x3, x4, ySustain, y0, false);    // Release
+
     g.setColour(strokeColour);
     g.strokePath(envPath, juce::PathStrokeType(2.5f));
-    
+
     // Draw handles
     float handleRadius = 6.0f;
     g.setColour(juce::Colours::white);
-    g.fillEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2);
+    g.fillEllipse(x1 - handleRadius, yPeak - handleRadius, handleRadius * 2, handleRadius * 2);
     g.fillEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2);
     g.fillEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2);
-    
+
     g.setColour(handleOutlineColour);
-    g.drawEllipse(x1 - handleRadius, yTop - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
+    g.drawEllipse(x1 - handleRadius, yPeak - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
     g.drawEllipse(x2 - handleRadius, ySustain - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
     g.drawEllipse(x4 - handleRadius, y0 - handleRadius, handleRadius * 2, handleRadius * 2, 2.0f);
 }
@@ -1475,11 +1629,18 @@ void PLANETMainGui::paint(juce::Graphics& g)
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.fillRoundedRectangle(harmonicEnvBounds.toFloat(), 5.0f);
 
+        // View full-scale: follow the sustain when it exceeds 1.0, and hold the
+        // drag-start scale while a sustain drag is live (see envDragViewMax).
+        float harmViewMax = juce::jmax(1.0f, adsrValues[selectedDrawbar][2]);
+        if (currentDragTarget == DragTarget::HarmonicDecaySustain)
+            harmViewMax = juce::jmax(harmViewMax, envDragViewMax);
+
         drawEnvelopeCurve(g, harmonicEnvBounds,
                           adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
                           adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3],
                           (float)envCurveKnob.getValue(),
-                          drawbarColours[selectedDrawbar], drawbarColours[selectedDrawbar]);
+                          drawbarColours[selectedDrawbar], drawbarColours[selectedDrawbar],
+                          harmViewMax);
     }
     
     // Amplitude section
@@ -1634,7 +1795,21 @@ void PLANETMainGui::paint(juce::Graphics& g)
                     g.setColour(juce::Colour(0xff555555)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
         g.setColour(rate ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
         g.setFont(11.0f);
-        g.drawText(rate ? "Rate" : "Time", portamentoModeButtonBounds, juce::Justification::centred);
+        g.drawText(rate ? "RATE" : "TIME", portamentoModeButtonBounds, juce::Justification::centred);
+    }
+
+    // Vibrato VEL gate toggle - same visual language as the buttons above: accent fill = on (vibrato
+    // velocity-gated), dark/grey = off (vibrato always). Double-click opens the threshold editor.
+    if (!velSwitchButtonBounds.isEmpty())
+    {
+        auto rf = velSwitchButtonBounds.toFloat();
+        bool on = vibratoVelSwitchParam && vibratoVelSwitchParam->load() > 0.5f;
+        if (on) { g.setColour(globalAccent); g.fillRoundedRectangle(rf, 3.0f); }
+        else    { g.setColour(juce::Colour(0xff202020)); g.fillRoundedRectangle(rf, 3.0f);
+                  g.setColour(juce::Colour(0xff555555)); g.drawRoundedRectangle(rf, 3.0f, 1.0f); }
+        g.setColour(on ? juce::Colours::black.withAlpha(0.85f) : juce::Colour(0xff8a8a8a));
+        g.setFont(11.0f);
+        g.drawText("VEL", velSwitchButtonBounds, juce::Justification::centred);
     }
 
     // ISHTAR name - pulled ~80px left of the divider so the patch-bar cluster (Trans/Stack/Detune/
@@ -1711,9 +1886,11 @@ void PLANETMainGui::paint(juce::Graphics& g)
     g.drawHorizontalLine(drawbarSectionHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight + harmonicHeight, 0, (float)leftWidth);
     g.drawHorizontalLine(drawbarSectionHeight, (float)leftWidth, (float)bounds.getWidth());
-    // Right column dividers (Vibrato/Pitch and Pitch/Brilliance)
+    // Right column dividers (Vibrato/Pitch and Pitch/Colour). The Pitch/Colour line (i==2) is nudged
+    // 1px down so it lines up exactly with the bottom of the Drawbar Envelope zone on the left (#7).
     for (int i = 1; i < 3; ++i)
-        g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i, (float)leftWidth, (float)bounds.getWidth());
+        g.drawHorizontalLine(drawbarSectionHeight + rightSectionHeight * i + (i == 2 ? 1 : 0),
+                             (float)leftWidth, (float)bounds.getWidth());
 
     // Brilliance/Effects divider (adjustable)<===============================================================================BRILLIANCE DIVIDER
     int brillianceEffectsDividerY = drawbarSectionHeight + rightSectionHeight * 3 - 10;  // Adjust this offset
@@ -1792,6 +1969,11 @@ void PLANETMainGui::paintOverChildren(juce::Graphics& g)
         drawSwitch(pmSwitchBounds[i],  pmOn,  "Shape");
         drawSwitch(outSwitchBounds[i], outOn, "Direct");
 
+        // Noise hijack switch, above the routing pair (always visible - it redefines what
+        // the bar IS, so its state should read at a glance even on unmodulated bars).
+        const bool noiseOn = noiseParamPtr[i] && noiseParamPtr[i]->load() >= 0.5f;
+        drawSwitch(noiseSwitchBounds[i], noiseOn, "Noise");
+
         // F10 "Perc" switch, above the routing pair. Only shown when this drawbar's envelope is
         // active (the red-thumb condition) - single-trigger is meaningless without an envelope.
         // On = Single (fire only on a phrase start); off = Multi (retrigger every note, default).
@@ -1843,21 +2025,24 @@ void PLANETMainGui::resized()
         // circle bounds in paintOverChildren().
         const int circleD    = 14;
         const int groupH     = circleD + 2 + 12;   // circle + gap + legend label
-        const int gapBetween = 18;                 // space between successive labelled groups
+        const int gapBetween = 8;                  // tightened (was 18) to fit the 4th (Noise) switch in the strip
         const int step       = groupH + gapBetween;// vertical pitch from one switch to the next
         const int cx         = x + faderLeftPad + faderW + 4 + routeStripW / 2;  // centre of the routing strip
 
         // Anchor the switch stack from the BOTTOM so the Direct switch's legend lines up with the
-        // bottom of the fader. This pushes the whole group (Perc / Shape / Direct) down, leaving a
-        // clear gap at the top for the conditionally-shown Perc switch to appear without colliding
-        // with the F-number box above the fader. Direct (bottom) -> Shape -> Perc, evenly spaced.
+        // bottom of the fader. This pushes the whole group down, leaving a clear gap at the top
+        // for the conditionally-shown Perc switch to appear without colliding with the F-number
+        // box above the fader. Direct (bottom) -> Shape -> Noise -> Perc, evenly spaced; the
+        // always-visible trio stays contiguous, the conditional Perc sits on top.
         const int faderBottom = faderTop + drawbarHeight;
-        const int outY  = faderBottom - groupH;   // Direct: circle + legend end at the fader bottom
-        const int pmY   = outY - step;            // Shape
-        const int percY = pmY  - step;            // Perc (topmost, only painted when envelope active)
-        pmSwitchBounds[i]   = juce::Rectangle<int>(cx - circleD / 2, pmY,   circleD, circleD);
-        outSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, outY,  circleD, circleD);
-        percSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, percY, circleD, circleD);
+        const int outY   = faderBottom - groupH;   // Direct: circle + legend end at the fader bottom
+        const int pmY    = outY   - step;          // Shape
+        const int noiseY = pmY    - step;          // Noise (always visible)
+        const int percY  = noiseY - step;          // Perc (topmost, only painted when envelope active)
+        pmSwitchBounds[i]    = juce::Rectangle<int>(cx - circleD / 2, pmY,    circleD, circleD);
+        outSwitchBounds[i]   = juce::Rectangle<int>(cx - circleD / 2, outY,   circleD, circleD);
+        noiseSwitchBounds[i] = juce::Rectangle<int>(cx - circleD / 2, noiseY, circleD, circleD);
+        percSwitchBounds[i]  = juce::Rectangle<int>(cx - circleD / 2, percY,  circleD, circleD);
     }
 
     // Position ADSR labels and value editors
@@ -1899,23 +2084,27 @@ void PLANETMainGui::resized()
     // Hide the old F display - now drawn as watermark in paint()
     selectedFDisplay.setVisible(false);
 
-    // Triangle layout: Vel to Drawbar at apex, LFO Speed/Depth at base
+    // 2x2 grid: Vel to Drawbar above LFO Speed (left column), per-drawbar Density
+    // above LFO Depth (right column). Replaces the old apex-triangle layout.
     int smallKnobSize = 60;
     int smallKnobValueHeight = 18;
-    
 
-    // Apex knob (Vel to Drawbar) - centered at top
-    int apexX = lfoZoneX + (lfoZoneWidth - smallKnobSize) / 2;
-    int apexY = lfoZoneY + 5;
-    velToDrawbarLabel.setBounds(apexX - 15, apexY, smallKnobSize + 30, 16);
-    velToDrawbarKnob.setBounds(apexX, apexY + 16, smallKnobSize, smallKnobSize);
-    velToDrawbarValue.setBounds(apexX, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
-
-    // Base knobs (LFO Speed, LFO Depth) - spread below
-    int baseY = apexY + 16 + smallKnobSize + smallKnobValueHeight + 15;
     int baseSpacing = (lfoZoneWidth - smallKnobSize * 2) / 3;
     int base1X = lfoZoneX + baseSpacing;
     int base2X = base1X + smallKnobSize + baseSpacing;
+
+    // Top row (Vel to Drawbar, Density)
+    int apexY = lfoZoneY + 5;
+    velToDrawbarLabel.setBounds(base1X - 15, apexY, smallKnobSize + 30, 16);
+    velToDrawbarKnob.setBounds(base1X, apexY + 16, smallKnobSize, smallKnobSize);
+    velToDrawbarValue.setBounds(base1X, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+
+    drawbarDensityLabel.setBounds(base2X - 15, apexY, smallKnobSize + 30, 16);
+    drawbarDensityKnob.setBounds(base2X, apexY + 16, smallKnobSize, smallKnobSize);
+    drawbarDensityValue.setBounds(base2X, apexY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
+
+    // Bottom row (LFO Speed, LFO Depth)
+    int baseY = apexY + 16 + smallKnobSize + smallKnobValueHeight + 15;
 
     lfoSpeedValue.setBounds(base1X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
     lfoDepthValue.setBounds(base2X, baseY + 16 + smallKnobSize, smallKnobSize, smallKnobValueHeight);
@@ -2006,7 +2195,7 @@ void PLANETMainGui::resized()
     seedModuleBounds = juce::Rectangle<int>(seedModX, seedModY, seedModW, seedModH);
 
     // Dev voicing panel: floats over the harmonic-envelope zone when toggled
-    voicingPanel.setBounds(20, drawbarSectionHeight + 20, 330, 240);
+    voicingPanel.setBounds(20, drawbarSectionHeight + 20, 330, 274);   // +34 for the Patch Trim row
 
     // ======================== RIGHT COLUMN LAYOUT ========================
     int rightX = leftWidth + 10;
@@ -2049,6 +2238,18 @@ void PLANETMainGui::resized()
         vibValues[i]->setBounds(x + 10, vibratoY + 16 + rightKnobSize, rightKnobSize - 20, knobValueHeight);
     }
 
+    // VEL gate button: right column of the Vibrato row, directly above the Rate/Time toggle and the
+    // Colour-zone MW buttons (same size/column). Vertically centred on the Vibrato-row knob bodies.
+    {
+        const int velToggleH = 20;   // == the Rate/Time + MW button height
+        velSwitchButtonBounds = juce::Rectangle<int>(mwCenterX - mwBtnW_ / 2,
+                                                     vibratoY + 16 + (rightKnobSize - velToggleH) / 2,
+                                                     mwBtnW_, velToggleH);
+        // Threshold field directly below the button, on the same baseline as the knob value readouts.
+        velThresholdValue.setBounds(velSwitchButtonBounds.getX() - 4, vibratoY + 16 + rightKnobSize,
+                                    mwBtnW_ + 8, knobValueHeight);
+    }
+
     // ---- Pitch section: Distance / Time / Porta, with the Rate/Time toggle in the right column ----
     int pitchY = waveformHeight + rightSectionHeight + 5 + zoneLabelH;
     juce::Slider* pitchKnobs[3]  = { &pitchDistKnob,  &pitchTimeKnob,  &portamentoTimeKnob };
@@ -2072,7 +2273,7 @@ void PLANETMainGui::resized()
     // Colour section: Brilliance + Density, each a horizontal slider with its label ABOVE it,
     // left-aligned. The pair sits low in the zone; sliders are shortened 10% at the right end
     // (left end fixed) to leave room for a future per-slider "Mod wheel" button.
-    int colStartY = waveformHeight + rightSectionHeight * 2 + 40;   // dropped low in the zone
+    int colStartY = waveformHeight + rightSectionHeight * 2 + 32;   // dropped low in the zone; -8px (#2) opens a gap below the MW->Density button before the Effects divider
     int sliderMargin = 20;
     int colSliderX = rightX + sliderMargin;
     int colFullW = rightContentWidth - sliderMargin * 2;
@@ -2147,10 +2348,14 @@ void PLANETMainGui::resized()
     loadPatchButton.setBounds(buttonMargin, buttonY, buttonWidth, buttonHeight);
     savePatchButton.setBounds(buttonMargin + buttonWidth + 10, buttonY, buttonWidth, buttonHeight);
 
-    // Patch name (fixed width, right after Save button)
+    // Patch name (fixed width, right after Save button), flanked by the prev/next
+    // step arrows. The width they take comes out of the comment field.
+    int arrowWidth = 20;
     int patchNameX = buttonMargin + buttonWidth * 2 + 20;
     int patchNameWidth = 150;
-    currentPatchLabel.setBounds(patchNameX, buttonY, patchNameWidth, buttonHeight);
+    prevPatchButton.setBounds(patchNameX, buttonY, arrowWidth, buttonHeight);
+    currentPatchLabel.setBounds(patchNameX + arrowWidth + 4, buttonY, patchNameWidth, buttonHeight);
+    nextPatchButton.setBounds(patchNameX + arrowWidth + 4 + patchNameWidth + 4, buttonY, arrowWidth, buttonHeight);
 
     // ISHTAR wordmark + master/unison cluster live in the right of the bar. We pull the whole cluster
     // ~80px left of the column divider (robbing a little from the patch-comment field) so Trans / Stack
@@ -2163,7 +2368,7 @@ void PLANETMainGui::resized()
     ishtarWordmarkBounds = juce::Rectangle<int>(ishtarBarX, buttonY, 88, buttonHeight);
 
     // Comment now ends just before the ISHTAR wordmark (was: up to the divider).
-    int commentX = patchNameX + patchNameWidth + 10;
+    int commentX = patchNameX + arrowWidth + 4 + patchNameWidth + 4 + arrowWidth + 10;
     int commentWidth = juce::jmax(60, ishtarBarX - 10 - commentX);
     patchCommentLabel.setBounds(commentX, buttonY, commentWidth, buttonHeight);
 
@@ -2309,6 +2514,13 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
             toggleRoutingParam("k" + juce::String(i + 1) + "TrigSingle");
             return;
         }
+        if (noiseSwitchBounds[i].contains(event.getPosition()))
+        {
+            toggleRoutingParam("k" + juce::String(i + 1) + "Noise");
+            if (i == selectedDrawbar)
+                updateDrawbarDensityLabel();   // flip the Density/Wander label live
+            return;
+        }
         if (pmSwitchBounds[i].contains(event.getPosition()))
         {
             toggleRoutingParam("k" + juce::String(i + 1) + "ToPM");
@@ -2340,6 +2552,15 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
+    // Vibrato VEL gate: click toggles the gate on/off. The 1-127 threshold is the editable field
+    // below the button. Refresh the field's dimmed look to match the new on/off state.
+    if (velSwitchButtonBounds.contains(event.getPosition()))
+    {
+        toggleRoutingParam("vibratoVelSwitch");
+        updateVelThresholdLook();
+        return;
+    }
+
     // ISHTAR wordmark: opens the credits / about overlay.
     if (ishtarWordmarkBounds.contains(event.getPosition()))
     {
@@ -2356,16 +2577,18 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
          event.y >= harmonicEnvBounds.getY() - handleRadius && 
          event.y <= harmonicEnvBounds.getBottom() + handleRadius))
     {
-        auto attackPt = getEnvelopePoint(1, harmonicEnvBounds, 
+        // Hit-test against the same rescaled geometry the curve is drawn with.
+        float harmViewMax = juce::jmax(1.0f, adsrValues[selectedDrawbar][2]);
+        auto attackPt = getEnvelopePoint(1, harmonicEnvBounds,
             adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
-            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3], harmViewMax);
         auto decaySustainPt = getEnvelopePoint(2, harmonicEnvBounds,
             adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
-            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3], harmViewMax);
         auto releasePt = getEnvelopePoint(4, harmonicEnvBounds,
             adsrValues[selectedDrawbar][0], adsrValues[selectedDrawbar][1],
-            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3]);
-        
+            adsrValues[selectedDrawbar][2], adsrValues[selectedDrawbar][3], harmViewMax);
+
         if (attackPt.getDistanceFrom(event.position) < handleRadius)
         {
             currentDragTarget = DragTarget::HarmonicAttack;
@@ -2373,6 +2596,10 @@ void PLANETMainGui::mouseDown(const juce::MouseEvent& event)
         }
         if (decaySustainPt.getDistanceFrom(event.position) < handleRadius)
         {
+            // Freeze the cursor-to-value mapping at the current full-scale for
+            // the whole drag; the painted view may rescale live as the value
+            // stretches past it.
+            envDragViewMax = harmViewMax;
             currentDragTarget = DragTarget::HarmonicDecaySustain;
             return;
         }
@@ -2503,6 +2730,7 @@ void PLANETMainGui::mouseUp(const juce::MouseEvent& event)
     }
 
     currentDragTarget = DragTarget::None;
+    envDragViewMax = 1.0f;
 }
 
 int PLANETMainGui::drawbarColumnAt(juce::Point<int> p) const
@@ -2520,6 +2748,18 @@ void PLANETMainGui::toggleRoutingParam(const juce::String& paramID)
         p->setValueNotifyingHost(p->getValue() >= 0.5f ? 0.0f : 1.0f);
 
     repaint();
+}
+
+void PLANETMainGui::updateVelThresholdLook()
+{
+    // The threshold field is always editable (you can pre-set it while the gate is off), but dim it
+    // when off so it reads as inactive - the value only bites when the VEL gate is engaged.
+    bool on = vibratoVelSwitchParam && vibratoVelSwitchParam->load() > 0.5f;
+    velThresholdValue.setColour(juce::Label::textColourId,
+                                juce::Colours::white.withAlpha(on ? 1.0f : 0.4f));
+    velThresholdValue.setColour(juce::Label::outlineColourId,
+                                juce::Colours::grey.withAlpha(on ? 1.0f : 0.5f));
+    velThresholdValue.repaint();
 }
 
 // F10: is drawbar i's envelope active? Same test that turns its fader thumb red (see the thumb-colour
@@ -2593,10 +2833,10 @@ void PLANETMainGui::copyEnvelopeParamsBetweenDrawbars(int from, int to)
 
 void PLANETMainGui::copyModParamsBetweenDrawbars(int from, int to)
 {
-    // LFO (shape/rate/amount/sync/division) + the per-drawbar velocity param. Same normalised-copy
-    // approach as the envelope copy above.
+    // LFO (shape/rate/amount/sync/division) + the per-drawbar velocity and Density params.
+    // Same normalised-copy approach as the envelope copy above.
     static const char* const suffixes[] =
-        { "LFOShape", "LFORate", "LFOAmount", "LFOSync", "LFOSyncDiv", "VelToHarmonic" };
+        { "LFOShape", "LFORate", "LFOAmount", "LFOSync", "LFOSyncDiv", "VelToHarmonic", "Density" };
     const juce::String fromPrefix = "k" + juce::String(from + 1);
     const juce::String toPrefix   = "k" + juce::String(to + 1);
     for (auto* s : suffixes)
@@ -2609,26 +2849,30 @@ void PLANETMainGui::copyModParamsBetweenDrawbars(int from, int to)
 }
 
 juce::Point<float> PLANETMainGui::getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
-                                                    float attack, float decay, float sustain, float release)
+                                                    float attack, float decay, float sustain, float release,
+                                                    float viewMax)
 {
     float totalTime = attack + decay + 0.3f + release;
     if (totalTime < 0.1f) totalTime = 0.1f;
     float timeScale = (float)bounds.getWidth() / totalTime;
-    
+
     float x0 = (float)bounds.getX();
     float y0 = (float)bounds.getBottom();
     float yTop = (float)bounds.getY() + 10;
-    float ySustain = yTop + (1.0f - sustain) * (y0 - yTop - 10);
-    
+    float yRange = y0 - yTop - 10;
+    viewMax = juce::jmax(1.0f, viewMax, sustain);
+    float yPeak = yTop + (1.0f - 1.0f / viewMax) * yRange;
+    float ySustain = yTop + (1.0f - sustain / viewMax) * yRange;
+
     float x1 = x0 + attack * timeScale;
     float x2 = x1 + decay * timeScale;
     float x3 = x2 + 0.3f * timeScale;
     float x4 = x3 + release * timeScale;
-    
+
     switch (pointIndex)
     {
         case 0: return { x0, y0 };
-        case 1: return { x1, yTop };
+        case 1: return { x1, yPeak };
         case 2: return { x2, ySustain };
         case 3: return { x3, ySustain };
         case 4: return { x4, y0 };
@@ -2679,10 +2923,19 @@ void PLANETMainGui::updateAdsrFromDrag(const juce::MouseEvent& event)
             float newX = juce::jlimit(currentX1, (float)bounds.getRight(), (float)event.x);
             float newDecay = (newX - currentX1) / timeScale;
             values[1] = juce::jlimit(0.001f, 10.0f, newDecay);
-            
-            float newY = juce::jlimit(yTop, y0 - 10, (float)event.y);
-            float newSustain = 1.0f - (newY - yTop) / yRange;
-            values[2] = juce::jlimit(0.0f, 1.0f, newSustain);
+
+            // The cursor-to-sustain mapping uses the full-scale captured at drag
+            // start (envDragViewMax), so grabbing a handle on a rescaled view
+            // doesn't jump the value. Drawbar sustain legally reaches 2.0 (two-
+            // stage attack): dragging ABOVE the box keeps stretching it past the
+            // current ceiling, and the painted view rescales to follow. The amp
+            // envelope keeps its 0-1 range and top-edge clamp.
+            float dragMax = isHarmonic ? envDragViewMax : 1.0f;
+            float sustainCap = isHarmonic ? 2.0f : 1.0f;
+            float minY = isHarmonic ? yTop - yRange : yTop;
+            float newY = juce::jlimit(minY, y0 - 10, (float)event.y);
+            float newSustain = dragMax * (1.0f - (newY - yTop) / yRange);
+            values[2] = juce::jlimit(0.0f, sustainCap, newSustain);
             break;
         }
         
@@ -2755,6 +3008,7 @@ void PLANETMainGui::bindToSelectedDrawbar()
     lfoSyncAttachment.reset();
     envDepthAttachment.reset();
     velToDrawbarAttachment.reset();
+    drawbarDensityAttachment.reset();
 
     // Read sync state for the newly selected drawbar BEFORE creating attachments
     bool syncOn = false;
@@ -2773,6 +3027,8 @@ void PLANETMainGui::bindToSelectedDrawbar()
         apvts, prefix + "EnvelopeAmount", envDepthKnob);
     velToDrawbarAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, prefix + "VelToHarmonic", velToDrawbarKnob);
+    drawbarDensityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, prefix + "Density", drawbarDensityKnob);
 
     // Bind speed knob to correct parameter based on sync mode
     updateLfoSyncMode();
@@ -2795,13 +3051,30 @@ void PLANETMainGui::bindToSelectedDrawbar()
     if (auto* param = apvts.getParameter(prefix + "VelToHarmonic"))
         velToDrawbarValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 
+    if (auto* param = apvts.getParameter(prefix + "Density"))
+        drawbarDensityValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
+
+    updateDrawbarDensityLabel();   // "Density" or "Wander" depending on this drawbar's Noise state
+
     // Re-tint the per-drawbar controls to the selected drawbar's colour.
     drawbarIshtarLookAndFeel.starColour = drawbarColours[selectedDrawbar];
     envDepthKnob.setColour(juce::Slider::thumbColourId, drawbarColours[selectedDrawbar]);
     lfoSpeedKnob.repaint();
     lfoDepthKnob.repaint();
     velToDrawbarKnob.repaint();
+    drawbarDensityKnob.repaint();
     envDepthKnob.repaint();
+}
+
+void PLANETMainGui::updateDrawbarDensityLabel()
+{
+    // When the selected drawbar is in Noise mode, the per-drawbar Density knob is driving how far the
+    // bar's sine wanders per cycle (the heart of the band-pass noise), so it's relabelled "Wander".
+    // Reverts to "Density" (modulator sine->soft-saw morph) when Noise is off.
+    bool noiseOn = false;
+    if (auto* np = apvts.getRawParameterValue("k" + juce::String(selectedDrawbar + 1) + "Noise"))
+        noiseOn = np->load() > 0.5f;
+    drawbarDensityLabel.setText(noiseOn ? "Wander" : "Density", juce::dontSendNotification);
 }
 
 void PLANETMainGui::updateLfoSyncMode()
@@ -2900,7 +3173,9 @@ void PLANETMainGui::parameterChanged(const juce::String& parameterID, float newV
         return;
     }
     if (parameterID == "lifeAmount") {
-        lifeValue.setText(juce::String((int)newValue), juce::dontSendNotification);
+        // Round (not truncate) so the label matches the integer-stepped knob's snapped position
+        // when a patch stores a fractional Life value (#4).
+        lifeValue.setText(juce::String(juce::roundToInt(newValue)), juce::dontSendNotification);
         return;
     }
     if (parameterID == "lifeSeed") {
@@ -2953,10 +3228,23 @@ void PLANETMainGui::refreshAllGUIValues()
         velAmpValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("velToAttackTime"))
         velAttackValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
-    if (auto* param = apvts.getParameter("vintageAmount"))
-        vintageValue.setText(juce::String(param->convertFrom0to1(param->getValue()), 2), juce::dontSendNotification);
-    if (auto* param = apvts.getParameter("lifeAmount"))
-        lifeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    // Vintage & Life: resync BOTH the numeric label AND the knob position from the param. The knob
+    // normally tracks via its SliderAttachment, but the rotary indicator was observed sticking at the
+    // previous value after a load while the label reset correctly (#4). Driving the knob here (with
+    // dontSendNotification, so it doesn't write back through the attachment) + an explicit repaint
+    // guarantees the indicator matches the loaded value regardless of any missed attachment update.
+    if (auto* param = apvts.getParameter("vintageAmount")) {
+        float v = param->convertFrom0to1(param->getValue());
+        vintageValue.setText(juce::String(v, 2), juce::dontSendNotification);
+        vintageKnob.setValue(v, juce::dontSendNotification);
+        vintageKnob.repaint();
+    }
+    if (auto* param = apvts.getParameter("lifeAmount")) {
+        float v = param->convertFrom0to1(param->getValue());
+        lifeValue.setText(juce::String(juce::roundToInt(v)), juce::dontSendNotification);
+        lifeKnob.setValue(v, juce::dontSendNotification);
+        lifeKnob.repaint();
+    }
     if (auto* param = apvts.getParameter("lifeSeed"))
         seedValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
 
@@ -2967,6 +3255,9 @@ void PLANETMainGui::refreshAllGUIValues()
         transposeValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
     if (auto* param = apvts.getParameter("unisonVoices"))
         unisonVoicesValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    if (auto* param = apvts.getParameter("vibratoVelThreshold"))
+        velThresholdValue.setText(juce::String((int)param->convertFrom0to1(param->getValue())), juce::dontSendNotification);
+    updateVelThresholdLook();   // the VEL switch may have changed on load; match the field's dimmed state
 
     // Refresh harmonic envelope values for currently selected drawbar
     bindToSelectedDrawbar();
@@ -2997,27 +3288,17 @@ void PLANETMainGui::loadPatchButtonClicked()
     if (processor == nullptr)
         return;
 
-    // Factory bank (baked into the binary) as category submenus, then the
-    // user-patch file browser. Factory item IDs are 1-based indices into the
-    // factory list; the browser gets a high sentinel ID.
+    // Factory bank (baked into the binary) as one flat numbered list in bake
+    // order (the filename prefixes in FactoryPatches/), then the user-patch
+    // file browser. Factory item IDs are 1-based indices into the factory
+    // list; the browser gets a high sentinel ID.
     const auto& factory = processor->getFactoryPatches();
     constexpr int browseItemID = 1000000;
 
     juce::PopupMenu menu;
 
-    juce::StringArray categories;
-    for (const auto& p : factory)
-        if (!categories.contains(p.category))
-            categories.add(p.category);
-
-    for (const auto& category : categories)
-    {
-        juce::PopupMenu sub;
-        for (int i = 0; i < (int) factory.size(); ++i)
-            if (factory[(size_t) i].category == category)
-                sub.addItem(i + 1, factory[(size_t) i].patchName);
-        menu.addSubMenu(category, sub);
-    }
+    for (int i = 0; i < (int) factory.size(); ++i)
+        menu.addItem(i + 1, juce::String::formatted("%02d  ", i + 1) + factory[(size_t) i].patchName);
 
     if (!factory.empty())
         menu.addSeparator();
@@ -3039,6 +3320,8 @@ void PLANETMainGui::loadPatchButtonClicked()
                     processor->loadFactoryPatch(factoryList[(size_t) index]);
                     currentPatchName = factoryList[(size_t) index].patchName;
                     updatePatchNameDisplay(currentPatchName);
+                    lastFactoryPatchIndex = index;
+                    lastLoadedPatchFile = juce::File();
                 }
                 return;
             }
@@ -3059,9 +3342,61 @@ void PLANETMainGui::loadPatchButtonClicked()
                     // Update patch name display
                     currentPatchName = file.getFileNameWithoutExtension();
                     updatePatchNameDisplay(currentPatchName);
+                    lastLoadedPatchFile = file;
+                    lastFactoryPatchIndex = -1;
                 }
             });
         });
+}
+
+void PLANETMainGui::stepPatch(int direction)
+{
+    auto* processor = dynamic_cast<PLANETtest4AudioProcessor*>(audioProcessor);
+    if (processor == nullptr)
+        return;
+
+    // If the last load/save was a user file, walk that file's folder in name order.
+    if (lastLoadedPatchFile.existsAsFile())
+    {
+        juce::Array<juce::File> files;
+        lastLoadedPatchFile.getParentDirectory().findChildFiles(files, juce::File::findFiles, false, "*.md");
+        if (files.isEmpty())
+            return;
+
+        juce::File::NaturalFileComparator comparator(false);
+        files.sort(comparator);
+
+        int index = files.indexOf(lastLoadedPatchFile);
+        index = index < 0 ? 0 : (index + direction + files.size()) % files.size();
+
+        lastLoadedPatchFile = files[index];
+        processor->loadPatch(lastLoadedPatchFile);
+        updatePatchNameDisplay(lastLoadedPatchFile.getFileNameWithoutExtension());
+        return;
+    }
+
+    // Otherwise walk the factory bank; bake order IS the menu order (numbered flat list).
+    const auto& factory = processor->getFactoryPatches();
+    if (factory.empty())
+        return;
+
+    const int n = (int) factory.size();
+
+    // No factory load yet this session? The processor may still be sitting on one
+    // (fresh instances open on 01) - match by name so stepping starts from there.
+    int last = lastFactoryPatchIndex;
+    if (last < 0)
+        for (int i = 0; i < n; ++i)
+            if (factory[(size_t) i].patchName == currentPatchName)
+                { last = i; break; }
+
+    int pos = last < 0 ? (direction > 0 ? 0 : n - 1)
+                       : (last + direction + n) % n;
+
+    lastFactoryPatchIndex = pos;
+    const auto& patch = factory[(size_t) pos];
+    processor->loadFactoryPatch(patch);
+    updatePatchNameDisplay(patch.patchName);
 }
 
 void PLANETMainGui::savePatchButtonClicked()
@@ -3080,33 +3415,30 @@ void PLANETMainGui::savePatchButtonClicked()
     window->addTextEditor("description", "", "Description:");
     window->addTextEditor("tags", "", "Tags (comma-separated):");
 
-    juce::StringArray categories = { "Pads", "Plucks", "Leads", "Bass", "Keys", "FX", "User" };
-    window->addComboBox("category", categories, "Category:");
-
     window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    window->enterModalState(true, juce::ModalCallbackFunction::create([this, processor, window, categories](int result)
+    window->enterModalState(true, juce::ModalCallbackFunction::create([this, processor, window](int result)
     {
         if (result == 1)
         {
             juce::String patchName = window->getTextEditorContents("patchName");
             juce::String description = window->getTextEditorContents("description");
             juce::String tags = window->getTextEditorContents("tags");
-            int categoryIndex = window->getComboBoxComponent("category")->getSelectedItemIndex();
-            juce::String category = categories[categoryIndex >= 0 ? categoryIndex : 6]; // Default to "User"
 
             if (patchName.isNotEmpty())
             {
-                // Create directory if needed
-                auto patchDir = PLANETPatchManager::getDefaultPatchDirectory().getChildFile(category);
+                // Flat user bank: saves land directly in Documents\ISHTAR\User Patches
+                // (no category subfolders - see getDefaultPatchDirectory), so there is
+                // no Category choice in this dialog. createDirectory() makes parents too.
+                auto patchDir = PLANETPatchManager::getDefaultPatchDirectory();
                 if (!patchDir.exists())
                     patchDir.createDirectory();
 
                 juce::File patchFile = patchDir.getChildFile(patchName + ".md");
 
-                // Save the patch
-                processor->savePatch(patchFile, patchName, description, tags, category);
+                // Save the patch ("User" is the whole bank's category)
+                processor->savePatch(patchFile, patchName, description, tags, "User");
 
                 // Update patch name display
                 currentPatchName = patchName;
@@ -3116,6 +3448,8 @@ void PLANETMainGui::savePatchButtonClicked()
                 updatePatchNameDisplay(currentPatchName);
                 processor->currentPatchDescription = description;
                 updatePatchCommentDisplay(description);
+                lastLoadedPatchFile = patchFile;
+                lastFactoryPatchIndex = -1;
             }
         }
         delete window;

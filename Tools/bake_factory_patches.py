@@ -1,7 +1,8 @@
 """
 Bake the factory patch bank into ISHTAR.
 
-Scans FactoryPatches/<Category>/<Name>.md and generates
+Scans FactoryPatches/<NN Name>.md (flat - the 2-digit filename prefix sets
+the bank order; 01 is the patch a fresh instance opens with) and generates
 Source/FactoryPatchData.h containing every patch as an escaped C string
 literal. Rebuild the plugin after running this and the bank ships inside
 the binary - no files, no installer steps, read-only by construction.
@@ -57,16 +58,12 @@ def main():
         return 1
 
     entries = []
-    for category in sorted(os.listdir(SRC_DIR)):
-        cat_dir = os.path.join(SRC_DIR, category)
-        if not os.path.isdir(cat_dir):
+    for fn in sorted(os.listdir(SRC_DIR)):
+        if not fn.lower().endswith(".md") or fn.lower() == "readme.md":
             continue
-        for fn in sorted(os.listdir(cat_dir)):
-            if not fn.lower().endswith(".md"):
-                continue
-            with open(os.path.join(cat_dir, fn), "r", encoding="utf-8") as fh:
-                content = fh.read()
-            entries.append((category, fn, content))
+        with open(os.path.join(SRC_DIR, fn), "r", encoding="utf-8") as fh:
+            content = fh.read()
+        entries.append(("Factory", fn, content))
 
     if not entries:
         print("ERROR: no .md patches found under FactoryPatches/")
@@ -75,7 +72,7 @@ def main():
     lines = []
     ap = lines.append
     ap("// AUTO-GENERATED FILE - DO NOT EDIT BY HAND.")
-    ap("// Source of truth: FactoryPatches/<Category>/<Name>.md")
+    ap("// Source of truth: FactoryPatches/<NN Name>.md (prefix = bank order, 01 loads at startup)")
     ap("// Regenerate with:  py Tools/bake_factory_patches.py   then rebuild.")
     ap("#pragma once")
     ap("")

@@ -7,9 +7,11 @@ combination that comes closest to reproducing it.
 
 Engine model replicated here (see Source/PLANETVoice.cpp):
 
-    y(theta) = carrier( theta + B * sum_pm  s_i * sin(f_i * theta) )
-             +           B * sum_add clamp(s_i,-2,2)/2 * sin(f_i * theta)
+    y(theta) = carrier( theta + B * sum_pm  s_i * mod_i(theta) )
+             +           B * sum_add clamp(s_i,-2,2)/2 * mod_i(theta)
 
+    mod_i(theta) = (1-d_i) * sin(f_i*theta) + d_i * softsaw(f_i*theta)
+                                     [per-drawbar Density, experimental fork]
     carrier(phi) = (1-m) * sin(phi) + m * softsaw(phi)     [F5 Density morph]
     softsaw = sum_{n=1..16} (0.8^(n-1)/n) sin(n*phi)
 
@@ -22,6 +24,13 @@ Fitting conventions (agreed with Gerard, 6 Jul 2026):
   * Density m is searched (0..1); granularity G sets the number of candidate
     steps per continuous parameter, spaced evenly in normalised knob travel
     through the plugin's symmetric skew law (skew 0.5 -> value = 2*sign(d)*d^2).
+  * Per-drawbar Density d_i (kNDensity, 0..1) exists only on the experimental
+    per-drawbar-density fork. When its tickbox is OFF the search pins every
+    d_i to 0 and the exported patch carries no kNDensity lines at all, so it
+    loads (and sounds identical) in mainline ISHTAR. When ON, the patch gets
+    kNDensity lines and needs the fork build to sound right - mainline loads
+    it but ignores those lines. This makes fork-vs-mainline fit comparisons
+    on the same waveform a fair A/B.
 
 Run with --selftest for a headless engine/fitter verification.
 """
@@ -80,12 +89,16 @@ def carrier(phi, m):
 
 def synth_cycle(bars, m, cycles=1, M=M_CYCLE):
     """Render one analysis window (C fundamental cycles, C*M samples).
-    bars: list of (f, s, route) with route 'PM' or 'ADD'."""
+    bars: list of (f, s, route[, d]) with route 'PM' or 'ADD'; d is the
+    per-drawbar modulator morph (0 = pure sine, fork parameter kNDensity)."""
     theta = TWO_PI * np.arange(cycles * M) / M
     phi = theta.copy()
     add = np.zeros_like(theta)
-    for f, s, route in bars:
+    for bar in bars:
+        f, s, route, d = bar if len(bar) == 4 else (*bar, 0.0)
         w = np.sin(f * theta)
+        if d > 0.0:
+            w = (1.0 - d) * w + d * softsaw(f * theta)
         if route == 'PM':
             phi += BRILLIANCE * s * w
         else:  # ADD: engine clamps stagedCoeff to +/-2, then *0.5, then *B
@@ -259,6 +272,77 @@ class Objective:
 
 
 # --------------------------------------------------------------------------
+# PARALLEL SCAN WORKERS
+# The per-(f,route) candidate evaluations inside a scan are independent, so
+# they fan out over a process pool (numpy releases little of the GIL here, so
+# threads don't help). The SAME evaluator runs in both the serial and the
+# worker path - determinism is asserted by the selftest.
+# --------------------------------------------------------------------------
+def _eval_candidate(route, fi, pm, add, m, grid, d_scan, mode, Ycar, ctx):
+    """Best (err, fi, s, route, d) for one (f, route) over the level grid and
+    the coarse per-bar-density spread. ctx supplies the constant arrays."""
+    ob = ctx['ob']
+    best = None
+    if route == 'ADD':
+        # Purely spectral: Y(s,d) = Ycar + B*0.5*s*Wspec(f,d)
+        FSPEC, SSFSPEC = ctx['FSPEC'], ctx['SSFSPEC']
+        for d in d_scan:
+            Wspec = FSPEC[fi] if d <= 0.0 else \
+                (1.0 - d) * FSPEC[fi] + d * SSFSPEC[fi]
+            Yb = Ycar[None, :] + (BRILLIANCE * 0.5 * grid)[:, None] \
+                * Wspec[None, :]
+            errs = ob.err(Yb, mode)
+            j = int(np.argmin(errs))
+            if best is None or errs[j] < best[0]:
+                best = (float(errs[j]), fi, float(grid[j]), 'ADD', float(d))
+    else:
+        SINF, SSF = ctx['SINF'], ctx['SSF']
+        phi_base = ctx['theta'] + pm
+        for d in d_scan:
+            w = SINF[fi] if d <= 0.0 else (1.0 - d) * SINF[fi] + d * SSF[fi]
+            phi = phi_base[None, :] + (BRILLIANCE * grid)[:, None] * w[None, :]
+            y = carrier(phi, m) + add[None, :]
+            Yb = np.fft.rfft(y, axis=-1)[:, 1:ob.K + 1]
+            errs = ob.err(Yb, mode)
+            j = int(np.argmin(errs))
+            if best is None or errs[j] < best[0]:
+                best = (float(errs[j]), fi, float(grid[j]), 'PM', float(d))
+    return best
+
+
+_WORKER_CTX = {}
+
+
+def _scan_worker_init(ctx):
+    _WORKER_CTX.update(ctx)
+
+
+def _scan_chunk(args):
+    work, pm, add, m, grid, d_scan, mode, Ycar = args
+    return [_eval_candidate(route, fi, pm, add, m, grid, d_scan, mode, Ycar,
+                            _WORKER_CTX)
+            for route, fi in work]
+
+
+def _make_pool(ctx):
+    """ProcessPoolExecutor primed with the scan constants, or None (serial).
+    RESYNTH_WORKERS overrides the worker count; 0 forces serial."""
+    try:
+        n = os.environ.get('RESYNTH_WORKERS')
+        n = int(n) if n is not None else max(1, (os.cpu_count() or 2) - 1)
+    except ValueError:
+        n = max(1, (os.cpu_count() or 2) - 1)
+    if n < 2:
+        return None
+    try:
+        import concurrent.futures
+        return concurrent.futures.ProcessPoolExecutor(
+            max_workers=n, initializer=_scan_worker_init, initargs=(ctx,))
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------
 # FITTER (beam-search matching pursuit + on-grid coordinate descent)
 # --------------------------------------------------------------------------
 class Fitter:
@@ -268,12 +352,16 @@ class Fitter:
     DESCENT_SEEDS = 3  # beam states descended independently (best kept)
     BASIN_HOPS = 10   # random f/route perturbations of the best fit, re-descended
 
-    def __init__(self, objective, cfg, progress=None):
+    def __init__(self, objective, cfg, progress=None, pool=None):
         """cfg keys: n_bars, G, mode ('spec'|'wave'), allow_add, allow_density,
-        half_f. progress: callable(frac, msg) -> bool (False = cancel)."""
+        allow_bar_density, half_f.
+        progress: callable(frac, msg) -> bool (False = cancel).
+        pool: shared scan ProcessPoolExecutor (the scout sub-fit reuses its
+        parent's); None here and run() creates/owns one."""
         self.ob = objective
         self.cfg = cfg
         self.progress = progress or (lambda frac, msg: True)
+        self._pool = pool
         C = objective.C
         self.C = C
         self.CM = objective.CM
@@ -286,23 +374,51 @@ class Fitter:
         self.FSPEC = np.fft.rfft(self.SINF, axis=-1)[:, 1:objective.K + 1]
         self.s_grid = level_grid(cfg['G'])
         self.m_grid = density_grid(cfg['G']) if cfg['allow_density'] else np.array([0.0])
+        # Per-drawbar Density (fork parameter kNDensity). The scan tries each
+        # (f, route) at a coarse 4-point d spread (grid-snapped, so results
+        # stay in the user's knob vocabulary); descent then fine-sweeps d per
+        # bar. Disabled -> d pinned at 0: search + export identical to before.
+        if cfg.get('allow_bar_density'):
+            self.SSF = softsaw(self.f_list[:, None] * self.theta[None, :])
+            self.SSFSPEC = np.fft.rfft(self.SSF, axis=-1)[:, 1:objective.K + 1]
+            self.d_fine = density_grid(cfg['G'])
+            snap = [int(np.argmin(np.abs(self.d_fine - t)))
+                    for t in (0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0)]
+            self.d_scan = np.unique(self.d_fine[snap])
+        else:
+            self.SSF = None
+            self.d_fine = None
+            self.d_scan = np.array([0.0])
         self.err_curve = []     # (n_bars, err_spec, err_wave)
         self.cancelled = False
         self.active_mode = cfg['mode']
         self._done = 0
         self._total = 1
 
-    # ---- state helpers (bars = list of (f_idx, s, route)) -------------------
+    def _scan_ctx(self):
+        """Constant arrays the candidate evaluator needs (sent to workers once)."""
+        return {'ob': self.ob, 'theta': self.theta, 'SINF': self.SINF,
+                'SSF': self.SSF, 'FSPEC': self.FSPEC,
+                'SSFSPEC': getattr(self, 'SSFSPEC', None)}
+
+    # ---- state helpers (bars = list of (f_idx, s, route, d)) ----------------
+    def _modwave(self, fi, d):
+        """The bar's modulator wave: sine, morphed toward soft-saw by d."""
+        if d <= 0.0:
+            return self.SINF[fi]
+        return (1.0 - d) * self.SINF[fi] + d * self.SSF[fi]
+
     def _sums(self, bars, exclude=None):
         pm = np.zeros(self.CM)
         add = np.zeros(self.CM)
-        for j, (fi, s, route) in enumerate(bars):
+        for j, (fi, s, route, d) in enumerate(bars):
             if j == exclude:
                 continue
+            w = self._modwave(fi, d)
             if route == 'PM':
-                pm += BRILLIANCE * s * self.SINF[fi]
+                pm += BRILLIANCE * s * w
             else:
-                add += BRILLIANCE * 0.5 * np.clip(s, -2, 2) * self.SINF[fi]
+                add += BRILLIANCE * 0.5 * np.clip(s, -2, 2) * w
         return pm, add
 
     def _spectrum(self, pm, add, m):
@@ -328,43 +444,43 @@ class Fitter:
 
     # ---- candidate scan ----------------------------------------------------
     def _scan(self, bars, m, top_j, exclude=None, s_grid=None):
-        """Try every (f, s, route) against `bars` (minus `exclude`) at density m.
-        Returns up to top_j candidates [(err, fi, s, route)], best s per (f,route),
+        """Try every (f, s, route) against `bars` (minus `exclude`) at density m,
+        each at every coarse per-bar density in d_scan. Returns up to top_j
+        candidates [(err, fi, s, route, d)], best (s, d) per (f,route),
         distinct (f,route) between entries."""
         mode = self.active_mode
         grid = self.s_grid if s_grid is None else s_grid
         pm, add = self._sums(bars, exclude=exclude)
-        used = {(fi, r) for j, (fi, _, r) in enumerate(bars) if j != exclude}
+        used = {(fi, r) for j, (fi, _, r, _) in enumerate(bars) if j != exclude}
         nf = len(self.f_list)
         routes = ['PM'] + (['ADD'] if self.cfg['allow_add'] else [])
-        found = []   # (err, fi, s, route) - one per (f,route)
-        phi_base = self.theta + pm
+        work = [(route, fi) for route in routes for fi in range(nf)
+                if (fi, route) not in used]
+        Ycar = self._spectrum(pm, add, m) if 'ADD' in routes else None
+        ctx = self._scan_ctx()
 
-        for route in routes:
-            if self.cancelled:
-                break
-            if route == 'ADD':
-                # Purely spectral: Y(s) = Ycar + B*0.5*s*Fspec(f)
-                Ycar = self._spectrum(pm, add, m)
-                for fi in range(nf):
-                    if (fi, 'ADD') in used:
-                        continue
-                    Yb = Ycar[None, :] + (BRILLIANCE * 0.5 * grid)[:, None] \
-                        * self.FSPEC[fi][None, :]
-                    errs = self.ob.err(Yb, mode)
-                    j = int(np.argmin(errs))
-                    found.append((float(errs[j]), fi, float(grid[j]), 'ADD'))
-            else:
-                for fi in range(nf):
-                    if (fi, 'PM') in used:
-                        continue
-                    phi = phi_base[None, :] + \
-                        (BRILLIANCE * grid)[:, None] * self.SINF[fi][None, :]
-                    y = carrier(phi, m) + add[None, :]
-                    Yb = np.fft.rfft(y, axis=-1)[:, 1:self.ob.K + 1]
-                    errs = self.ob.err(Yb, mode)
-                    j = int(np.argmin(errs))
-                    found.append((float(errs[j]), fi, float(grid[j]), 'PM'))
+        found = []   # (err, fi, s, route, d) - one per (f,route), in work order
+        if self._pool is not None and len(work) > 1 and not self.cancelled:
+            try:
+                nchunk = self._pool._max_workers
+                chunks = [work[i::nchunk] for i in range(nchunk) if work[i::nchunk]]
+                args = [(ch, pm, add, m, grid, self.d_scan, mode, Ycar)
+                        for ch in chunks]
+                results = {}
+                for ch, res in zip(chunks, self._pool.map(_scan_chunk, args)):
+                    for key, best in zip(ch, res):
+                        results[key] = best
+                found = [results[key] for key in work]
+            except Exception:
+                # pool died (or was shut down mid-cancel) - finish serially
+                self._pool = None
+                found = []
+        if not found:
+            for route, fi in work:
+                if self.cancelled:
+                    break
+                found.append(_eval_candidate(route, fi, pm, add, m, grid,
+                                             self.d_scan, mode, Ycar, ctx))
         found.sort(key=lambda c: c[0])
         return found[:top_j]
 
@@ -382,8 +498,45 @@ class Fitter:
         errs = self.ob.err(Yb, self.active_mode)
         return float(self.m_grid[int(np.argmin(errs))])
 
+    def _sweep_bar_density(self, bars, m, j):
+        """Fine 1D grid sweep of bar j's per-drawbar density, others held.
+        One batched render over d_fine; accepts the grid winner only if it
+        beats the current state (the scan's coarse d is already on the grid,
+        so this is monotone in practice)."""
+        if self.d_fine is None:
+            return bars
+        fi, s, route, d0 = bars[j]
+        pm, add = self._sums(bars, exclude=j)
+        dg = self.d_fine[:, None]
+        W = (1.0 - dg) * self.SINF[fi][None, :] + dg * self.SSF[fi][None, :]
+        if route == 'PM':
+            phi = (self.theta + pm)[None, :] + (BRILLIANCE * s) * W
+            y = carrier(phi, m) + add[None, :]
+        else:
+            base = carrier(self.theta + pm, m) + add
+            y = base[None, :] + (BRILLIANCE * 0.5 * np.clip(s, -2, 2)) * W
+        Yb = np.fft.rfft(y, axis=-1)[:, 1:self.ob.K + 1]
+        errs = self.ob.err(Yb, self.active_mode)
+        k = int(np.argmin(errs))
+        if float(errs[k]) < self._err_mode(bars, m) - 1e-9:
+            bars[j] = (fi, s, route, float(self.d_fine[k]))
+        return bars
+
     # ---- main --------------------------------------------------------------
     def run(self):
+        """Run the fit, creating (and owning) the scan worker pool unless one
+        was handed in. Serial fallback if the pool can't start."""
+        own_pool = self._pool is None
+        if own_pool:
+            self._pool = _make_pool(self._scan_ctx())
+        try:
+            return self._run()
+        finally:
+            if own_pool and self._pool is not None:
+                self._pool.shutdown(cancel_futures=True)
+                self._pool = None
+
+    def _run(self):
         n_bars = self.cfg['n_bars']
         W = self.BEAM_W
         n_mstarts = 4 if len(self.m_grid) > 1 else 1
@@ -418,14 +571,14 @@ class Fitter:
                                    f"scout: {msg}" if msg else '')
                 return ok
 
-            sub = Fitter(self.ob, scfg, sub_progress)
+            sub = Fitter(self.ob, scfg, sub_progress, pool=self._pool)
             sres = sub.run()
             self._done += pursuit_scans
             if sub.cancelled:
                 self.cancelled = True
             elif sres['bars']:
-                sbars = [(int(np.argmin(np.abs(self.f_list - f))), s, r)
-                         for f, s, r in sres['bars']]
+                sbars = [(int(np.argmin(np.abs(self.f_list - f))), s, r, d)
+                         for f, s, r, d in sres['bars']]
                 sbars, sm = self._snap(sbars, sres['density'])
                 seeds = seeds + [(sbars, sm, 0.0)]
 
@@ -486,8 +639,8 @@ class Fitter:
                               f"exploring {len(beam)} path{'s' if len(beam) > 1 else ''})...")
                 tops = self._scan(bars, m, top_j=W, s_grid=s_grid)
                 self._tick()
-                for err, fi, s, route in tops:
-                    nb = bars + [(fi, s, route)]
+                for err, fi, s, route, d in tops:
+                    nb = bars + [(fi, s, route, d)]
                     nm = self._sweep_density(nb, m)
                     candidates.append((nb, nm, self._err_mode(nb, nm)))
             if not candidates:
@@ -496,7 +649,8 @@ class Fitter:
             candidates.sort(key=lambda st: st[2])
             beam, seen = [], set()
             for nb, nm, e in candidates:
-                key = frozenset((fi, round(s, 6), r) for fi, s, r in nb)
+                key = frozenset((fi, round(s, 6), r, round(d, 6))
+                                for fi, s, r, d in nb)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -515,23 +669,25 @@ class Fitter:
         trial = list(bars)
         k = 1 + int(rng.integers(0, 2)) if len(bars) > 1 else 1
         for j in rng.choice(len(trial), size=min(k, len(trial)), replace=False):
-            fi, s, route = trial[j]
-            others = {(f, r) for i, (f, _, r) in enumerate(trial) if i != j}
+            fi, s, route, d = trial[j]
+            others = {(f, r) for i, (f, _, r, _) in enumerate(trial) if i != j}
             for _ in range(12):
                 nfi = int(np.clip(fi + int(rng.integers(-3, 4)), 0, nf - 1))
                 nroute = route
                 if self.cfg['allow_add'] and rng.random() < 0.3:
                     nroute = 'ADD' if route == 'PM' else 'PM'
                 if (nfi, nroute) not in others and (nfi, nroute) != (fi, route):
-                    trial[j] = (nfi, s, nroute)
+                    trial[j] = (nfi, s, nroute, d)
                     break
         return trial
 
     def _snap(self, bars, m):
-        """Snap levels and Density to the user's granularity grids."""
+        """Snap levels and both Densities to the user's granularity grids."""
         sg = self.s_grid
-        bars = [(fi, float(sg[int(np.argmin(np.abs(sg - s)))]), r)
-                for fi, s, r in bars]
+        dg = self.d_fine if self.d_fine is not None else np.array([0.0])
+        bars = [(fi, float(sg[int(np.argmin(np.abs(sg - s)))]), r,
+                 float(dg[int(np.argmin(np.abs(dg - d)))]))
+                for fi, s, r, d in bars]
         mg = self.m_grid
         m = float(mg[int(np.argmin(np.abs(mg - m)))])
         return bars, m
@@ -554,31 +710,41 @@ class Fitter:
                                   s_grid=s_grid)
                 self._tick()
                 best = (cur, None, m)
-                for _, fi, s, route in tops:
+                for _, fi, s, route, d in tops:
                     trial = list(bars)
-                    trial[j] = (fi, s, route)
+                    trial[j] = (fi, s, route, d)
                     tm = self._sweep_density(trial, m)
                     te = self._err_mode(trial, tm)
                     if te < best[0] - 1e-9:
-                        best = (te, (fi, s, route), tm)
+                        best = (te, (fi, s, route, d), tm)
                 if best[1] is not None:
                     bars[j] = best[1]
                     m = best[2]
                     improved = True
                 else:
                     m = self._sweep_density(bars, m)
+                if self.d_fine is not None:
+                    # refine this bar's density on the fine grid (the scan only
+                    # tried the coarse spread), then let the carrier follow
+                    d_before = bars[j][3]
+                    bars = self._sweep_bar_density(bars, m, j)
+                    if bars[j][3] != d_before:
+                        m = self._sweep_density(bars, m)
+                        improved = True
             if not improved:
                 break
         return bars, m
 
     def _finish(self, bars, m, es, ew):
-        out_bars = [(float(self.f_list[fi]), s, route) for fi, s, route in bars]
+        out_bars = [(float(self.f_list[fi]), s, route, d)
+                    for fi, s, route, d in bars]
         out_bars.sort(key=lambda b: b[0])
         return {
             'bars': out_bars, 'density': m,
             'err_spec': es, 'err_wave': ew,
             'err_curve': self.err_curve,
             'mode': self.cfg['mode'], 'G': self.cfg['G'],
+            'bar_density': bool(self.cfg.get('allow_bar_density')),
         }
 
 
@@ -587,6 +753,7 @@ class Fitter:
 # --------------------------------------------------------------------------
 def make_patch_markdown(name, result, f0, source_name):
     bars = result['bars']
+    bar_density = result.get('bar_density', False)
     lines = []
     ap = lines.append
     ap(f"# {name}")
@@ -597,8 +764,13 @@ def make_patch_markdown(name, result, f0, source_name):
        f"Residual: fingerprint {result['err_spec']:.1f}%, waveform {result['err_wave']:.1f}%. "
        f"Levels live in envelope depth (gate envelope) so transients can be shaped; "
        f"Brilliance is at noon by design. All parameters not listed load as defaults.")
+    if bar_density:
+        ap("")
+        ap("NOTE: fitted WITH per-drawbar Density (kNDensity) - needs the "
+           "per-drawbar-density fork build of ISHTAR. Mainline ISHTAR loads this "
+           "patch but ignores the kNDensity lines, so it will sound different.")
     ap("")
-    ap("Tags: resynth")
+    ap("Tags: resynth" + (", per-drawbar-density" if bar_density else ""))
     ap("")
     ap("---")
     ap("")
@@ -613,6 +785,8 @@ def make_patch_markdown(name, result, f0, source_name):
     ap("# EnvelopeAmount = -5.0 to 20.0 (resynth uses -2 to 2)")
     ap("# input_f = 0.5 to 30.0 (0.5 steps)")
     ap("# ToPM = 1 -> phase-distortion path, ToOut = 1 -> additive partial")
+    if bar_density:
+        ap("# Density = 0.0 to 1.0 (modulator sine -> soft-saw; FORK BUILD ONLY)")
     ap("")
 
     # Fitted bars occupy drawbars 1..n in ascending f; the rest stay default.
@@ -620,13 +794,15 @@ def make_patch_markdown(name, result, f0, source_name):
         p = f"k{i}"
         ap(f"## Drawbar {i}")
         if i <= len(bars):
-            f, s, route = bars[i - 1]
+            f, s, route, d = bars[i - 1]
             to_pm, to_out = (1, 0) if route == 'PM' else (0, 1)
             ap(f"{p} = 0.00  (-2.000 to 2.0)")
             ap(f"{p}EnvelopeAmount = {s:.4f}  (-5.000 to 20.0)")
             ap(f"{p}LFOAmount = 0.00  (-5.000 to 5.0)")
             ap(f"{p}VelToHarmonic = 0.00  (-100.000 to 100.0)")
             ap(f"input_f{i} = {f:.2f}  (0.500 to 30.0)")
+            if bar_density:
+                ap(f"{p}Density = {d:.3f}  (0.000 to 1.0)")
             ap(f"{p}AttackTime = 0.001  (0.001 to 10.0)")
             ap(f"{p}DecayTime = 0.001  (0.001 to 10.0)")
             ap(f"{p}SustainLevel = 1.00  (0.000 to 2.0)")
@@ -646,6 +822,8 @@ def make_patch_markdown(name, result, f0, source_name):
             ap(f"{p}LFOAmount = 0.00  (-5.000 to 5.0)")
             ap(f"{p}VelToHarmonic = 0.00  (-100.000 to 100.0)")
             ap(f"input_f{i} = {float(i):.2f}  (0.500 to 30.0)")
+            if bar_density:
+                ap(f"{p}Density = 0.000  (0.000 to 1.0)")
             ap(f"{p}AttackTime = 0.10  (0.001 to 10.0)")
             ap(f"{p}DecayTime = 0.50  (0.001 to 10.0)")
             ap(f"{p}SustainLevel = 0.50  (0.000 to 2.0)")
@@ -702,13 +880,15 @@ def selftest():
     print("ISHTAR Resynth self-test")
     print("=" * 60)
     rng_cases = [
-        # (description, bars [(f, s, route)], density)
+        # (description, bars [(f, s, route, d)], carrier density)
         ("2 PM bars, sine carrier",
-         [(2.0, 0.9, 'PM'), (5.0, -0.45, 'PM')], 0.0),
+         [(2.0, 0.9, 'PM', 0.0), (5.0, -0.45, 'PM', 0.0)], 0.0),
         ("PM + additive mix",
-         [(1.0, 0.7, 'PM'), (3.0, 0.5, 'PM'), (7.0, 0.8, 'ADD')], 0.0),
+         [(1.0, 0.7, 'PM', 0.0), (3.0, 0.5, 'PM', 0.0), (7.0, 0.8, 'ADD', 0.0)], 0.0),
         ("Density involved",
-         [(2.0, 0.6, 'PM'), (9.0, 0.35, 'ADD')], 0.4),
+         [(2.0, 0.6, 'PM', 0.0), (9.0, 0.35, 'ADD', 0.0)], 0.4),
+        ("Per-drawbar density (fork)",
+         [(1.0, 0.8, 'PM', 0.5), (6.0, 0.5, 'ADD', 0.0)], 0.0),
     ]
     ok = True
     for desc, bars, m in rng_cases:
@@ -717,13 +897,15 @@ def selftest():
         target /= np.linalg.norm(target)
         f0, sr = 220.0, 44100.0
         ob = Objective(target, C=1, f0=f0, sr=sr)
+        bar_den = any(b[3] > 0 for b in bars)
         for mode in ('spec', 'wave'):
             cfg = dict(n_bars=len(bars), G=120, mode=mode,
-                       allow_add=True, allow_density=(m > 0), half_f=False)
+                       allow_add=True, allow_density=(m > 0),
+                       allow_bar_density=bar_den, half_f=False)
             fit = Fitter(ob, cfg).run()
             print(f"\n[{desc}] mode={mode}")
-            print(f"  truth : {[(f, round(s, 3), r) for f, s, r in bars]} m={m}")
-            print(f"  fitted: {[(f, round(s, 3), r) for f, s, r in fit['bars']]} "
+            print(f"  truth : {[(f, round(s, 3), r, round(d, 3)) for f, s, r, d in bars]} m={m}")
+            print(f"  fitted: {[(f, round(s, 3), r, round(d, 3)) for f, s, r, d in fit['bars']]} "
                   f"m={fit['density']:.3f}")
             print(f"  residual: fingerprint {fit['err_spec']:.2f}%  "
                   f"waveform {fit['err_wave']:.2f}%")
@@ -731,6 +913,15 @@ def selftest():
             if fit[key] > 5.0:
                 ok = False
                 print("  ** FAIL: residual above 5% on a reachable target")
+            # Export compatibility: kNDensity lines appear iff the mode was on
+            md = make_patch_markdown("selftest", fit, f0, "selftest")
+            has_lines = any("Density =" in ln and ln.startswith("k")
+                            for ln in md.splitlines())
+            if has_lines != bar_den:
+                ok = False
+                print(f"  ** FAIL: patch export kNDensity lines "
+                      f"{'present' if has_lines else 'missing'} "
+                      f"(per-drawbar density {'on' if bar_den else 'off'})")
     # Error-vs-N sanity: a rich target, watch the curve fall
     print("\nError-vs-N curve on a 5-bar target (fingerprint mode):")
     bars = [(1.0, 0.8, 'PM'), (2.0, -0.5, 'PM'), (4.0, 0.4, 'PM'),
@@ -740,7 +931,7 @@ def selftest():
     target /= np.linalg.norm(target)
     ob = Objective(target, C=1, f0=220.0, sr=44100.0)
     cfg = dict(n_bars=5, G=120, mode='spec', allow_add=True,
-               allow_density=True, half_f=False)
+               allow_density=True, allow_bar_density=False, half_f=False)
     fit = Fitter(ob, cfg).run()
     for n, es, ew in fit['err_curve']:
         print(f"  {n} bar(s): fingerprint {es:6.2f}%   waveform {ew:6.2f}%")
@@ -847,13 +1038,20 @@ def run_gui():
                             value='wave').grid(row=1, column=2, sticky='w')
             self.add_var = tk.BooleanVar(value=True)
             self.den_var = tk.BooleanVar(value=True)
+            self.bar_den_var = tk.BooleanVar(value=False)
             self.half_var = tk.BooleanVar(value=False)
             ttk.Checkbutton(ctl, text="Allow additive routing (F8)",
                             variable=self.add_var).grid(row=1, column=3, sticky='w')
-            ttk.Checkbutton(ctl, text="Allow Density",
+            ttk.Checkbutton(ctl, text="Allow Carrier Density",
                             variable=self.den_var).grid(row=1, column=4, sticky='w')
             ttk.Checkbutton(ctl, text="Half-integer f (needs auto mode)",
                             variable=self.half_var).grid(row=1, column=5, columnspan=2, sticky='w')
+            # Off by default: patches fitted without it stay loadable (and
+            # correct-sounding) in mainline ISHTAR, which has no kNDensity.
+            ttk.Checkbutton(ctl, text="Allow Per-drawbar Density (fork build only - "
+                                      "patch needs kNDensity)",
+                            variable=self.bar_den_var).grid(row=2, column=3,
+                                                            columnspan=4, sticky='w')
 
             self.btn_fit = ttk.Button(ctl, text="FIT", command=self.start_fit)
             self.btn_fit.grid(row=0, column=7, rowspan=2, padx=12, ipadx=14, ipady=4)
@@ -1025,7 +1223,8 @@ def run_gui():
 
             cfg = dict(n_bars=self.bars_var.get(), G=self.gran_var.get(),
                        mode=self.obj_var.get(), allow_add=self.add_var.get(),
-                       allow_density=self.den_var.get(), half_f=half_f)
+                       allow_density=self.den_var.get(),
+                       allow_bar_density=self.bar_den_var.get(), half_f=half_f)
             self.cancel_flag.clear()
             self.btn_fit.config(state='disabled')
             self.btn_cancel.config(state='normal')
@@ -1104,16 +1303,26 @@ def run_gui():
             self.ax_spec.set_title("harmonic magnitudes", color='#d8d8e8', fontsize=9)
             self.canvas_res.draw_idle()
 
+            bar_den = r.get('bar_density', False)
             lines = [f"f0 = {self.f0:.1f} Hz   mode = "
                      f"{'fingerprint' if r['mode'] == 'spec' else 'waveform'}",
-                     f"Density (carrierMorph) = {r['density']:.3f}",
-                     f"Brilliance pinned at 0.50 (performance control)",
-                     "",
-                     " bar    f      level    route",
-                     " ---  -----   -------   -----"]
-            for i, (f, s, route) in enumerate(r['bars']):
-                lines.append(f"  {i + 1:2d}  {f:5.1f}   {s:+7.3f}   "
-                             f"{'PM' if route == 'PM' else 'ADD'}")
+                     f"Carrier Density (carrierMorph) = {r['density']:.3f}",
+                     f"Brilliance pinned at 0.50 (performance control)"]
+            if bar_den:
+                lines += ["Per-drawbar Density ON (kNDensity - fork build only)",
+                          "",
+                          " bar    f      level    route    dens",
+                          " ---  -----   -------   -----   -----"]
+            else:
+                lines += ["",
+                          " bar    f      level    route",
+                          " ---  -----   -------   -----"]
+            for i, (f, s, route, d) in enumerate(r['bars']):
+                row = (f"  {i + 1:2d}  {f:5.1f}   {s:+7.3f}   "
+                       f"{'PM ' if route == 'PM' else 'ADD'}")
+                if bar_den:
+                    row += f"   {d:5.3f}"
+                lines.append(row)
             lines += ["",
                       f"residual: fingerprint {r['err_spec']:.2f}%   "
                       f"waveform {r['err_wave']:.2f}%",
@@ -1132,10 +1341,24 @@ def run_gui():
             if self.result is None:
                 messagebox.showinfo("ISHTAR Resynth", "Run a fit first.")
                 return
-            os.makedirs(PATCH_EXPORT_DIR, exist_ok=True)
+            # PATCH_EXPORT_DIR is a convenience default and may not exist on every machine (e.g. no
+            # H: drive). Never let a missing/unreachable folder stop the export: check the drive is
+            # actually present before creating the tree, and fall back to the home directory otherwise,
+            # so the Save dialog always appears and the user can pick any location.
+            init_dir = PATCH_EXPORT_DIR
+            try:
+                drive = os.path.splitdrive(init_dir)[0]
+                drive_ok = (not drive) or os.path.isdir(drive + os.sep)
+                if drive_ok:
+                    os.makedirs(init_dir, exist_ok=True)
+                if not (drive_ok and os.path.isdir(init_dir)):
+                    init_dir = os.path.expanduser("~")
+            except OSError:
+                init_dir = os.path.expanduser("~")
+
             default = os.path.splitext(self.wav_name)[0] or "Resynth patch"
             path = filedialog.asksaveasfilename(
-                initialdir=PATCH_EXPORT_DIR, initialfile=default + ".md",
+                initialdir=init_dir, initialfile=default + ".md",
                 defaultextension=".md", filetypes=[("ISHTAR patch", "*.md")])
             if not path:
                 return

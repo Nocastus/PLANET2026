@@ -152,7 +152,7 @@ public:
         float ampAttack, float ampDecay, float ampSustain, float ampRelease,
         float brilliance, float carrierMorph, double sampleRate,
         float pitchWheelOffset,
-        float vibratoRate, float vibratoDepth, float vibratoFadeIn,
+        float vibratoRate, float vibratoDepth, float vibratoFadeIn, float vibratoVelThreshold,
         float velToAmplitude, float velToAttackTime, float vintageAmount,
         float pitchEnvDistance, float pitchAttackTime,
         float lifeAmount,
@@ -257,6 +257,15 @@ private:
 
     bool cycleStartFlag = false;
 
+    // Note-on requests a boundary snapshot at the FIRST sample of the note (phase 0 is a
+    // true cycle boundary - carrier and every modulator are exactly 0 - so it is click-free).
+    // Without it the whole opening cycle sounds the previous note's promoted coefficients,
+    // audibly wrong right after a patch change (stale OLD-patch timbre until every voice in
+    // the pool has been reused once). The forced pass runs with dt = 0: it EVALUATES the
+    // envelopes / LFOs / pitch offsets at t = 0 and promotes the correct attack coefficients,
+    // routing and density/noise flags, without advancing anything a cycle early.
+    bool forceBoundarySnapshot = false;
+
     // Per-voice pitch attack envelope
     EnvelopeStage pitchEnvStage = EnvelopeStage::Idle;
     double pitchEnvTime = 0.0;
@@ -287,6 +296,50 @@ private:
     // Both destinations off = muted (subsumes the old "mute" idea); both on = feeds both.
     std::array<float, NUM_COEFFICIENTS> routePMGain;
     std::array<float, NUM_COEFFICIENTS> routeAddAmp;
+
+    // ======================== PER-DRAWBAR DENSITY (experimental) ========================
+    // Morphs this drawbar's MODULATOR wave sine -> soft-saw (same SoftSawLUT as the F5
+    // carrier morph), so one bar contributes a whole f, 2f, 3f... family instead of a
+    // single sin(f*x). Snapshotted at the carrier-cycle boundary like routing: both LUTs
+    // are exactly 0 at phase 0, so a step in the morph amount there is click-free.
+    // Deliberately NOT band-limited (Gerard, 6 Jul 2026): high f * high density will
+    // alias, accepted as digital character until listening says otherwise.
+    std::array<float, NUM_COEFFICIENTS> barDensity;
+
+    // ======================== PER-DRAWBAR NOISE (experimental) ========================
+    // v4 "BAND-PASS NOISE" (7 Jul 2026). Gerard's target: pure white noise through a
+    // variable-Q band-pass centred on the note pitch. The in-paradigm identity that
+    // delivers it: narrowband-filtered noise IS a sine whose amplitude and frequency
+    // random-walk slowly. So a noise bar is simply the bar's ORDINARY SINE MODULATOR
+    // driven by two mean-reverting random walks, stepped once per carrier cycle at the
+    // boundary snapshot:
+    //   noiseAmp[i] - level, reverts to 1 (the breath envelope)
+    //   noiseEps[i] - fractional detune, reverts to 0 (the wandering phase)
+    // One step per cycle makes the bandwidth scale with f0, i.e. constant musical Q
+    // across the keyboard. The band is centred on the bar's own harmonic f (F is
+    // meaningful again - noise bars at different F stack like formants), and the bar's
+    // Density knob is repurposed as the WIDTH (inverse Q): 0 = near-tonal shimmer,
+    // 1 = wide breath. The signal is a pure sine at every instant,
+    // so it CANNOT crackle - the three LUT-library versions (windowed white, stochastic
+    // soft-saw, dense LPF fill) were all ruled coarse/crackly and are deleted; see the
+    // project memory before resurrecting any table-based approach.
+    // LIFE doublets and the density morph are bypassed on a noise bar; K + its ADSR/LFO,
+    // routing and velocity stay live. Phase accumulators still tick normally, so
+    // toggling noise on/off never jumps the partial's phase.
+    // The walks are STEPPED once per cycle but APPLIED smoothstep-interpolated across
+    // the cycle (prev -> current), because holding them constant per cycle hashes:
+    // (a) the detune walk leaves the modulator's phase offset wandering, so the boundary
+    // no longer sits at sin = 0 and each raw amp step would be an audible random click;
+    // (b) zero-order-held walks are staircases whose sinc skirts leak far above the
+    // band (~6 dB/oct). Smoothstep interpolation makes amp and rate C1-continuous:
+    // no clicks at any modulator phase, skirts fall ~18 dB/oct, per-cycle statistics
+    // (and therefore the constant-Q width behaviour) unchanged.
+    std::array<bool,  NUM_COEFFICIENTS> barNoise;
+    std::array<float, NUM_COEFFICIENTS> noiseAmp;      // walk targets (stepped at boundary)
+    std::array<float, NUM_COEFFICIENTS> noiseEps;
+    std::array<float, NUM_COEFFICIENTS> noiseAmpPrev;  // previous targets (interpolation start)
+    std::array<float, NUM_COEFFICIENTS> noiseEpsPrev;
+    uint32_t noiseRng = 0x51ED270B;
 
     // Helper functions
     double applyPhaseDistortion(double normalizedPhase, float morphAmount, const CoefficientArray& globalParams,

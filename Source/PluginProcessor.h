@@ -181,6 +181,8 @@ private:
     std::atomic<float>* vibratoRateParameter = nullptr;        // Hz
     std::atomic<float>* vibratoDepthParameter = nullptr;       // Semitones
     std::atomic<float>* vibratoFadeInParameter = nullptr;      // Seconds
+    std::atomic<float>* vibratoVelSwitchParameter = nullptr;   // VEL gate on/off
+    std::atomic<float>* vibratoVelThresholdParameter = nullptr;// 1-127 MIDI velocity threshold
 
     // ======================== PITCH ATTACK ENVELOPE PARAMETERS ========================
     std::atomic<float>* pitchEnvDistanceParameter = nullptr;
@@ -206,6 +208,7 @@ private:
 
     // ======================== MASTER CONTROLS ========================
     std::atomic<float>* masterVolumeParameter = nullptr;
+    std::atomic<float>* patchTrimParameter = nullptr;   // per-patch level-match gain (dB)
     std::atomic<float>* transposeParameter = nullptr;
 
 

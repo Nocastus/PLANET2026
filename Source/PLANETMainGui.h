@@ -124,6 +124,37 @@ private:
 };
 
 //==============================================================================
+// LookAndFeel for the prev/next patch-step buttons: draws a filled triangle
+// arrow instead of button text. The stock renderer squeezed the "<" / ">"
+// glyphs into a 20px button behind its text indents and they read as
+// unlabelled; a drawn path is crisp at any size and independent of fonts.
+// Direction comes from the button text ("<" = left), so the buttons keep
+// their labels for accessibility and the two share one LookAndFeel instance.
+//==============================================================================
+class PatchArrowLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override
+    {
+        const auto b = button.getLocalBounds().toFloat();
+        const bool pointsLeft = button.getButtonText() == "<";
+        const float halfW = 3.5f, halfH = 5.5f;
+        const float tipX = b.getCentreX() + (pointsLeft ? -halfW : halfW);
+        const float baseX = b.getCentreX() + (pointsLeft ? halfW : -halfW);
+
+        juce::Path arrow;
+        arrow.addTriangle(tipX, b.getCentreY(),
+                          baseX, b.getCentreY() - halfH,
+                          baseX, b.getCentreY() + halfH);
+
+        g.setColour(button.findColour(button.getToggleState() ? juce::TextButton::textColourOnId
+                                                              : juce::TextButton::textColourOffId)
+                          .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        g.fillPath(arrow);
+    }
+};
+
+//==============================================================================
 // ComboBox that never holds keyboard focus, so DAW transport keys (e.g. keypad
 // Enter in Cubase) reach the host instead of being swallowed by the combo.
 //
@@ -179,6 +210,37 @@ class ToggleResetSlider : public juce::Slider
 {
 public:
     using juce::Slider::Slider;
+
+    // Fine-adjust: hold Ctrl or Shift as the drag STARTS for ~8x finer resolution (the modifier is
+    // sampled here at mouse-down). A plain drag restores normal sensitivity. Applies to every knob and
+    // the Colour/Master sliders (all ToggleResetSliders). JUCE's default full-scale drag is 250px.
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        const bool fine = e.mods.isCtrlDown() || e.mods.isShiftDown();
+        setMouseDragSensitivity(fine ? 2000 : 250);
+        juce::Slider::mouseDown(e);
+    }
+
+    // Same fine-adjust modifier on the scroll wheel: a plain scroll keeps JUCE's normal step, Ctrl (or
+    // Shift) + scroll nudges by a small fraction of the range per notch (floored to the control's own
+    // interval so stepped controls like Life still move a whole unit). Tune the 0.0025 by feel.
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+    {
+        const bool fine = e.mods.isCtrlDown() || e.mods.isShiftDown();
+        if (!fine || !isEnabled())
+        {
+            juce::Slider::mouseWheelMove(e, wheel);   // normal wheel behaviour
+            return;
+        }
+
+        double amount = (wheel.deltaY != 0.0f) ? (double) wheel.deltaY : (double) wheel.deltaX;
+        if (wheel.isReversed) amount = -amount;
+        if (amount == 0.0) return;
+
+        double step = (getMaximum() - getMinimum()) * 0.0025;
+        if (getInterval() > 0.0) step = juce::jmax(step, getInterval());
+        setValue(getValue() + (amount > 0.0 ? step : -step), juce::sendNotificationSync);
+    }
 
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
@@ -275,6 +337,7 @@ public:
     
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void bindToSelectedDrawbar();
+    void updateDrawbarDensityLabel();   // "Density" <-> "Wander" per the selected drawbar's Noise state
     void refreshAllGUIValues();  // Refresh all GUI elements from current parameter values
     void updatePatchNameDisplay(const juce::String& name);
     void updatePatchCommentDisplay(const juce::String& comment);
@@ -292,15 +355,27 @@ public:
     juce::Rectangle<int> harmonicEnvBounds;
     juce::Rectangle<int> ampEnvBounds;
     
-    // Helper methods for envelope interaction
+    // Helper methods for envelope interaction.
+    // viewMax is the vertical full-scale of the envelope graph: 1.0 normally, or the
+    // sustain level when it exceeds 1.0 (drawbar SustainLevel legally reaches 2.0 -
+    // a two-stage attack). The graph auto-scales so such curves stay inside their
+    // box instead of painting over the drawbar section above.
     juce::Point<float> getEnvelopePoint(int pointIndex, const juce::Rectangle<int>& bounds,
-                                         float attack, float decay, float sustain, float release);
+                                         float attack, float decay, float sustain, float release,
+                                         float viewMax = 1.0f);
     void updateAdsrFromDrag(const juce::MouseEvent& event);
-    
+
+    // Vertical full-scale captured when a sustain-handle drag starts, so the
+    // cursor-to-value mapping stays fixed for the whole drag while the painted
+    // view rescales live underneath (dragging above the box stretches sustain
+    // past the current ceiling, up to the parameter maximum).
+    float envDragViewMax = 1.0f;
+
     // Envelope drawing helper - consolidates duplicate code
     void drawEnvelopeCurve(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                            float attack, float decay, float sustain, float release,
-                           float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour);
+                           float curveAmount, juce::Colour strokeColour, juce::Colour handleOutlineColour,
+                           float viewMax = 1.0f);
 
 private:
     // Colour scheme
@@ -360,12 +435,21 @@ private:
     // clicked in mouseDown(); toggled via toggleRoutingParam() like the routing switches.
     std::array<juce::Rectangle<int>, 10> percSwitchBounds;
     std::array<std::atomic<float>*, 10> trigSingleParamPtr {};
+
+    // ---- Per-drawbar Noise switch (experimental) ----
+    // Fourth switch circle, between Shape and Perc: on = the drawbar is hijacked into a
+    // band-pass noise source centred on its harmonic F (breath/chiff) - K/ADSR/LFO/routing
+    // stay live, and the bar's Density knob becomes the band width.
+    // Always visible (unlike Perc). Same bounds/paint/click plumbing as the routing switches.
+    std::array<juce::Rectangle<int>, 10> noiseSwitchBounds;
+    std::array<std::atomic<float>*, 10> noiseParamPtr {};
     bool drawbarEnvelopeActive(int drawbarIndex) const;  // |EnvelopeAmount| > 0 for drawbar i
     // Per-drawbar envelope-active state from the last updateDrawbarColors() pass. The Perc switch is
     // drawn in paintOverChildren (parent), which the timer doesn't otherwise repaint - so when this
     // flips we repaint the column strip to make the switch appear/disappear live.
     std::array<bool, 10> prevEnvelopeActive {};
     DrawbarLookAndFeel drawbarLookAndFeel;  // Custom LookAndFeel for LFO visual feedback
+    PatchArrowLookAndFeel patchArrowLookAndFeel;  // Drawn triangle arrows for prev/next patch buttons
 
     // ---- LFO-rate "ping" pulse indicators (item #5) ----
     // Per-drawbar GUI-side phase [0,1); advanced in the timer at each drawbar's effective LFO
@@ -435,6 +519,11 @@ private:
     juce::Label velToDrawbarLabel;
     juce::Label velToDrawbarValue;
 
+    // Per-drawbar Density control (context-sensitive, experimental)
+    ToggleResetSlider drawbarDensityKnob;
+    juce::Label drawbarDensityLabel;
+    juce::Label drawbarDensityValue;
+
     // Amplitude ADSR display
     std::array<juce::Label, 4> ampAdsrLabels;
     std::array<juce::Label, 4> ampAdsrValueEditors;
@@ -478,6 +567,11 @@ private:
     juce::TextButton voicingSnapshotButton { "Snapshot" };
     juce::TextButton voicingCloseButton { "x" };   // dismiss the dev panel (top-right corner)
     juce::Label voicingSavedLabel;
+    // Patch Trim row: unlike the dev sliders above it, this is a REAL parameter
+    // (level-matching gain, dB) that saves with the patch - hence the attachment.
+    juce::Slider patchTrimSlider;
+    juce::Label patchTrimLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> patchTrimAttachment;
     LifeVoicingParams* lifeVoicingParams = nullptr;
     void toggleVoicingPanel();
     void saveVoicingSnapshot();
@@ -511,9 +605,17 @@ private:
     // = off = "Time" (the subtler default), accent fill = on = "Rate". Drawn in paint(), hit-tested
     // in mouseDown(), toggled via toggleRoutingParam() like the routing switches.
     juce::Rectangle<int> portamentoModeButtonBounds;
+    // Vibrato VEL gate button (same visual language / column as the Rate/Time + MW buttons). A single
+    // click toggles the gate on/off; the permanent velThresholdValue field below it (a plain editable
+    // label like Transpose/Stack) sets the 1-127 velocity threshold.
+    juce::Rectangle<int> velSwitchButtonBounds;
+    juce::Label velThresholdValue;                     // editable 1-127 threshold, below the VEL button
+    void updateVelThresholdLook();                     // dim the field when the gate is off
     std::atomic<float>* brillianceMWParam = nullptr;   // 0 Off / 1 Normal / 2 Inverse
     std::atomic<float>* densityMWParam = nullptr;
     std::atomic<float>* portamentoModeParam = nullptr; // 0 = Time (off) / 1 = Rate (on)
+    std::atomic<float>* vibratoVelSwitchParam = nullptr;    // 0 = off / 1 = velocity-gated
+    std::atomic<float>* vibratoVelThresholdParam = nullptr; // 1-127
     int brillLastPolarity = 1;
     int densLastPolarity = 1;
     void handleMWButtonClick(const juce::String& paramID, juce::Rectangle<int> bounds,
@@ -556,9 +658,15 @@ private:
     // ======================== PATCH MANAGEMENT UI ========================
     juce::TextButton loadPatchButton;
     juce::TextButton savePatchButton;
+    juce::TextButton prevPatchButton, nextPatchButton;   // step through the last-used bank
     juce::Label currentPatchLabel;
     juce::String currentPatchName;
     juce::Label patchCommentLabel;
+
+    // Where the arrows step: the factory bank (in Load-menu order) unless the last
+    // load/save was a user file, in which case they walk that file's folder.
+    int lastFactoryPatchIndex = -1;
+    juce::File lastLoadedPatchFile;
 
     // Master controls in patch bar
     ToggleResetSlider masterVolumeSlider;
@@ -584,6 +692,7 @@ private:
 
     void loadPatchButtonClicked();
     void savePatchButtonClicked();
+    void stepPatch(int direction);
    
 
     // ======================== SLIDER ATTACHMENTS ========================
@@ -621,6 +730,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoSyncAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lfoSyncDivAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> velToDrawbarAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> drawbarDensityAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PLANETMainGui)
 };

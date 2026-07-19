@@ -94,9 +94,6 @@ public:
     // Get default patch library path (Documents/PLANET2026/Patches)
     static juce::File getDefaultPatchDirectory();
 
-    // Create default directory structure (Pads, Plucks, Leads, etc.)
-    static void createDefaultDirectoryStructure(const juce::File& rootDirectory);
-
 private:
     std::vector<PLANETPatch> patchLibrary;
     std::vector<PLANETPatch> factoryLibrary;   // parsed from FactoryPatchData

@@ -124,7 +124,7 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
         patch);
 
     markdown << generateParameterSection("Vibrato",
-        { "vibratoRate", "vibratoDepth", "vibratoFadeIn" },
+        { "vibratoRate", "vibratoDepth", "vibratoFadeIn", "vibratoVelSwitch", "vibratoVelThreshold" },
         patch);
 
     markdown << generateParameterSection("Pitch Envelope",
@@ -141,6 +141,12 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
 
     markdown << generateParameterSection("Unison",
         { "unisonVoices", "unisonDetune" },
+        patch);
+
+    // Per-patch level-match gain (dB, post-effects pre-master). Master Volume itself
+    // is deliberately NOT saved - it belongs to the user, the trim belongs to the patch.
+    markdown << generateParameterSection("Output",
+        { "patchTrim" },
         patch);
 
     markdown << "\n---\n\n";
@@ -163,6 +169,8 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
     markdown << "# ToPM = 0 (off) or 1 (on) - route drawbar to phase-distortion path\n";
     markdown << "# ToOut = 0 (off) or 1 (on) - route drawbar direct to output (additive partial)\n";
     markdown << "# TrigSingle = 0 (Multi/retrigger) or 1 (Single/phrase-start) - single-trigger envelope (Hammond perc)\n";
+    markdown << "# Density = 0.0 to 1.0 - modulator morph sine -> soft-saw (experimental)\n";
+    markdown << "# Noise = 0 (off) or 1 (on) - drawbar becomes band-pass noise centred on harmonic F; Density = width (experimental)\n";
 
     // Generate all 10 drawbar sections
     for (int i = 1; i <= 10; ++i) {
@@ -185,7 +193,9 @@ bool PLANETPatchManager::savePatchToFile(const PLANETPatch& patch, const juce::F
             "k" + drawbarNum + "LFOSyncDiv",
             "k" + drawbarNum + "ToPM",
             "k" + drawbarNum + "ToOut",
-            "k" + drawbarNum + "TrigSingle"
+            "k" + drawbarNum + "TrigSingle",
+            "k" + drawbarNum + "Density",
+            "k" + drawbarNum + "Noise"
         };
 
         for (const auto& paramID : drawbarParams) {
@@ -269,24 +279,11 @@ juce::StringArray PLANETPatchManager::getCategories() const {
 }
 
 juce::File PLANETPatchManager::getDefaultPatchDirectory() {
+    // Flat user bank (ruling 19 Jul 2026): saves land directly here, no category
+    // subfolders - the prev/next arrows then step through the whole user bank.
+    // The factory bank is baked into the binary and never lives on disk.
     juce::File documentsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-    return documentsDir.getChildFile("PLANET2026").getChildFile("Patches");
-}
-
-void PLANETPatchManager::createDefaultDirectoryStructure(const juce::File& rootDirectory) {
-    if (!rootDirectory.exists()) {
-        rootDirectory.createDirectory();
-    }
-
-    // Create default category folders
-    juce::StringArray defaultCategories = { "Pads", "Plucks", "Leads", "Bass", "Keys", "FX", "User" };
-
-    for (const auto& category : defaultCategories) {
-        juce::File categoryDir = rootDirectory.getChildFile(category);
-        if (!categoryDir.exists()) {
-            categoryDir.createDirectory();
-        }
-    }
+    return documentsDir.getChildFile("ISHTAR").getChildFile("User Patches");
 }
 
 //==============================================================================
@@ -316,19 +313,17 @@ juce::String PLANETPatchManager::extractDescription(const juce::String& markdown
     if (titleEnd < 0)
         return "";
 
+    // Both searches are relative to titleEnd, so convert to an absolute index
+    // exactly once. (A Tags: line is optional; without one the "---" rule ends
+    // the description.)
     int descEnd = markdownContent.substring(titleEnd).indexOf("Tags:");
-    if (descEnd >= 0)
-        descEnd += titleEnd;
-    else
+    if (descEnd < 0)
         descEnd = markdownContent.substring(titleEnd).indexOf("---");
-
-    if (descEnd >= 0)
-        descEnd += titleEnd;
 
     if (descEnd < 0)
         return "";
 
-    return markdownContent.substring(titleEnd, descEnd).trim();
+    return markdownContent.substring(titleEnd, descEnd + titleEnd).trim();
 }
 
 juce::String PLANETPatchManager::extractTags(const juce::String& markdownContent) {
@@ -434,6 +429,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
     ranges["vibratoRate"] = ParameterRange(0.5f, 12.0f);
     ranges["vibratoDepth"] = ParameterRange(0.0f, 2.0f);
     ranges["vibratoFadeIn"] = ParameterRange(0.0f, 10.0f);
+    ranges["vibratoVelSwitch"] = ParameterRange(0.0f, 1.0f);
+    ranges["vibratoVelThreshold"] = ParameterRange(1.0f, 127.0f);
 
     // Pitch Envelope
     ranges["pitchEnvDistance"] = ParameterRange(-12.0f, 12.0f);
@@ -451,6 +448,9 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
     ranges["portamentoMode"] = ParameterRange(0.0f, 1.0f);
     ranges["unisonVoices"] = ParameterRange(1.0f, 4.0f);
     ranges["unisonDetune"] = ParameterRange(0.0f, 50.0f);
+
+    // Output (per-patch level-match trim, dB)
+    ranges["patchTrim"] = ParameterRange(-12.0f, 12.0f);
 
     // Drawbar parameters (k1-k10, with all their sub-parameters)
     for (int i = 1; i <= 10; ++i) {
@@ -471,6 +471,8 @@ std::map<juce::String, PLANETPatchManager::ParameterRange> PLANETPatchManager::g
         ranges[prefix + "ToPM"] = ParameterRange(0.0f, 1.0f);
         ranges[prefix + "ToOut"] = ParameterRange(0.0f, 1.0f);
         ranges[prefix + "TrigSingle"] = ParameterRange(0.0f, 1.0f);
+        ranges[prefix + "Density"] = ParameterRange(0.0f, 1.0f);
+        ranges[prefix + "Noise"] = ParameterRange(0.0f, 1.0f);
     }
 
     return ranges;
@@ -480,9 +482,11 @@ juce::String PLANETPatchManager::formatParameterValue(float value, const juce::S
     // Integer parameters
     if (parameterID.contains("LFOShape") || parameterID.contains("LFOSync") || parameterID.contains("LFOSyncDiv")
         || parameterID.contains("ToPM") || parameterID.contains("ToOut") || parameterID.contains("TrigSingle")
+        || parameterID.contains("Noise")
         || parameterID.contains("ModWheel")
         || parameterID == "punchFrequency"
-        || parameterID == "unisonVoices" || parameterID == "portamentoMode") {
+        || parameterID == "unisonVoices" || parameterID == "portamentoMode"
+        || parameterID == "vibratoVelSwitch" || parameterID == "vibratoVelThreshold") {
         return juce::String((int)value);
     }
 

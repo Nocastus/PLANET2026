@@ -98,19 +98,108 @@ private:
     // DUAL DETUNE EFFECT
     //==========================================================================
     struct DetuneProcessor {
-        static constexpr int BUFFER_SIZE = 1024;  // Much smaller buffer (~23ms at 44.1kHz)
+        static constexpr int BUFFER_SIZE = 4096;  // history depth for splice alignment; the
+                                                  // taps themselves stay inside the corridor
+                                                  // below (~3-40ms), NOT the whole buffer
         static constexpr float MAX_DETUNE_CENTS = 50.0f;  // More obvious effect
-        static constexpr float BASE_DELAY_SAMPLES = 64.0f;  // Small fixed delay (~1.5ms)
+        static constexpr float BASE_DELAY_SAMPLES = 512.0f;  // initial tap delay (mid corridor)
+
+        // ---- Splice-on-approach wrap declick (9 Jul 2026, v2) ----
+        // The taps drift relative to the write head; letting one collide snapped the
+        // delay by a whole buffer = the periodic "bump" (worst on bass). Instead, when
+        // a tap reaches a corridor edge we jump it by a correlation-picked distance
+        // (a whole number of waveform periods) and crossfade over SPLICE_FADE_SAMPLES.
+        // Between splices the signal path is exactly the pre-fix single-tap read.
+        //
+        // v1 POSTMORTEM: window 64 was locally linear on bass, so every candidate
+        // scored ~1 and jumps landed at random phase = irregular random bumps (worse
+        // than the periodic ones). Phase-locking a bass note needs BOTH a window that
+        // spans a good fraction of its period AND a jump range of >= one full period
+        // (43Hz period = 1025 samples = the entire old 1024 buffer, which is why the
+        // old buffer could never splice bass cleanly, crossfade or not).
+        //
+        // Corridor geometry (samples; fixed, so ms halve at 96k - beta is 44.1/48k):
+        // taps live in delay [SPLICE_MARGIN, SPLICE_CORRIDOR_HIGH]; a jump traverses
+        // it, so corridor width == SPLICE_SEARCH_MAX >= one period down to ~27Hz.
+        // Validity: corridor high (1792) + corr window (512) < BUFFER_SIZE.
+        static constexpr int SPLICE_MARGIN        = 128;   // corridor low edge (fast-tap trigger)
+        static constexpr int SPLICE_CORRIDOR_HIGH = 1792;  // corridor high edge (slow-tap BACKSTOP)
+        static constexpr int SPLICE_FADE_SAMPLES  = 256;   // ~6ms at 44.1kHz
+        static constexpr int SPLICE_SEARCH_MIN    = 256;   // shortest allowed jump
+        static constexpr int SPLICE_SEARCH_MAX    = 1664;  // >= one period down to ~27Hz @ 44.1k
+        static constexpr int SPLICE_CORR_WINDOW   = 1024;  // full period down to ~43Hz: chord-safe
+                                                           // corr estimates (512 leaked spurious
+                                                           // >0.9 reads through the early gate)
+        static constexpr float SPLICE_SHORT_BIAS  = 0.02f; // prefer the SHORTEST aligned jump (v4)
+        static constexpr int SPLICE_TRIGGER_SLACK = 32;    // slow-tap landing slack above MARGIN
+        static constexpr float SPLICE_EARLY_CORR  = 0.9f;  // min raw corr for an EARLY slow splice
+        static constexpr int SPLICE_VALID_FLOOR   = 64;    // candidate window validity margin
+
+        // v4 LAG GEOMETRY (9 Jul 2026 night): jumps prefer ~one period and the slow
+        // tap splices as soon as its planned jump is known, so BOTH taps hug the
+        // low-lag end of the corridor (~3ms..1-2 periods; average wet lag ~= the
+        // pre-fix version's ~12ms). The v3 policy (mid-length jumps, slow tap
+        // triggering at the corridor top) parked the slow tap at ~25-30ms lag, which
+        // Gerard heard as a stronger Spread with extra wobble on moving pitches.
+        // CORRIDOR_HIGH stays as the physics backstop: content whose period demands
+        // a long jump (deep bass, CHORDS) still gets one - an early slow splice is
+        // only allowed when its jump's RAW correlation clears SPLICE_EARLY_CORR.
+        // (Sim-caught chord regression without the gate: at low delay the long jump
+        // a chord needs isn't measurable yet - its comparison window would reach
+        // past the write head - so the search would commit to a short jump that
+        // aligns only the strongest note. maxJump clamps scoring to measurable
+        // candidates; the corr gate makes "wait for the long jump" the default.)
+
+        // The jump search is SLICED across the approach (9 Jul 2026 evening): one
+        // candidate scored per sample, started SEARCH_SAMPLES + SLACK samples of
+        // drift before the tap reaches its corridor edge. Drift cancels out of that
+        // lead, so at ANY Spread the search finishes ~SLACK samples early and the
+        // chosen jump is at most a few ms stale - inaudible on periodic content.
+        // This replaces the one-shot search, whose ~80us single-sample spike bounced
+        // the DAW CPU meter at small ASIO buffers (fixed-budget principle restored:
+        // worst per-sample cost is ONE 512-tap correlation, ~0.8us).
+        static constexpr int SPLICE_SEARCH_SAMPLES = 362;  // 353 coarse + up to 9 refine steps
+        static constexpr int SPLICE_SEARCH_SLACK   = 64;   // finish margin (samples of drift lead)
+        static constexpr int SPLICE_HARD_FLOOR     = 48;   // force-finish depth if automation outruns it
 
         std::array<float, BUFFER_SIZE> buffer;
         int writeIndex = 0;
 
-        // Read positions track write position with rate offsets
-        float leftReadOffset = BASE_DELAY_SAMPLES;
-        float rightReadOffset = BASE_DELAY_SAMPLES;
+        // Read positions track write position with rate offsets. writeIndex starts at
+        // 0, so an initial offset of BUFFER_SIZE - BASE_DELAY_SAMPLES puts both taps
+        // BASE_DELAY_SAMPLES behind the write head, mid corridor.
+        float leftReadOffset = (float)BUFFER_SIZE - BASE_DELAY_SAMPLES;
+        float rightReadOffset = (float)BUFFER_SIZE - BASE_DELAY_SAMPLES;
 
         float leftPlaybackRate = 1.0f;
         float rightPlaybackRate = 1.0f;
+
+        // Per-tap splice crossfade state. fadeRemaining == 0 means not fading;
+        // fadeOldOffset is the retiring trajectory, still advancing at the tap's rate.
+        int   leftFadeRemaining = 0;
+        int   rightFadeRemaining = 0;
+        float leftFadeOldOffset = 0.0f;
+        float rightFadeOldOffset = 0.0f;
+
+        // Per-tap sliced jump search. The reference window is frozen at begin time
+        // (the anchor); candidate windows read the live buffer, but every position
+        // involved is old enough that nothing scored is overwritten mid-search.
+        struct SpliceSearch {
+            enum Stage { Idle, Coarse, Refine, Done };
+            Stage stage = Idle;
+            int   anchor = 0;        // int tap position the reference window was taken at
+            bool  jumpBack = true;   // fast tap jumps back, slow tap jumps forward
+            int   nextJump = 0;      // next candidate to score (coarse: step 4; refine: step 1)
+            int   refineHi = 0;
+            int   maxJump = SPLICE_SEARCH_MAX; // validity clamp: longest measurable candidate
+            int   bestJump = SPLICE_SEARCH_MIN;
+            float bestScore = -1.0e9f;
+            float bestCorr = -1.0f;  // raw correlation of the winner (early-splice gate)
+            int   doneAge = 0;       // samples since Done - re-anchor guard for stalled approaches
+            float x[SPLICE_CORR_WINDOW];
+        };
+        SpliceSearch leftSearch;
+        SpliceSearch rightSearch;
 
         // Equal-power crossfade gains. Targets are computed once per block in
         // updateParameters() (they depend only on the mix param); the live gains glide
@@ -123,7 +212,8 @@ private:
         float targetWetGain = 0.0f;
         float gainSmoothCoeff = 0.002f;   // set from sampleRate in updateParameters()
 
-        // Simple smoothing for buffer wrap artifacts
+        // One-pole wet-tap smoothing - originally for wrap artifacts, kept for its
+        // (approved) slight HF rounding of the wet tone now splices handle the wraps
         float leftPrevSample = 0.0f;
         float rightPrevSample = 0.0f;
         static constexpr float SMOOTHING_FACTOR = 0.95f; // Gentle smoothing
@@ -132,6 +222,12 @@ private:
         std::pair<float, float> process(float input);
 
     private:
+        float processTap(float& readOffset, float playbackRate,
+                         int& fadeRemaining, float& fadeOldOffset, SpliceSearch& search);
+        void beginSearch(SpliceSearch& s, int basePos, bool jumpBack, int maxJump) const;
+        void stepSearch(SpliceSearch& s) const;   // bounded: scores ONE candidate
+        void finishSearch(SpliceSearch& s) const; // automation guard, rare
+        float scoreJump(const SpliceSearch& s, int jump, int step) const;
         float interpolatedRead(float readPosition);
         float centsToRatio(float cents);
     };
