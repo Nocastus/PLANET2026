@@ -76,7 +76,8 @@
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="ISHTAR"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="ISHTAR" enablePluginBinaryCopyStep="0"
-                       vst3BinaryLocation_x64="C:\Program Files\Common Files\VST3\ISHTAR.vst3"/>
+                       vst3BinaryLocation_x64="C:\Program Files\Common Files\VST3\ISHTAR.vst3"
+                       useRuntimeLibDLL="0"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_animation" path="C:/JUCE/modules"/>
